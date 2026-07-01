@@ -1,4 +1,9 @@
 node_modules/
-dist/
+dist/*
+!dist/ModernLightsDashboard.groovy
+!dist/packageManifest.json
+!dist/upload/
+dist/upload/*
+!dist/upload/mld-*
 .DS_Store
 *.log
