@@ -199,10 +199,20 @@ body {
 }
 .quick-nav .ghost-btn.icon-btn.is-tab-active svg { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)) brightness(1.05); }
 
-.tab-view { padding: 6px 4px 24px; }
+.tab-view { padding: 6px 14px calc(24px + env(safe-area-inset-bottom)); }
 .tab-view .tab-body { padding: 0; }
 .tab-view .quick-fav-grid,
-.tab-view .sensor-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+.tab-view .sensor-grid {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  max-height: none;
+  overflow: visible;
+}
+
+.quick-panel .quick-fav-grid,
+.quick-panel .sensor-grid {
+  max-height: none;
+  overflow: visible;
+}
 
 .search-hidden { display: none !important; }
 
@@ -858,8 +868,6 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 10px;
-  max-height: min(55dvh, 420px);
-  overflow-y: auto;
   padding: 2px;
 }
 .sensor-card {
@@ -967,8 +975,6 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 12px;
-  max-height: min(55dvh, 420px);
-  overflow-y: auto;
   container-type: inline-size;
 }
 .quick-fav-card {

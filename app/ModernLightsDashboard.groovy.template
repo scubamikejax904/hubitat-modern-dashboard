@@ -13,7 +13,7 @@ definition(
     name: "Modern Dashboard",
     namespace: "modernlights",
     author: "you",
-    description: "Modern mobile-first lights dashboard. UI files live in File Manager; this app serves them plus device data over local + cloud endpoints.",
+    description: "Mobile-first dashboard for lights (dim/RGB/CT), thermostats, temp sensors, and music players — grouped by room with dimmer sliders, climate dial, and media transport. Local + cloud URLs; PWA-ready. UI files live in File Manager; this app serves them and device data.",
     category: "My Apps",
     iconUrl: "",
     iconX2Url: "",

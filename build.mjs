@@ -29,7 +29,7 @@ const APP_DISPLAY_NAME = "Modern Dashboard";
 
 const HPM_BASE_URL =
   process.env.HPM_BASE_URL ??
-  "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/v0.1.0/dist";
+  "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/v0.1.1/dist";
 
 // Stable UUIDs for HPM update tracking (do not regenerate per build)
 const HPM_APP_ID = "a4f8c2e1-6b3d-4a9f-8e7c-1d2b3c4d5e6f";
@@ -262,7 +262,8 @@ const hpmManifest = {
   version: pkg.version,
   dateReleased: new Date().toISOString().slice(0, 10),
   licenseFile: "",
-  releaseNotes: "Modern mobile-first lights dashboard with room controls and dimmer sliders.",
+  releaseNotes:
+    "Modern, mobile-first Hubitat dashboard for lights (switches, dimmers, color temperature, RGB), thermostats (setpoint dial, mode, fan), temperature sensors, and music/media players (Sonos, Echo Speaks, AirPlay, Chromecast). Room-grouped layout with per-room on/off, drag-to-dim sliders, sticky search, and collapsible rooms. Works on local and cloud URLs with no Maker API; installable as a PWA from the cloud link. Dark, light, and auto themes; instant LAN updates via WebSocket when available.",
   documentationLink: "",
   communityLink: "",
   apps: [
