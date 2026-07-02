@@ -836,7 +836,7 @@ async function setHsmApi(mode, pin, padApi) {
           el.addEventListener("click", (e) => {
             e.stopPropagation();
             if (M.colorSession) M.closeColorPopup(true);
-            if (quickPopup?.classList.contains("open")) M.closeQuickPopup();
+            if (M.quickPopup?.classList.contains("open")) M.closeQuickPopup();
             M.openTstatPopup(roomKey, el);
           });
         }
@@ -1618,16 +1618,12 @@ async function setHsmApi(mode, pin, padApi) {
     if (cmd === "on" && hasDimmer) setTimeout(M.refresh, 900);
   }
 
-  let confirmPopup = null;
-  let confirmPending = null;
-  let quickPopup = null;
-
   function ensureQuickPopup() {
-    if (quickPopup) return quickPopup;
-    quickPopup = ce("div", "quick-popup");
-    quickPopup.hidden = true;
-    quickPopup.setAttribute("role", "dialog");
-    quickPopup.setAttribute("aria-modal", "true");
+    if (M.quickPopup) return M.quickPopup;
+    M.quickPopup = ce("div", "quick-popup");
+    M.quickPopup.hidden = true;
+    M.quickPopup.setAttribute("role", "dialog");
+    M.quickPopup.setAttribute("aria-modal", "true");
     const panel = ce("div", "quick-panel");
     const head = ce("div", "quick-head");
     const title = ce("h2", "quick-title");
@@ -1640,17 +1636,17 @@ async function setHsmApi(mode, pin, padApi) {
     head.appendChild(close);
     panel.appendChild(head);
     panel.appendChild(body);
-    quickPopup.appendChild(panel);
-    M.appendPopup(quickPopup);
+    M.quickPopup.appendChild(panel);
+    M.appendPopup(M.quickPopup);
 
-    M.bindPopupDismiss(quickPopup, panel, close, M.closeQuickPopup);
+    M.bindPopupDismiss(M.quickPopup, panel, close, M.closeQuickPopup);
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && quickPopup.classList.contains("open")) M.closeQuickPopup();
+      if (e.key === "Escape" && M.quickPopup.classList.contains("open")) M.closeQuickPopup();
     });
 
-    quickPopup._title = title;
-    quickPopup._body = body;
-    return quickPopup;
+    M.quickPopup._title = title;
+    M.quickPopup._body = body;
+    return M.quickPopup;
   }
 
   function renderLocksPopup() {

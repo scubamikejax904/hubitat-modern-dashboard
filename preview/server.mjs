@@ -222,6 +222,9 @@ function readJsonBody(req) {
   });
 }
 
+const distUpload = join(root, "dist", "upload");
+const readDist = (name) => readFileSync(join(distUpload, name), "utf8");
+
 const mime = {
   "/": "text/html",
   "/app.css": "text/css",
@@ -247,7 +250,15 @@ const server = createServer(async (req, res) => {
   }
   if (p === "/app.js") {
     res.writeHead(200, { "Content-Type": "application/javascript" });
-    return res.end(read("src/app.js"));
+    return res.end(existsSync(join(distUpload, "mld-app.js")) ? readDist("mld-app.js") : read("src/app.js"));
+  }
+  if (p === "/app-post.js") {
+    res.writeHead(200, { "Content-Type": "application/javascript" });
+    return res.end(readDist("mld-app-post.js"));
+  }
+  if (p === "/app-post2.js") {
+    res.writeHead(200, { "Content-Type": "application/javascript" });
+    return res.end(readDist("mld-app-post2.js"));
   }
   if (p === "/manifest.webmanifest") {
     res.writeHead(200, { "Content-Type": "application/manifest+json" });

@@ -146,6 +146,9 @@
   let hsmLockUntil = 0;
   let pinPadPopup = null;
   let pinPadState = null;
+  let confirmPopup = null;
+  let confirmPending = null;
+  let quickPopup = null;
   let quickPopupOpenType = null;
 
   // ---------- tab mode (inline tabs instead of popups) ----------
@@ -4433,10 +4436,6 @@
     bulkLightsApi(cmd, "house");
     if (cmd === "on" && hasDimmer) setTimeout(refresh, 900);
   }
-
-  let confirmPopup = null;
-  let confirmPending = null;
-  let quickPopup = null;
 
   function ensureQuickPopup() {
     if (quickPopup) return quickPopup;
