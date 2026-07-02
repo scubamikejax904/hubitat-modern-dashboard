@@ -967,6 +967,7 @@ function renderScenesPopup() {
       const d = await M.fetchData();
       if (M.applyLocalModeStrategy()) return;
       M.render(d);
+      M.initAndroidLocalImmersive();
       startPolling();
       startWS();
     } catch (e) {

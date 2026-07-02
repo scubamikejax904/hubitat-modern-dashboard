@@ -2218,6 +2218,46 @@
     return /Android/i.test(navigator.userAgent || "");
   }
 
+  function isStandaloneDisplay() {
+    try {
+      return window.matchMedia("(display-mode: standalone)").matches ||
+        window.matchMedia("(display-mode: fullscreen)").matches;
+    } catch {
+      return false;
+    }
+  }
+
+  function initAndroidLocalImmersive() {
+    if (!isLocalOrigin() || !isAndroid() || isStandaloneDisplay()) return;
+
+    document.documentElement.classList.add("android-browser-local");
+
+    function nudgeScroll() {
+      if (window.scrollY <= 1) {
+        try { window.scrollTo(0, 1); } catch {}
+      }
+    }
+
+    nudgeScroll();
+    requestAnimationFrame(nudgeScroll);
+    setTimeout(nudgeScroll, 50);
+    setTimeout(nudgeScroll, 300);
+
+    let nudgeTimer = null;
+    window.addEventListener("scroll", () => {
+      if (window.scrollY > 1) return;
+      if (nudgeTimer) return;
+      nudgeTimer = setTimeout(() => {
+        nudgeTimer = null;
+        nudgeScroll();
+      }, 120);
+    }, { passive: true });
+
+    window.addEventListener("orientationchange", () => {
+      setTimeout(nudgeScroll, 200);
+    }, { passive: true });
+  }
+
   function loadStoredLocalUrl() {
     try { return localStorage.getItem(LOCAL_URL_STORAGE_KEY) || ""; } catch { return ""; }
   }
@@ -6194,6 +6234,7 @@
       const d = await fetchData();
       if (applyLocalModeStrategy()) return;
       render(d);
+      initAndroidLocalImmersive();
       startPolling();
       startWS();
     } catch (e) {
