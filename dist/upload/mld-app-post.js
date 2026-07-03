@@ -726,6 +726,8 @@ async function setHsmApi(mode, pin, padApi) {
     M.replaceList(M.rooms, M.sortRoomsByOrder(d.rooms || [], M.cfg.roomOrder));
     M.syncRoomMap();
     M.replaceList(M.devices, d.devices);
+    M.replaceList(M.plainSwitches, d.plainSwitches);
+    M.replaceList(M.outlets, d.outlets);
     M.replaceList(M.thermostats, d.thermostats);
     M.replaceList(M.tempSensors, d.tempSensors);
     M.replaceList(M.sensors, d.sensors);

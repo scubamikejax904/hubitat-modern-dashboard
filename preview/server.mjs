@@ -53,11 +53,62 @@ let state = buildMockData(130);
 // seed one sample schedule so the Scheduler nav is visible in preview
 state.schedules = [{
   id: "sc-demo-1", name: "Evening lights", enabled: true,
-  trigger: { kind: "daily", time: "19:30", days: [], at: "" },
+  trigger: { kind: "daily", when: "clock", time: "19:30", offsetMin: 0, days: [], at: "" },
   onlyInModes: [], action: { target: "lights", states: [{ id: 1, on: true, level: 80, ct: null }] },
   lastFired: Date.now() - 3 * 3600 * 1000, nextFire: Date.now() + 3600 * 1000, ts: Date.now(),
   summary: "Daily 19:30",
+}, {
+  id: "sc-demo-2", name: "Sunset porch", enabled: true,
+  trigger: { kind: "daily", when: "sunset", time: "", offsetMin: -15, days: [], at: "" },
+  onlyInModes: [], action: { target: "lights", states: [{ id: 502, on: true }] },
+  lastFired: null, nextFire: null, ts: Date.now(),
+  summary: "Daily Sunset -15m",
+}, {
+  id: "sc-demo-3", name: "Away lights off", enabled: true,
+  trigger: { kind: "mode", when: "clock", time: "", offsetMin: 0, days: [], at: "", mode: "Away" },
+  onlyInModes: [], action: { target: "lights", states: [{ id: 1, on: false }] },
+  lastFired: null, nextFire: null, ts: Date.now(),
+  summary: "When mode is Away",
 }];
+for (const s of state.schedules) mockRecomputeNextFire(s);
+
+function mockSunTimes() {
+  const d = new Date();
+  const rise = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 6, 42, 0, 0);
+  const set = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 19, 18, 0, 0);
+  return { sunrise: rise.getTime(), sunset: set.getTime() };
+}
+
+function mockSunLabel(which, offsetMin) {
+  const base = which === "sunrise" ? "Sunrise" : "Sunset";
+  const off = Number(offsetMin) || 0;
+  if (off === 0) return base;
+  if (off > 0) return `${base} +${off}m`;
+  return `${base} ${off}m`;
+}
+
+function mockSunNextFire(tr, fromMs) {
+  const when = tr.when || "clock";
+  if (when !== "sunrise" && when !== "sunset") return null;
+  const names = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+  const off = (Number(tr.offsetMin) || 0) * 60 * 1000;
+  const now = new Date(fromMs);
+  for (let i = 0; i < 370; i++) {
+    const cand = new Date(now);
+    cand.setDate(now.getDate() + i);
+    cand.setHours(0, 0, 0, 0);
+    if (tr.kind === "weekly") {
+      const days = tr.days || [];
+      if (days.length && !days.includes(names[cand.getDay()])) continue;
+    }
+    const sun = mockSunTimes();
+    const base = when === "sunset" ? sun.sunset : sun.sunrise;
+    const dayDelta = i * 86400000;
+    const at = base + dayDelta + off;
+    if (at > fromMs) return at;
+  }
+  return null;
+}
 
 function buildMockData(count) {
   const rooms = ROOM_NAMES.map((name, i) => ({ id: i + 1, name }));
@@ -120,7 +171,13 @@ function buildMockData(count) {
     { i: 4004, n: "Office HomePod", r: 4, st: "playing", v: 28, tr: "Khruangbin — Texas Sun", m: "unmuted", trackIdx: 3, f: AUDIO_F_AIRPLAY },
     { i: 4005, n: "Patio Speaker", r: 7, st: "stopped", v: 0, tr: "", m: "muted", trackIdx: 2, f: AUDIO_F_FULL },
   ];
-  return { config: { pollIntervalMs: 5000, useWebSocket: false, dashboardName: "mDash", roomOrder: [], favorites: [1, 5, 1001, 2103] }, rooms, devices, thermostats, tempSensors, sensors, locks, music, hubModes: ["Day", "Evening", "Night", "Away"], currentHubMode: "Day", hsmStatus: "disarmed", hsmAlert: "water", hsmAlertDesc: "Basement leak sensor", hsmEnabled: true, hsmPinEnabled: true, hsmPinRequired: true, thermostatsPopupEnabled: true, unlockPinEnabled: true, unlockPinRequired: true, scenes: [{ id: 1, n: "Good Morning" }, { id: 2, n: "Movie Time" }, { id: 3, n: "Good Night" }, { id: 4, n: "Away" }], schedules: [] };
+  return { config: { pollIntervalMs: 5000, useWebSocket: false, dashboardName: "mDash", roomOrder: [], favorites: [1, 5, 1001, 2103] }, rooms, devices, plainSwitches: [
+    { i: 501, n: "Garage Door Switch", r: 6, s: 0 },
+    { i: 502, n: "Porch Switch", r: 7, s: 1 },
+  ], outlets: [
+    { i: 601, n: "Kitchen Outlet", r: 2, s: 1 },
+    { i: 602, n: "Office Outlet", r: 4, s: 0 },
+  ], thermostats, tempSensors, sensors, locks, music, hubModes: ["Day", "Evening", "Night", "Away"], currentHubMode: "Day", hsmStatus: "disarmed", hsmAlert: "water", hsmAlertDesc: "Basement leak sensor", hsmEnabled: true, hsmPinEnabled: true, hsmPinRequired: true, thermostatsPopupEnabled: true, unlockPinEnabled: true, unlockPinRequired: true, scenes: [{ id: 1, n: "Good Morning" }, { id: 2, n: "Movie Time" }, { id: 3, n: "Good Night" }, { id: 4, n: "Away" }], schedules: [], sunTimes: mockSunTimes() };
 }
 
 function tstatOstateForMode(tm) {
@@ -328,6 +385,7 @@ const server = createServer(async (req, res) => {
       }
     }
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    state.sunTimes = mockSunTimes();
     return res.end(JSON.stringify(state));
   }
   if (p === "/device") {
@@ -659,25 +717,38 @@ const server = createServer(async (req, res) => {
 // ---------- scheduler mock helpers ----------
 function mockScheduleSummary(s) {
   const tr = s?.trigger || {};
-  if (tr.kind === "daily") return "Daily " + (tr.time || "");
-  if (tr.kind === "weekly") return "Weekly " + ((tr.days || []).join(",")) + " " + (tr.time || "");
+  const when = tr.when || "clock";
+  if (tr.kind === "daily") {
+    if (when !== "clock") return "Daily " + mockSunLabel(when, tr.offsetMin);
+    return "Daily " + (tr.time || "");
+  }
+  if (tr.kind === "weekly") {
+    const days = (tr.days || []).join(",");
+    if (when !== "clock") return "Weekly " + days + " " + mockSunLabel(when, tr.offsetMin);
+    return "Weekly " + days + " " + (tr.time || "");
+  }
   if (tr.kind === "once") return "Once " + (tr.at || "");
+  if (tr.kind === "mode") return "When mode is " + (tr.mode || "");
   return tr.kind || "";
 }
 
 function mockNormalizeSchedule(body, id, existing) {
   const tr = body?.trigger || {};
+  const when = tr.when || "clock";
   const s = {
     id,
     name: (body?.name || "").trim() || ("Schedule " + (state.schedules.length + 1)),
     enabled: body?.enabled !== false,
     trigger: {
       kind: tr.kind || "daily",
+      when: when === "sunrise" || when === "sunset" ? when : "clock",
       time: tr.time || "19:30",
+      offsetMin: Number(tr.offsetMin) || 0,
       days: tr.days || [],
       at: tr.at || "",
+      mode: tr.mode || "",
     },
-    onlyInModes: body?.onlyInModes || [],
+    onlyInModes: tr.kind === "mode" ? [] : (body?.onlyInModes || []),
     action: body?.action || { target: "lights", states: [] },
     lastFired: existing?.lastFired ?? null,
     nextFire: null,
@@ -694,6 +765,11 @@ function mockRecomputeNextFire(s) {
     const t = new Date(tr.at).getTime();
     s.nextFire = isNaN(t) ? null : t;
   } else if (tr.kind === "daily" || tr.kind === "weekly") {
+    const when = tr.when || "clock";
+    if (when === "sunrise" || when === "sunset") {
+      s.nextFire = mockSunNextFire(tr, Date.now());
+      return;
+    }
     const [hh, mm] = (tr.time || "19:30").split(":").map(Number);
     const now = new Date();
     const days = tr.kind === "weekly" ? (tr.days || []).map((d) => ["SUN","MON","TUE","WED","THU","FRI","SAT"].indexOf(d)) : [0,1,2,3,4,5,6];
@@ -715,7 +791,9 @@ function mockSchedulesList() {
     id: s.id, name: s.name, enabled: s.enabled,
     summary: mockScheduleSummary(s),
     lastFired: s.lastFired, nextFire: s.nextFire,
-    trigger: s.trigger, action: s.action, ts: s.ts,
+    trigger: s.trigger, action: s.action,
+    onlyInModes: s.onlyInModes || [],
+    ts: s.ts,
   }));
 }
 

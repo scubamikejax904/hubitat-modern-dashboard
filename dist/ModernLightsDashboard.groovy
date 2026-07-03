@@ -43,6 +43,11 @@ def mainPage() {
             paragraph "<small>Select the devices you want on the dashboard. Rooms and layout are automatic based on your Hubitat room assignments.</small>"
             input "lights", "capability.switch", title: "Select your light devices (switches and dimmers)",
                 multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "plainSwitches", "capability.switch", title: "Switches (not lights or outlets)",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "outletSwitches", "capability.switch", title: "Outlets",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            paragraph "<small>Outlets may also appear in the lights list above. The Outlets section on the dashboard only shows devices selected here.</small>"
             input "thermostats", "capability.thermostat", title: "Select your thermostats",
                 multiple: true, required: false, showFilter: true, submitOnChange: true
             input "tempSensors", "capability.temperatureMeasurement", title: "Temperature sensors (display only)",
@@ -163,6 +168,8 @@ def updated() {
 
 def logInit() {
     if (lights) { log.info "Modern Dashboard: ${lights.size()} light(s) authorized" }
+    if (plainSwitches) { log.info "Modern Dashboard: ${plainSwitches.size()} switch(es) authorized" }
+    if (outletSwitches) { log.info "Modern Dashboard: ${outletSwitches.size()} outlet(s) authorized" }
     if (thermostats) { log.info "Modern Dashboard: ${thermostats.size()} thermostat(s) authorized" }
     if (tempSensors) { log.info "Modern Dashboard: ${tempSensors.size()} temperature sensor(s) authorized" }
     def sensorCount = allSensorDevices()?.size() ?: 0
@@ -704,6 +711,22 @@ def renderData() {
             out << "}"
         }
     }
+    out << "],\"plainSwitches\":["
+    first = true
+    if (plainSwitches) {
+        for (d in plainSwitches) {
+            if (!first) out << ","; first = false
+            appendOnOffDeviceJson(out, d, roomsList)
+        }
+    }
+    out << "],\"outlets\":["
+    first = true
+    if (outletSwitches) {
+        for (d in outletSwitches) {
+            if (!first) out << ","; first = false
+            appendOnOffDeviceJson(out, d, roomsList)
+        }
+    }
     out << "],\"thermostats\":["
     first = true
     if (thermostats) {
@@ -784,6 +807,8 @@ def renderData() {
     first = true
     def excludeIds = [] as Set
     if (lights) for (d in lights) excludeIds << d.id.toString()
+    if (plainSwitches) for (d in plainSwitches) excludeIds << d.id.toString()
+    if (outletSwitches) for (d in outletSwitches) excludeIds << d.id.toString()
     if (thermostats) for (d in thermostats) excludeIds << d.id.toString()
     if (tempSensors) for (d in tempSensors) excludeIds << d.id.toString()
     if (locks) for (d in locks) excludeIds << d.id.toString()
@@ -942,6 +967,7 @@ def renderData() {
     out << "]"
     out << snapshotsJsonFragment()
     out << lightJobJsonFragment()
+    out << sunTimesJsonFragment()
     out << schedulesJsonFragment()
     out << "}"
     render contentType: "application/json", data: out.toString(), status: 200
@@ -952,6 +978,22 @@ def safeCurrent(d, attrName) {
         def st = d.currentState(attrName)
         return st?.value
     } catch (e) { return null }
+}
+
+def appendOnOffDeviceJson(out, d, roomsList) {
+    def roomName = null
+    try { roomName = d.getRoomName() } catch (e) { roomName = null }
+    def rid = null
+    if (roomName) {
+        def rm = roomsList.find { it.name == roomName }
+        if (rm) rid = rm.id
+    }
+    def sw = safeCurrent(d, "switch")
+    out << "{\"i\":" << d.id
+    out << ",\"n\":" << jsonStr(d.displayName)
+    out << ",\"r\":" << (rid == null ? "null" : rid.toString())
+    out << ",\"s\":" << (sw == "on" ? 1 : 0)
+    out << "}"
 }
 
 def numOrNull(v) {
@@ -1269,16 +1311,20 @@ def executeOneCmd(id, c, v, pin) {
         return [ok: false, error: "missing params"]
     }
     def dev = lights?.find { it.id.toString() == id.toString() }
+    def swDev = plainSwitches?.find { it.id.toString() == id.toString() }
+    def outletDev = outletSwitches?.find { it.id.toString() == id.toString() }
     def t = thermostats?.find { it.id.toString() == id.toString() }
     def lk = locks?.find { it.id.toString() == id.toString() }
     def shade = windowShades?.find { it.id.toString() == id.toString() }
     def mp = allAudioDevices()?.find { it.id.toString() == id.toString() }
-    if (dev == null && t == null && lk == null && shade == null && mp == null) {
+    if (dev == null && swDev == null && outletDev == null && t == null && lk == null && shade == null && mp == null) {
         return [ok: false, error: "device not found"]
     }
     try {
         if (dev != null) {
             runLightCmd(dev, c, v)
+        } else if (swDev != null || outletDev != null) {
+            runLightCmd(swDev ?: outletDev, c, v)
         } else if (t != null) {
             runThermostatCmd(t, c, v)
         } else if (lk != null) {
@@ -2235,18 +2281,110 @@ def scheduleCronForTrigger(kind, time, days) {
     return "0 ${mm} ${hh} ? * ${dow} *".toString()
 }
 
+// when: "clock" | "sunrise" | "sunset"; offsetMin: minutes before (−) or after (+) sun event
+def scheduleTriggerWhen(tr) {
+    def w = tr?.when?.toString()?.trim()?.toLowerCase()
+    if (w == "sunrise" || w == "sunset") return w
+    return "clock"
+}
+
+def scheduleOffsetMin(tr) {
+    try {
+        return (tr?.offsetMin ?: 0).toInteger()
+    } catch (e) {
+        return 0
+    }
+}
+
+def scheduleSunMs(which, offsetMin, forDate) {
+    try {
+        def opts = [offset: (offsetMin ?: 0) as Integer]
+        if (forDate) opts.date = forDate
+        def d = (which == "sunrise") ? location.sunrise(opts) : location.sunset(opts)
+        return d?.getTime()
+    } catch (e) {
+        return null
+    }
+}
+
+def scheduleWeeklyDayNames() {
+    return ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
+}
+
+def scheduleDayMatchesWeekly(tr, cal) {
+    def kind = tr?.kind?.toString()
+    if (kind != "weekly") return true
+    def days = tr?.days
+    if (!(days instanceof List) || !days) return false
+    int dow = cal.get(Calendar.DAY_OF_WEEK)
+    def names = scheduleWeeklyDayNames()
+    if (dow < 1 || dow > 7) return false
+    return days.contains(names[dow - 1])
+}
+
+def scheduleSunNextFire(tr, which, long fromMs) {
+    def offsetMin = scheduleOffsetMin(tr)
+    def tz = location.timeZone
+    def cal = Calendar.getInstance()
+    if (tz) cal.setTimeZone(tz)
+    cal.setTime(new Date(fromMs + 1000))
+    cal.set(Calendar.HOUR_OF_DAY, 0)
+    cal.set(Calendar.MINUTE, 0)
+    cal.set(Calendar.SECOND, 0)
+    cal.set(Calendar.MILLISECOND, 0)
+    for (int i = 0; i < 370; i++) {
+        if (scheduleDayMatchesWeekly(tr, cal)) {
+            def sunMs = scheduleSunMs(which, offsetMin, cal.getTime())
+            if (sunMs != null && sunMs > fromMs) return sunMs
+        }
+        cal.add(Calendar.DATE, 1)
+    }
+    return null
+}
+
+def scheduleSunLabel(which, offsetMin) {
+    def base = (which == "sunrise") ? "Sunrise" : "Sunset"
+    def off = offsetMin ?: 0
+    if (off == 0) return base
+    if (off > 0) return "${base} +${off}m".toString()
+    return "${base} ${off}m".toString()
+}
+
+def sunTimesJsonFragment() {
+    def rise = null
+    def set = null
+    try { rise = scheduleSunMs("sunrise", 0, null) } catch (e) {}
+    try { set = scheduleSunMs("sunset", 0, null) } catch (e) {}
+    def out = new StringBuilder()
+    out << ",\"sunTimes\":{"
+    out << "\"sunrise\":" << (rise == null ? "null" : rise.toString())
+    out << ",\"sunset\":" << (set == null ? "null" : set.toString())
+    out << "}"
+    return out.toString()
+}
+
 def scheduleSummary(s) {
     if (!s) return ""
     def tr = s.trigger ?: [:]
     def kind = tr?.kind?.toString()
     switch (kind) {
         case "daily":
+            if (scheduleTriggerWhen(tr) != "clock") {
+                return "Daily " + scheduleSunLabel(scheduleTriggerWhen(tr), scheduleOffsetMin(tr))
+            }
             return "Daily " + (tr?.time ?: "")
         case "weekly":
             def d = (tr?.days instanceof List ? tr.days : []).join(",")
+            if (scheduleTriggerWhen(tr) != "clock") {
+                return "Weekly " + (d ?: "") + " " + scheduleSunLabel(scheduleTriggerWhen(tr), scheduleOffsetMin(tr))
+            }
             return "Weekly " + (d ?: "") + " " + (tr?.time ?: "")
         case "once":
             return "Once " + (tr?.at ?: "")
+        case "mode":
+            def m = tr?.mode?.toString() ?: ""
+            if (m) return "When mode is " + m
+            return "When hub mode changes"
         default:
             return kind ?: ""
     }
@@ -2273,6 +2411,14 @@ def schedulesJsonFragment() {
         out << ",\"nextFire\":" << (nextFire == null ? "null" : nextFire.toString())
         out << ",\"trigger\":" << groovy.json.JsonOutput.toJson(s?.trigger ?: [:])
         out << ",\"action\":" << groovy.json.JsonOutput.toJson(s?.action ?: [:])
+        out << ",\"onlyInModes\":["
+        boolean mf = true
+        def modeList = (s?.onlyInModes instanceof List) ? s.onlyInModes : []
+        for (m in modeList) {
+            if (!mf) out << ","; mf = false
+            out << jsonStr(m?.toString())
+        }
+        out << "]"
         out << ",\"ts\":" << (s?.ts == null ? "0" : s.ts.toString())
         out << "}"
     }
@@ -2284,8 +2430,41 @@ def initializeScheduler() {
     // Targeted unschedules only — never bare unschedule() (would kill light metering jobs).
     try { unschedule("scheduledJobHandler") } catch (e) {}
     try { unschedule("cleanupSchedules") } catch (e) {}
+    try { unschedule("schedulerMidnightRearm") } catch (e) {}
     rebuildScheduledJobs()
+    try { subscribe(location, "sunriseTime", schedulerSunTimeChanged) } catch (e) {}
+    try { subscribe(location, "sunsetTime", schedulerSunTimeChanged) } catch (e) {}
+    try { subscribe(location, "mode", schedulerModeChanged) } catch (e) {}
+    try { schedule("0 0 0 * * ?", "schedulerMidnightRearm") } catch (e) {}
     try { runEvery5Minutes("cleanupSchedules") } catch (e) {}
+}
+
+def schedulerSunTimeChanged(evt) {
+    try { rebuildScheduledJobs() } catch (e) { log.warn "Modern Dashboard: sun time re-arm failed: ${e}" }
+}
+
+def schedulerMidnightRearm() {
+    try { rebuildScheduledJobs() } catch (e) { log.warn "Modern Dashboard: midnight scheduler re-arm failed: ${e}" }
+}
+
+def schedulerModeChanged(evt) {
+    def newMode = evt?.value?.toString()?.trim()
+    if (!newMode) {
+        try { newMode = location.mode?.toString()?.trim() } catch (e) {}
+    }
+    if (!newMode) return
+    def map = parseSchedulesMap()
+    for (id in map.keySet().toList()) {
+        def s = map[id]
+        if (!s || s?.enabled != true) continue
+        if (s?.trigger?.kind?.toString() != "mode") continue
+        if (s?.trigger?.mode?.toString() != newMode) continue
+        try {
+            scheduledJobHandler([id: id.toString()])
+        } catch (e) {
+            log.warn "Modern Dashboard: mode schedule ${id} failed: ${e}"
+        }
+    }
 }
 
 def rebuildScheduledJobs() {
@@ -2303,11 +2482,20 @@ def rebuildScheduledJobs() {
         if (enabled) {
             try {
                 if (kind == "daily" || kind == "weekly") {
-                    def cron = scheduleCronForTrigger(kind, tr?.time, tr?.days)
-                    if (cron) {
-                        schedule(cron, "scheduledJobHandler", [data: [id: id.toString()], overwrite: false])
-                        def nf = cronNextFire(cron, now)
-                        if (nf != null) nextFire = nf
+                    def when = scheduleTriggerWhen(tr)
+                    if (when == "clock") {
+                        def cron = scheduleCronForTrigger(kind, tr?.time, tr?.days)
+                        if (cron) {
+                            schedule(cron, "scheduledJobHandler", [data: [id: id.toString()], overwrite: false])
+                            def nf = cronNextFire(cron, now)
+                            if (nf != null) nextFire = nf
+                        }
+                    } else {
+                        def nf = scheduleSunNextFire(tr, when, now)
+                        if (nf != null && nf > now) {
+                            runOnce(new Date(nf), "scheduledJobHandler", [data: [id: id.toString()]])
+                            nextFire = nf
+                        }
                     }
                 } else if (kind == "once") {
                     def atMs = scheduleOnceToMs(tr?.at)
@@ -2318,6 +2506,8 @@ def rebuildScheduledJobs() {
                         // past one-time — will be removed by cleanupSchedules shortly
                         nextFire = null
                     }
+                } else if (kind == "mode") {
+                    nextFire = null
                 }
             } catch (e) {
                 log.warn "Modern Dashboard: schedule ${id} register failed: ${e}"
@@ -2353,14 +2543,17 @@ def scheduledJobHandler(data) {
     def s = map[id]
     if (!s) return
     if (s?.enabled != true) return
-    // Mode condition (time-based triggers only)
-    def onlyInModes = s?.onlyInModes
-    if (onlyInModes instanceof List && onlyInModes) {
-        def cur = ""
-        try { cur = location.mode?.toString() ?: "" } catch (e) {}
-        def ok = false
-        for (m in onlyInModes) { if (m?.toString() == cur) { ok = true; break } }
-        if (!ok) return
+    def kind = s?.trigger?.kind?.toString()
+    // Mode condition applies to time-based schedules only (not mode triggers)
+    if (kind != "mode") {
+        def onlyInModes = s?.onlyInModes
+        if (onlyInModes instanceof List && onlyInModes) {
+            def cur = ""
+            try { cur = location.mode?.toString() ?: "" } catch (e) {}
+            def ok = false
+            for (m in onlyInModes) { if (m?.toString() == cur) { ok = true; break } }
+            if (!ok) return
+        }
     }
     // Mark last fired
     s.lastFired = now()
@@ -2371,23 +2564,32 @@ def scheduledJobHandler(data) {
         log.warn "Modern Dashboard: schedule ${id} action failed: ${e}"
     }
     // One-time schedules self-delete after firing
-    def kind = s?.trigger?.kind?.toString()
     if (kind == "once") {
         map.remove(id)
         saveSchedulesMap(map)
-        // Nothing else to re-register for this id
         return
     }
-    // Recompute nextFire for recurring (sunrise/sunset handled in later phases)
+    // Mode triggers are event-driven — nothing to re-arm
+    if (kind == "mode") {
+        saveSchedulesMap(map)
+        return
+    }
     saveSchedulesMap(map)
     try {
         def tr = s?.trigger
         if (kind == "daily" || kind == "weekly") {
-            def cron = scheduleCronForTrigger(kind, tr?.time, tr?.days)
-            if (cron) {
-                def nf = cronNextFire(cron, now())
-                s.nextFire = nf
+            def when = scheduleTriggerWhen(tr)
+            if (when == "clock") {
+                def cron = scheduleCronForTrigger(kind, tr?.time, tr?.days)
+                if (cron) {
+                    def nf = cronNextFire(cron, now())
+                    s.nextFire = nf
+                    saveSchedulesMap(map)
+                }
+            } else {
                 saveSchedulesMap(map)
+                rebuildScheduledJobs()
+                return
             }
         }
     } catch (e) {}
@@ -2400,6 +2602,12 @@ def runScheduleAction(action) {
         case "lights":
             runScheduleLightAction(action)
             break
+        case "switches":
+            runScheduleOnOffAction(action, plainSwitches)
+            break
+        case "outlets":
+            runScheduleOnOffAction(action, outletSwitches)
+            break
         case "thermostats":
             runScheduleThermostatAction(action)
             break
@@ -2411,6 +2619,22 @@ def runScheduleAction(action) {
             break
         default:
             break
+    }
+}
+
+def runScheduleOnOffAction(action, deviceList) {
+    def states = action?.states
+    if (!(states instanceof List)) return
+    for (st in states) {
+        def id = st?.id
+        if (id == null) continue
+        def dev = deviceList?.find { it.id.toString() == id.toString() }
+        if (!dev) continue
+        try {
+            if (st?.on == true) dev.on() else dev.off()
+        } catch (e) {
+            log.warn "Modern Dashboard: schedule on/off cmd failed for ${id}: ${e}"
+        }
     }
 }
 
@@ -2517,6 +2741,7 @@ def schedulesListForClient() {
             nextFire: s?.nextFire,
             trigger: s?.trigger,
             action: s?.action,
+            onlyInModes: (s?.onlyInModes instanceof List) ? s.onlyInModes : [],
             ts: s?.ts
         ]
     }
@@ -2533,7 +2758,19 @@ def schedulesNormalizePayload(body) {
     def tr = [:]
     tr.kind = body?.trigger?.kind?.toString()?.trim() ?: "daily"
     if (tr.kind == "daily" || tr.kind == "weekly") {
-        tr.time = body?.trigger?.time?.toString()?.trim() ?: "00:00"
+        tr.when = body?.trigger?.when?.toString()?.trim()?.toLowerCase() ?: "clock"
+        if (tr.when != "sunrise" && tr.when != "sunset") tr.when = "clock"
+        if (tr.when == "clock") {
+            tr.time = body?.trigger?.time?.toString()?.trim() ?: "00:00"
+            tr.offsetMin = 0
+        } else {
+            tr.time = ""
+            try {
+                tr.offsetMin = Math.max(-720, Math.min(720, (body?.trigger?.offsetMin ?: 0).toInteger()))
+            } catch (e) {
+                tr.offsetMin = 0
+            }
+        }
         if (tr.kind == "weekly") {
             def days = body?.trigger?.days
             if (days instanceof List) {
@@ -2544,26 +2781,34 @@ def schedulesNormalizePayload(body) {
         }
     } else if (tr.kind == "once") {
         tr.at = body?.trigger?.at?.toString()?.trim() ?: ""
+    } else if (tr.kind == "mode") {
+        tr.mode = body?.trigger?.mode?.toString()?.trim() ?: ""
     }
     s.trigger = tr
-    // optional mode condition
-    def modes = body?.onlyInModes
-    if (modes instanceof List) {
-        s.onlyInModes = modes.collect { it?.toString() }.findAll { it }
-    } else {
+    // optional mode condition (time-based schedules only)
+    if (tr.kind == "mode") {
         s.onlyInModes = []
+    } else {
+        def modes = body?.onlyInModes
+        if (modes instanceof List) {
+            s.onlyInModes = modes.collect { it?.toString() }.findAll { it }
+        } else {
+            s.onlyInModes = []
+        }
     }
     // action
     def ac = [:]
     ac.target = body?.action?.target?.toString()?.trim() ?: "lights"
-    if (ac.target == "lights") {
+    if (ac.target == "lights" || ac.target == "switches" || ac.target == "outlets") {
         def states = body?.action?.states
         if (states instanceof List) {
             ac.states = states.collect {
                 def o = [id: it?.id]
                 o.on = (it?.on == true)
-                if (it?.level != null) o.level = it.level
-                if (it?.ct != null) o.ct = it.ct
+                if (ac.target == "lights") {
+                    if (it?.level != null) o.level = it.level
+                    if (it?.ct != null) o.ct = it.ct
+                }
                 o
             }
         } else {

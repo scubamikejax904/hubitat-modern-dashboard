@@ -7,6 +7,15 @@
   - Actions: lights (per-room or per-device on/off, dimming for dimmers, white-balance for CT-capable devices), thermostats (mode, heat/cool setpoints, fan mode), and hub mode.
   - Each schedule shows last run and next run; per-row toggle with distinct enabled/disabled colors.
   - Groovy backend persists schedules in `state.schedulesJson`, arms jobs via Quartz `schedule()` (daily/weekly) and `runOnce()` (one-time), recomputes next-fire with a 7-field cron parser, re-arms on `updated()`/`installed()`, and prunes past one-time schedules every 5 minutes. Endpoints: `/schedules` (GET), `/schedules/save`, `/schedules/delete`, `/schedules/toggle`, `/schedules/test`.
+- Scheduler Phase 3: sunrise and sunset triggers with minute offsets for daily and weekly schedules.
+  - Sun-based schedules use `runOnce` and re-arm on fire, at midnight, and when hub `sunriseTime`/`sunsetTime` events update.
+  - Dashboard step 1 offers Clock / Sunrise / Sunset with preset and custom offsets; shows today's computed time when available via `sunTimes` in `/data`.
+- Scheduler Phase 4: hub mode as trigger and optional mode condition on time-based schedules.
+  - **When mode changes** trigger fires via `subscribe(location, "mode", …)` when the hub enters the selected mode.
+  - **Restrict to modes** optional condition on daily, weekly, once, and sun-time schedules; hidden for mode triggers.
+- Scheduler Phase 2: switches and outlets as separate scheduler action types.
+  - Companion app device pickers for plain switches and outlets; streamed in `/data` as `plainSwitches` and `outlets`.
+  - Scheduler workflow step 2 shows Switches/Outlets only when devices are configured; step 3 supports per-room selection with on/off only.
 - Scheduler infrastructure: fourth JS chunk (`mld-app-post3.js`) housing the scheduler UI; build enforces 128 KB limit on all four app chunks.
 
 ## 0.1.9

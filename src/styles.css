@@ -1058,6 +1058,12 @@ body {
 .sched-onoff { display: flex; gap: 6px; }
 .sched-slider { width: 100%; }
 .sched-slider-val { font-size: 0.8rem; color: var(--muted); align-self: flex-end; }
+.sched-offset-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.sched-offset { padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); color: var(--text, #e6e6e6); font-size: 0.78rem; cursor: pointer; }
+.sched-offset.is-on { background: var(--accent, #7b5cff); border-color: var(--accent, #7b5cff); color: #fff; }
+.sched-offset-custom { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.sched-sun-preview-val { font-size: 0.9rem; color: var(--text, #e6e6e6); }
+.sched-hint { margin: 0 0 6px; font-size: 0.8rem; color: var(--muted); line-height: 1.35; }
 
 .sensor-popup-wrap { display: flex; flex-direction: column; gap: 8px; }
 .sensor-toolbar { display: flex; justify-content: flex-end; padding: 0 2px; }
