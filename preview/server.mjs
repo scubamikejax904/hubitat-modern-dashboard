@@ -50,6 +50,14 @@ const HSM_MODE_TO_STATUS = {
 };
 
 let state = buildMockData(130);
+// seed one sample schedule so the Scheduler nav is visible in preview
+state.schedules = [{
+  id: "sc-demo-1", name: "Evening lights", enabled: true,
+  trigger: { kind: "daily", time: "19:30", days: [], at: "" },
+  onlyInModes: [], action: { target: "lights", states: [{ id: 1, on: true, level: 80, ct: null }] },
+  lastFired: Date.now() - 3 * 3600 * 1000, nextFire: Date.now() + 3600 * 1000, ts: Date.now(),
+  summary: "Daily 19:30",
+}];
 
 function buildMockData(count) {
   const rooms = ROOM_NAMES.map((name, i) => ({ id: i + 1, name }));
@@ -112,7 +120,7 @@ function buildMockData(count) {
     { i: 4004, n: "Office HomePod", r: 4, st: "playing", v: 28, tr: "Khruangbin — Texas Sun", m: "unmuted", trackIdx: 3, f: AUDIO_F_AIRPLAY },
     { i: 4005, n: "Patio Speaker", r: 7, st: "stopped", v: 0, tr: "", m: "muted", trackIdx: 2, f: AUDIO_F_FULL },
   ];
-  return { config: { pollIntervalMs: 5000, useWebSocket: false, dashboardName: "mDash", roomOrder: [], favorites: [1, 5, 1001, 2103] }, rooms, devices, thermostats, tempSensors, sensors, locks, music, hubModes: ["Day", "Evening", "Night", "Away"], currentHubMode: "Day", hsmStatus: "disarmed", hsmAlert: "water", hsmAlertDesc: "Basement leak sensor", hsmEnabled: true, hsmPinEnabled: true, hsmPinRequired: true, thermostatsPopupEnabled: true, unlockPinEnabled: true, unlockPinRequired: true, scenes: [{ id: 1, n: "Good Morning" }, { id: 2, n: "Movie Time" }, { id: 3, n: "Good Night" }, { id: 4, n: "Away" }] };
+  return { config: { pollIntervalMs: 5000, useWebSocket: false, dashboardName: "mDash", roomOrder: [], favorites: [1, 5, 1001, 2103] }, rooms, devices, thermostats, tempSensors, sensors, locks, music, hubModes: ["Day", "Evening", "Night", "Away"], currentHubMode: "Day", hsmStatus: "disarmed", hsmAlert: "water", hsmAlertDesc: "Basement leak sensor", hsmEnabled: true, hsmPinEnabled: true, hsmPinRequired: true, thermostatsPopupEnabled: true, unlockPinEnabled: true, unlockPinRequired: true, scenes: [{ id: 1, n: "Good Morning" }, { id: 2, n: "Movie Time" }, { id: 3, n: "Good Night" }, { id: 4, n: "Away" }], schedules: [] };
 }
 
 function tstatOstateForMode(tm) {
@@ -599,9 +607,117 @@ const server = createServer(async (req, res) => {
       return res.end(JSON.stringify({ ok: true, ids }));
     }
   }
+  // ---------- scheduler mock ----------
+  if (p.startsWith("/schedules")) {
+    const sub = p.replace(/^\/schedules\/?/, "");
+    if (req.method === "GET" && (sub === "" || sub === "/")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ ok: true, schedules: mockSchedulesList() }));
+    }
+    let body;
+    try { body = await readJsonBody(req); } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      return res.end('{"ok":false,"error":"invalid json"}');
+    }
+    if (sub === "save") {
+      const id = body?.id || ("sc-" + Date.now() + "-" + Math.floor(Math.random() * 100000));
+      const existing = state.schedules.find((s) => s.id === id);
+      const s = mockNormalizeSchedule(body, id, existing);
+      if (existing) Object.assign(existing, s);
+      else state.schedules.push(s);
+      mockRecomputeNextFire(s);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ ok: true, id, schedules: mockSchedulesList() }));
+    }
+    if (sub === "delete") {
+      const id = body?.id;
+      state.schedules = state.schedules.filter((s) => s.id !== id);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ ok: true, id, schedules: mockSchedulesList() }));
+    }
+    if (sub === "toggle") {
+      const id = body?.id;
+      const s = state.schedules.find((x) => x.id === id);
+      if (!s) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        return res.end('{"ok":false,"error":"not found"}');
+      }
+      s.enabled = !s.enabled;
+      mockRecomputeNextFire(s);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ ok: true, id, enabled: s.enabled, schedules: mockSchedulesList() }));
+    }
+    if (sub === "test") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end('{"ok":true}');
+    }
+  }
   res.writeHead(404, { "Content-Type": "text/plain" });
   res.end("not found");
 });
+
+// ---------- scheduler mock helpers ----------
+function mockScheduleSummary(s) {
+  const tr = s?.trigger || {};
+  if (tr.kind === "daily") return "Daily " + (tr.time || "");
+  if (tr.kind === "weekly") return "Weekly " + ((tr.days || []).join(",")) + " " + (tr.time || "");
+  if (tr.kind === "once") return "Once " + (tr.at || "");
+  return tr.kind || "";
+}
+
+function mockNormalizeSchedule(body, id, existing) {
+  const tr = body?.trigger || {};
+  const s = {
+    id,
+    name: (body?.name || "").trim() || ("Schedule " + (state.schedules.length + 1)),
+    enabled: body?.enabled !== false,
+    trigger: {
+      kind: tr.kind || "daily",
+      time: tr.time || "19:30",
+      days: tr.days || [],
+      at: tr.at || "",
+    },
+    onlyInModes: body?.onlyInModes || [],
+    action: body?.action || { target: "lights", states: [] },
+    lastFired: existing?.lastFired ?? null,
+    nextFire: null,
+    ts: Date.now(),
+  };
+  return s;
+}
+
+function mockRecomputeNextFire(s) {
+  s.summary = mockScheduleSummary(s);
+  if (!s.enabled) { s.nextFire = null; return; }
+  const tr = s.trigger;
+  if (tr.kind === "once") {
+    const t = new Date(tr.at).getTime();
+    s.nextFire = isNaN(t) ? null : t;
+  } else if (tr.kind === "daily" || tr.kind === "weekly") {
+    const [hh, mm] = (tr.time || "19:30").split(":").map(Number);
+    const now = new Date();
+    const days = tr.kind === "weekly" ? (tr.days || []).map((d) => ["SUN","MON","TUE","WED","THU","FRI","SAT"].indexOf(d)) : [0,1,2,3,4,5,6];
+    for (let i = 0; i < 8; i++) {
+      const cand = new Date(now);
+      cand.setDate(now.getDate() + i);
+      cand.setHours(hh, mm, 0, 0);
+      if (cand.getTime() <= now.getTime()) continue;
+      if (days.includes(cand.getDay())) { s.nextFire = cand.getTime(); return; }
+    }
+    s.nextFire = null;
+  } else {
+    s.nextFire = null;
+  }
+}
+
+function mockSchedulesList() {
+  return state.schedules.map((s) => ({
+    id: s.id, name: s.name, enabled: s.enabled,
+    summary: mockScheduleSummary(s),
+    lastFired: s.lastFired, nextFire: s.nextFire,
+    trigger: s.trigger, action: s.action, ts: s.ts,
+  }));
+}
 
 const PORT = process.env.PORT || 4321;
 server.listen(PORT, () => {

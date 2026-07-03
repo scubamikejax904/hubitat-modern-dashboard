@@ -2,8 +2,12 @@
 
 ## 0.2.0
 
-- Scheduler infrastructure: fourth JS chunk (`mld-app-post3.js`) for upcoming scheduler UI; build enforces 128 KB limit on all four app chunks.
-- Scheduler tab wiring (hidden until Phase 1); minimal hooks for schedule data from `/data`.
+- Scheduler MVP (Phase 1): create, edit, enable/disable, delete, and test schedules from the dashboard.
+  - Triggers: daily, weekly (day-of-week picker), and one-time (date+time picker); one-time schedules self-delete after firing.
+  - Actions: lights (per-room or per-device on/off, dimming for dimmers, white-balance for CT-capable devices), thermostats (mode, heat/cool setpoints, fan mode), and hub mode.
+  - Each schedule shows last run and next run; per-row toggle with distinct enabled/disabled colors.
+  - Groovy backend persists schedules in `state.schedulesJson`, arms jobs via Quartz `schedule()` (daily/weekly) and `runOnce()` (one-time), recomputes next-fire with a 7-field cron parser, re-arms on `updated()`/`installed()`, and prunes past one-time schedules every 5 minutes. Endpoints: `/schedules` (GET), `/schedules/save`, `/schedules/delete`, `/schedules/toggle`, `/schedules/test`.
+- Scheduler infrastructure: fourth JS chunk (`mld-app-post3.js`) housing the scheduler UI; build enforces 128 KB limit on all four app chunks.
 
 ## 0.1.9
 

@@ -153,10 +153,12 @@ def mainPage() {
 def installed() {
     if (!state.accessToken) { createAccessToken() }
     logInit()
+    try { initializeScheduler() } catch (e) { log.warn "Modern Dashboard: scheduler init failed: ${e}" }
 }
 
 def updated() {
     logInit()
+    try { initializeScheduler() } catch (e) { log.warn "Modern Dashboard: scheduler init failed: ${e}" }
 }
 
 def logInit() {
@@ -530,6 +532,11 @@ mappings {
     path("/snapshot/restore") { action: [GET: "snapshotRestoreGet", POST: "snapshotRestore"] }
     path("/snapshot/status") { action: [GET: "snapshotStatus"] }
     path("/lights/bulk") { action: [GET: "lightsBulkGet", POST: "lightsBulk"] }
+    path("/schedules") { action: [GET: "schedulesGet", POST: "schedulesSave"] }
+    path("/schedules/save") { action: [POST: "schedulesSave"] }
+    path("/schedules/delete") { action: [POST: "schedulesDelete"] }
+    path("/schedules/toggle") { action: [POST: "schedulesToggle"] }
+    path("/schedules/test") { action: [POST: "schedulesTest"] }
 }
 
 def readIconDataUri(String b64FileName) {
@@ -935,6 +942,7 @@ def renderData() {
     out << "]"
     out << snapshotsJsonFragment()
     out << lightJobJsonFragment()
+    out << schedulesJsonFragment()
     out << "}"
     render contentType: "application/json", data: out.toString(), status: 200
 }
@@ -2178,4 +2186,560 @@ def saveFavoritesFromList(ids) {
     }
     out << "]}"
     return render(contentType: "application/json", data: out.toString(), status: 200)
+}
+
+// ===========================================================================
+// Scheduler
+// ===========================================================================
+// Schedules are stored as a JSON map id->schedule in state.schedulesJson.
+// One shared handler `scheduledJobHandler(data)` runs each job, identified by
+// the schedule id carried in the `data` map. `rebuildScheduledJobs()` is the
+// single source of truth that applies state to the Hubitat scheduler; it is
+// called by every mutating endpoint and by the periodic cleanup job.
+// ===========================================================================
+
+def parseSchedulesMap() {
+    if (!state.schedulesJson) return [:]
+    try {
+        return new groovy.json.JsonSlurper().parseText(state.schedulesJson.toString()) ?: [:]
+    } catch (e) {
+        return [:]
+    }
+}
+
+def saveSchedulesMap(map) {
+    state.schedulesJson = groovy.json.JsonOutput.toJson(map ?: [:])
+}
+
+def scheduleNewId() {
+    return "sc-" + System.currentTimeMillis() + "-" + Math.abs(new Random().nextInt() % 100000)
+}
+
+// Stable cron string for daily/weekly clock-time triggers.
+// kind: "daily" or "weekly"; days: list of 3-letter upper-case day names (["MON","WED"])
+// time: "HH:MM" (24h)
+def scheduleCronForTrigger(kind, time, days) {
+    def parts = time?.toString()?.split(":")
+    if (!parts || parts.length < 2) return null
+    def hh = parts[0]?.trim()
+    def mm = parts[1]?.trim()
+    try { hh.toInteger(); mm.toInteger() } catch (e) { return null }
+    def dow
+    if (kind == "weekly" && days instanceof List && days) {
+        dow = days.collect { it?.toString()?.trim()?.toUpperCase() }.findAll { it }.join(",")
+        if (!dow) dow = "*"
+    } else {
+        dow = "?"
+    }
+    // sec min hour dom mon dow year
+    return "0 ${mm} ${hh} ? * ${dow} *".toString()
+}
+
+def scheduleSummary(s) {
+    if (!s) return ""
+    def tr = s.trigger ?: [:]
+    def kind = tr?.kind?.toString()
+    switch (kind) {
+        case "daily":
+            return "Daily " + (tr?.time ?: "")
+        case "weekly":
+            def d = (tr?.days instanceof List ? tr.days : []).join(",")
+            return "Weekly " + (d ?: "") + " " + (tr?.time ?: "")
+        case "once":
+            return "Once " + (tr?.at ?: "")
+        default:
+            return kind ?: ""
+    }
+}
+
+def schedulesJsonFragment() {
+    def map = parseSchedulesMap()
+    def out = new StringBuilder()
+    out << ",\"schedules\":["
+    boolean first = true
+    def ids = []
+    try { ids = map.keySet().sort { a, b -> a.toString() <=> b.toString() } } catch (e) {}
+    for (id in ids) {
+        def s = map[id]
+        if (!s) continue
+        if (!first) out << ","; first = false
+        out << "{\"id\":" << jsonStr(id.toString())
+        out << ",\"name\":" << jsonStr(s?.name?.toString() ?: "")
+        out << ",\"enabled\":" << (s?.enabled == true ? "true" : "false")
+        out << ",\"summary\":" << jsonStr(scheduleSummary(s))
+        def lastFired = s?.lastFired
+        out << ",\"lastFired\":" << (lastFired == null ? "null" : lastFired.toString())
+        def nextFire = s?.nextFire
+        out << ",\"nextFire\":" << (nextFire == null ? "null" : nextFire.toString())
+        out << ",\"trigger\":" << groovy.json.JsonOutput.toJson(s?.trigger ?: [:])
+        out << ",\"action\":" << groovy.json.JsonOutput.toJson(s?.action ?: [:])
+        out << ",\"ts\":" << (s?.ts == null ? "0" : s.ts.toString())
+        out << "}"
+    }
+    out << "]"
+    return out.toString()
+}
+
+def initializeScheduler() {
+    // Targeted unschedules only — never bare unschedule() (would kill light metering jobs).
+    try { unschedule("scheduledJobHandler") } catch (e) {}
+    try { unschedule("cleanupSchedules") } catch (e) {}
+    rebuildScheduledJobs()
+    try { runEvery5Minutes("cleanupSchedules") } catch (e) {}
+}
+
+def rebuildScheduledJobs() {
+    try { unschedule("scheduledJobHandler") } catch (e) {}
+    def map = parseSchedulesMap()
+    def now = now()
+    def updated = false
+    for (id in map.keySet().toList()) {
+        def s = map[id]
+        if (!s) continue
+        def enabled = (s?.enabled == true)
+        def tr = s?.trigger ?: [:]
+        def kind = tr?.kind?.toString()
+        def nextFire = null
+        if (enabled) {
+            try {
+                if (kind == "daily" || kind == "weekly") {
+                    def cron = scheduleCronForTrigger(kind, tr?.time, tr?.days)
+                    if (cron) {
+                        schedule(cron, "scheduledJobHandler", [data: [id: id.toString()], overwrite: false])
+                        def nf = cronNextFire(cron, now)
+                        if (nf != null) nextFire = nf
+                    }
+                } else if (kind == "once") {
+                    def atMs = scheduleOnceToMs(tr?.at)
+                    if (atMs != null && atMs > now) {
+                        runOnce(new Date(atMs), "scheduledJobHandler", [data: [id: id.toString()]])
+                        nextFire = atMs
+                    } else if (atMs != null && atMs <= now) {
+                        // past one-time — will be removed by cleanupSchedules shortly
+                        nextFire = null
+                    }
+                }
+            } catch (e) {
+                log.warn "Modern Dashboard: schedule ${id} register failed: ${e}"
+            }
+        }
+        if (s.nextFire != nextFire) {
+            s.nextFire = nextFire
+            updated = true
+        }
+    }
+    if (updated) saveSchedulesMap(map)
+}
+
+def scheduleOnceToMs(at) {
+    if (at == null) return null
+    try {
+        String v = at.toString()
+        // Accept "yyyy-MM-ddTHH:mm" or "yyyy-MM-ddTHH:mm:ss"
+        if (v.length() >= 16) {
+            def tz = location.timeZone
+            def fmt = new java.text.SimpleDateFormat(v.length() >= 19 ? "yyyy-MM-dd'T'HH:mm:ss" : "yyyy-MM-dd'T'HH:mm")
+            if (tz) fmt.setTimeZone(tz)
+            return fmt.parse(v).getTime()
+        }
+    } catch (e) {}
+    return null
+}
+
+def scheduledJobHandler(data) {
+    def id = data?.id?.toString()
+    if (!id) return
+    def map = parseSchedulesMap()
+    def s = map[id]
+    if (!s) return
+    if (s?.enabled != true) return
+    // Mode condition (time-based triggers only)
+    def onlyInModes = s?.onlyInModes
+    if (onlyInModes instanceof List && onlyInModes) {
+        def cur = ""
+        try { cur = location.mode?.toString() ?: "" } catch (e) {}
+        def ok = false
+        for (m in onlyInModes) { if (m?.toString() == cur) { ok = true; break } }
+        if (!ok) return
+    }
+    // Mark last fired
+    s.lastFired = now()
+    // Run actions
+    try {
+        runScheduleAction(s?.action)
+    } catch (e) {
+        log.warn "Modern Dashboard: schedule ${id} action failed: ${e}"
+    }
+    // One-time schedules self-delete after firing
+    def kind = s?.trigger?.kind?.toString()
+    if (kind == "once") {
+        map.remove(id)
+        saveSchedulesMap(map)
+        // Nothing else to re-register for this id
+        return
+    }
+    // Recompute nextFire for recurring (sunrise/sunset handled in later phases)
+    saveSchedulesMap(map)
+    try {
+        def tr = s?.trigger
+        if (kind == "daily" || kind == "weekly") {
+            def cron = scheduleCronForTrigger(kind, tr?.time, tr?.days)
+            if (cron) {
+                def nf = cronNextFire(cron, now())
+                s.nextFire = nf
+                saveSchedulesMap(map)
+            }
+        }
+    } catch (e) {}
+}
+
+def runScheduleAction(action) {
+    if (!action) return
+    def target = action?.target?.toString()
+    switch (target) {
+        case "lights":
+            runScheduleLightAction(action)
+            break
+        case "thermostats":
+            runScheduleThermostatAction(action)
+            break
+        case "hubMode":
+            def mode = action?.mode?.toString()?.trim()
+            if (mode) {
+                try { location.setMode(mode) } catch (e) { log.warn "setMode failed: ${e}" }
+            }
+            break
+        default:
+            break
+    }
+}
+
+def runScheduleLightAction(action) {
+    def states = action?.states
+    if (!(states instanceof List)) return
+    for (st in states) {
+        def id = st?.id
+        if (id == null) continue
+        def dev = lights?.find { it.id.toString() == id.toString() }
+        if (!dev) continue
+        try {
+            def on = (st?.on == true)
+            if (on) {
+                dev.on()
+                def lvl = st?.level
+                if (lvl != null && dev.hasCapability("SwitchLevel")) {
+                    int l = Math.max(0, Math.min(100, lvl.toInteger()))
+                    dev.setLevel(l)
+                }
+                def ct = st?.ct
+                if (ct != null && dev.hasCapability("ColorTemperature")) {
+                    int k = Math.max(2500, Math.min(6000, ct.toInteger()))
+                    try { dev.setColorTemperature(k) } catch (e) {}
+                }
+            } else {
+                dev.off()
+            }
+        } catch (e) {
+            log.warn "Modern Dashboard: schedule light cmd failed for ${id}: ${e}"
+        }
+    }
+}
+
+def runScheduleThermostatAction(action) {
+    def ids = action?.devices
+    if (!(ids instanceof List)) return
+    def mode = action?.mode?.toString()
+    def heat = action?.heat
+    def cool = action?.cool
+    def fanMode = action?.fanMode?.toString()
+    for (id in ids) {
+        def dev = thermostats?.find { it.id.toString() == id.toString() }
+        if (!dev) continue
+        try {
+            if (mode) {
+                try { dev.setThermostatMode(mode) } catch (e) {}
+            }
+            if (heat != null) {
+                try { dev.setHeatingSetpoint(heat.toInteger()) } catch (e) {}
+            }
+            if (cool != null) {
+                try { dev.setCoolingSetpoint(cool.toInteger()) } catch (e) {}
+            }
+            if (fanMode && (dev.hasCapability("ThermostatFanMode") || dev.hasAttribute("thermostatFanMode"))) {
+                try { dev.setFanMode(fanMode) } catch (e) {}
+            }
+        } catch (e) {
+            log.warn "Modern Dashboard: schedule tstat cmd failed for ${id}: ${e}"
+        }
+    }
+}
+
+def cleanupSchedules() {
+    def map = parseSchedulesMap()
+    def now = now()
+    def changed = false
+    for (id in map.keySet().toList()) {
+        def s = map[id]
+        if (!s) continue
+        def kind = s?.trigger?.kind?.toString()
+        if (kind == "once") {
+            def atMs = scheduleOnceToMs(s?.trigger?.at)
+            if (atMs != null && atMs < now) {
+                map.remove(id)
+                changed = true
+            }
+        }
+    }
+    if (changed) saveSchedulesMap(map)
+    rebuildScheduledJobs()
+}
+
+// --- endpoints ---
+
+def schedulesGet() {
+    return render(contentType: "application/json", data: groovy.json.JsonOutput.toJson([ok: true, schedules: schedulesListForClient()]), status: 200)
+}
+
+def schedulesListForClient() {
+    def map = parseSchedulesMap()
+    def out = []
+    def ids = []
+    try { ids = map.keySet().sort { a, b -> a.toString() <=> b.toString() } } catch (e) {}
+    for (id in ids) {
+        def s = map[id]
+        if (!s) continue
+        out << [
+            id: id.toString(),
+            name: s?.name?.toString() ?: "",
+            enabled: (s?.enabled == true),
+            summary: scheduleSummary(s),
+            lastFired: s?.lastFired,
+            nextFire: s?.nextFire,
+            trigger: s?.trigger,
+            action: s?.action,
+            ts: s?.ts
+        ]
+    }
+    return out
+}
+
+def schedulesNormalizePayload(body) {
+    def s = [:]
+    def id = body?.id?.toString()?.trim()
+    if (id) s.id = id
+    s.name = body?.name?.toString()?.trim() ?: ""
+    s.enabled = (body?.enabled == true)
+    // trigger
+    def tr = [:]
+    tr.kind = body?.trigger?.kind?.toString()?.trim() ?: "daily"
+    if (tr.kind == "daily" || tr.kind == "weekly") {
+        tr.time = body?.trigger?.time?.toString()?.trim() ?: "00:00"
+        if (tr.kind == "weekly") {
+            def days = body?.trigger?.days
+            if (days instanceof List) {
+                tr.days = days.collect { it?.toString()?.trim()?.toUpperCase() }.findAll { it }
+            } else {
+                tr.days = []
+            }
+        }
+    } else if (tr.kind == "once") {
+        tr.at = body?.trigger?.at?.toString()?.trim() ?: ""
+    }
+    s.trigger = tr
+    // optional mode condition
+    def modes = body?.onlyInModes
+    if (modes instanceof List) {
+        s.onlyInModes = modes.collect { it?.toString() }.findAll { it }
+    } else {
+        s.onlyInModes = []
+    }
+    // action
+    def ac = [:]
+    ac.target = body?.action?.target?.toString()?.trim() ?: "lights"
+    if (ac.target == "lights") {
+        def states = body?.action?.states
+        if (states instanceof List) {
+            ac.states = states.collect {
+                def o = [id: it?.id]
+                o.on = (it?.on == true)
+                if (it?.level != null) o.level = it.level
+                if (it?.ct != null) o.ct = it.ct
+                o
+            }
+        } else {
+            ac.states = []
+        }
+    } else if (ac.target == "thermostats") {
+        def devs = body?.action?.devices
+        ac.devices = (devs instanceof List) ? devs.collect { it } : []
+        if (body?.action?.mode != null) ac.mode = body.action.mode.toString()
+        if (body?.action?.heat != null) ac.heat = body.action.heat
+        if (body?.action?.cool != null) ac.cool = body.action.cool
+        if (body?.action?.fanMode != null) ac.fanMode = body.action.fanMode.toString()
+    } else if (ac.target == "hubMode") {
+        ac.mode = body?.action?.mode?.toString()?.trim() ?: ""
+    }
+    s.action = ac
+    s.ts = now()
+    return s
+}
+
+def schedulesSave() {
+    def body = parseRequestJson()
+    if (body == null) {
+        return render(contentType: "application/json", data: '{"ok":false,"error":"missing body"}', status: 400)
+    }
+    def s = schedulesNormalizePayload(body)
+    def map = parseSchedulesMap()
+    def id = s.id
+    if (!id) id = scheduleNewId()
+    def existing = map[id]
+    if (existing && existing.lastFired != null) s.lastFired = existing.lastFired
+    map[id] = s
+    saveSchedulesMap(map)
+    rebuildScheduledJobs()
+    def out = new StringBuilder()
+    out << "{\"ok\":true,\"id\":" << jsonStr(id.toString())
+    out << ",\"schedules\":" << groovy.json.JsonOutput.toJson(schedulesListForClient())
+    out << "}"
+    return render(contentType: "application/json", data: out.toString(), status: 200)
+}
+
+def schedulesDelete() {
+    def body = parseRequestJson()
+    def id = body?.id?.toString()?.trim()
+    if (!id) {
+        return render(contentType: "application/json", data: '{"ok":false,"error":"missing id"}', status: 400)
+    }
+    def map = parseSchedulesMap()
+    if (map.containsKey(id)) {
+        map.remove(id)
+        saveSchedulesMap(map)
+    }
+    rebuildScheduledJobs()
+    def out = new StringBuilder()
+    out << "{\"ok\":true,\"id\":" << jsonStr(id.toString())
+    out << ",\"schedules\":" << groovy.json.JsonOutput.toJson(schedulesListForClient())
+    out << "}"
+    return render(contentType: "application/json", data: out.toString(), status: 200)
+}
+
+def schedulesToggle() {
+    def body = parseRequestJson()
+    def id = body?.id?.toString()?.trim()
+    if (!id) {
+        return render(contentType: "application/json", data: '{"ok":false,"error":"missing id"}', status: 400)
+    }
+    def map = parseSchedulesMap()
+    def s = map[id]
+    if (!s) {
+        return render(contentType: "application/json", data: '{"ok":false,"error":"not found"}', status: 404)
+    }
+    s.enabled = (s.enabled != true)
+    map[id] = s
+    saveSchedulesMap(map)
+    rebuildScheduledJobs()
+    def out = new StringBuilder()
+    out << "{\"ok\":true,\"id\":" << jsonStr(id.toString())
+    out << ",\"enabled\":" << (s.enabled == true ? "true" : "false")
+    out << ",\"schedules\":" << groovy.json.JsonOutput.toJson(schedulesListForClient())
+    out << "}"
+    return render(contentType: "application/json", data: out.toString(), status: 200)
+}
+
+def schedulesTest() {
+    def body = parseRequestJson()
+    def id = body?.id?.toString()?.trim()
+    if (!id) {
+        return render(contentType: "application/json", data: '{"ok":false,"error":"missing id"}', status: 400)
+    }
+    def map = parseSchedulesMap()
+    def s = map[id]
+    if (!s) {
+        return render(contentType: "application/json", data: '{"ok":false,"error":"not found"}', status: 404)
+    }
+    try {
+        runScheduleAction(s?.action)
+    } catch (e) {
+        return render(contentType: "application/json", data: "{\"ok\":false,\"error\":${jsonStr(e.message ?: e.toString())}}".toString(), status: 500)
+    }
+    return render(contentType: "application/json", data: '{"ok":true}', status: 200)
+}
+
+// --- cron next-fire helper (7-field Quartz: sec min hour dom mon dow year) ---
+// Returns next fire time in ms after `fromMs`, or null if unparseable.
+def cronNextFire(String cronExpr, long fromMs) {
+    if (cronExpr == null) return null
+    def f = cronExpr.toString().split("\\s+")
+    if (f.length < 6) return null
+    def sec = cronFieldValues(f[0], 0, 59)
+    def min = cronFieldValues(f[1], 0, 59)
+    def hour = cronFieldValues(f[2], 0, 23)
+    def dom = cronFieldValues(f[3], 1, 31)
+    def mon = cronFieldValues(f[4], 1, 12)
+    def dow = cronFieldValues(f[5], 1, 7)  // Quartz: 1=SUN .. 7=SAT
+    if (sec == null || min == null || hour == null || dom == null || mon == null || dow == null) return null
+    def tz = location.timeZone
+    def cal = new GregorianCalendar()
+    if (tz) cal.setTimeZone(tz)
+    cal.setTime(new Date(fromMs + 1000))
+    cal.set(Calendar.SECOND, 0)
+    cal.set(Calendar.MILLISECOND, 0)
+    // Cap iterations to ~2 years (2*366*24*60)
+    for (int i = 0; i < 1750000; i++) {
+        int s = cal.get(Calendar.SECOND)
+        int mi = cal.get(Calendar.MINUTE)
+        int h = cal.get(Calendar.HOUR_OF_DAY)
+        int d = cal.get(Calendar.DAY_OF_MONTH)
+        int mo = cal.get(Calendar.MONTH) + 1
+        int dw = cal.get(Calendar.DAY_OF_WEEK)  // 1=SUN .. 7=SAT
+        if (sec.contains(s) && min.contains(mi) && hour.contains(h) && mon.contains(mo) && dom.contains(d) && dow.contains(dw)) {
+            return cal.getTimeInMillis()
+        }
+        cal.add(Calendar.SECOND, 1)
+    }
+    return null
+}
+
+// Parse a single cron field into a Set of integers. Supports "*", numbers, ranges "a-b",
+// steps "a/b" and "*/b", and lists "a,b,c". '?' is treated as '*'.
+def cronFieldValues(String field, int lo, int hi) {
+    def out = new HashSet()
+    if (field == null) return null
+    String f = field.trim()
+    if (f == "?" || f == "*") {
+        for (int v = lo; v <= hi; v++) out.add(v)
+        return out
+    }
+    for (String part : f.split(",")) {
+        String p = part.trim()
+        if (!p) continue
+        int step = 1
+        int slash = p.indexOf("/")
+        if (slash >= 0) {
+            try { step = Integer.parseInt(p.substring(slash + 1).trim()) } catch (e) { return null }
+            if (step <= 0) return null
+            p = p.substring(0, slash).trim()
+        }
+        int plo = lo
+        int phi = hi
+        if (p == "*" || p == "?") {
+            // range stays lo..hi
+        } else {
+            int dash = p.indexOf("-")
+            if (dash >= 0) {
+                try {
+                    plo = Integer.parseInt(p.substring(0, dash).trim())
+                    phi = Integer.parseInt(p.substring(dash + 1).trim())
+                } catch (e) { return null }
+            } else {
+                try { plo = Integer.parseInt(p); phi = plo } catch (e) { return null }
+            }
+        }
+        if (plo < lo) plo = lo
+        if (phi > hi) phi = hi
+        for (int v = plo; v <= phi; v += step) out.add(v)
+    }
+    if (out.isEmpty()) return null
+    return out
 }
