@@ -2212,7 +2212,7 @@ def saveSchedulesMap(map) {
 }
 
 def scheduleNewId() {
-    return "sc-" + System.currentTimeMillis() + "-" + Math.abs(new Random().nextInt() % 100000)
+    return "sc-" + now() + "-" + Math.abs(new Random().nextInt() % 100000)
 }
 
 // Stable cron string for daily/weekly clock-time triggers.
