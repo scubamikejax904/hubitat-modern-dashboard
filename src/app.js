@@ -6353,7 +6353,7 @@
   }
 
   function schedulerHasContent() {
-    return schedules.length > 0;
+    return true;
   }
 
   function fmtSchedTime(ms) {
