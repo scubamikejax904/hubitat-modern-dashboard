@@ -801,11 +801,13 @@ def renderData() {
                 def st = d.currentState("temperature")
                 if (st?.unit) tempUnit = st.unit
             } catch (e) {}
+            def bat = safeCurrent(d, "battery")
             out << "{\"i\":" << d.id
             out << ",\"n\":" << jsonStr(d.displayName)
             out << ",\"r\":" << (rid == null ? "null" : rid.toString())
             out << ",\"temp\":" << numOrNull(temp)
             out << ",\"u\":" << jsonStr(tempUnit)
+            out << ",\"bat\":" << numOrNull(bat)
             out << "}"
         }
     }

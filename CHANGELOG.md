@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.5
+
+- Sensor cards show battery percentage in the bottom-left corner (temperature sensors and other sensors with a battery attribute).
+- Temperature sensor battery included in `/data` and updated live via WebSocket.
+
 ## 0.2.4
 
 - PIN pad shows a clear "Wrong PIN. Try again." message on incorrect entry (HSM and lock unlock).

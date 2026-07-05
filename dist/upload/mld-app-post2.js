@@ -1052,14 +1052,20 @@ function renderScenesPopup() {
           return;
         }
         const s = M.tempSensors.find(x => x.i === Number(m.deviceId));
-        if (s && String(m.name || "") === "temperature") {
-          const n = Number(m.value);
-          if (!isNaN(n)) {
-            s.temp = Math.round(n);
-            M.updateClimateWidgets();
-            M.updateRoomMeta();
-            if (currentCategory() === "sensors") M.refreshSensorsPopup();
-          }
+        if (s) {
+          const nm = String(m.name || "");
+          if (nm === "temperature") {
+            const n = Number(m.value);
+            if (!isNaN(n)) {
+              s.temp = Math.round(n);
+              M.updateClimateWidgets();
+              M.updateRoomMeta();
+            }
+          } else if (nm === "battery") {
+            const n = Number(m.value);
+            if (!isNaN(n)) s.bat = Math.round(n);
+          } else return;
+          if (currentCategory() === "sensors") M.refreshSensorsPopup();
           return;
         }
         const sen = M.sensors.find(x => x.i === Number(m.deviceId));

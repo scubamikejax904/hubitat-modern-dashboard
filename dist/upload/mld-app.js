@@ -2625,7 +2625,7 @@
 
   // Sensors (other-sensor pickers): [{i,n,r,t,v,a,ex:[{k,v,u?}]}]
   let sensors = [];
-  const sensorCardMap = new Map(); // id -> { el, heroEl, pillEl, pillTxt, dot, footEl, favBtn, t, i }
+  const sensorCardMap = new Map(); // id -> { el, heroEl, pillEl, pillTxt, dot, footEl, batteryEl, favBtn, t, i }
   const favSensorMap = new Map(); // id -> sensor card rec (favorites popup)
   let sensorsPopupSig = "";
   const sensorTypeFilter = new Set(); // empty = show all types

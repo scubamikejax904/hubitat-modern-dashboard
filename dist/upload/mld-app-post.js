@@ -1796,12 +1796,12 @@ async function setHsmApi(mode, pin, padApi) {
 
   // ---------- M.sensors popup ----------
   function normalizeTempSensorForCard(s) {
-    return { i: s.i, n: s.n, r: s.r, t: "temp", v: s.temp, u: s.u, a: 0, ex: [], _ref: s };
+    return { i: s.i, n: s.n, r: s.r, t: "temp", v: s.temp, u: s.u, a: 0, ex: [], bat: s.bat ?? null, _ref: s };
   }
 
   function mergedSensorList() {
     const out = [];
-    for (const s of M.tempSensors) out.push({ i: s.i, n: s.n, r: s.r, t: "temp", v: s.temp, u: s.u, a: 0, ex: [], _ref: s });
+    for (const s of M.tempSensors) out.push({ i: s.i, n: s.n, r: s.r, t: "temp", v: s.temp, u: s.u, a: 0, ex: [], bat: s.bat ?? null, _ref: s });
     for (const s of M.sensors) out.push({ i: s.i, n: s.n, r: s.r, t: s.t, v: s.v, a: s.a, ex: s.ex || [], _ref: s });
     out.sort((a, b) => {
       const ra = roomLabel(a.r).localeCompare(roomLabel(b.r));
@@ -1812,7 +1812,7 @@ async function setHsmApi(mode, pin, padApi) {
   }
 
   function sensorsPopupSignature() {
-    return mergedSensorList().map((d) => `${d.i}:${d.t}:${d.v}:${d.a}:${(d.ex || []).map((e) => e.k + e.v).join(".")}`).join("|");
+    return mergedSensorList().map((d) => `${d.i}:${d.t}:${d.v}:${d.a}:${sensorBatteryPct(d)}:${(d.ex || []).map((e) => e.k + e.v).join(".")}`).join("|");
   }
 
   function sensorTypesWithCounts() {
@@ -1917,16 +1917,35 @@ async function setHsmApi(mode, pin, padApi) {
     return { toolbar, chips };
   }
 
-  function sensorExFooter(dev) {
+  function sensorBatteryPct(dev) {
     const ex = dev.ex || [];
+    const entry = ex.find((e) => e.k === "battery");
+    if (entry?.v != null && entry.v !== "") {
+      const n = Number(entry.v);
+      if (!isNaN(n)) return Math.round(n);
+    }
+    const bat = dev.bat ?? dev._ref?.bat;
+    if (bat != null && bat !== "") {
+      const n = Number(bat);
+      if (!isNaN(n)) return Math.round(n);
+    }
+    return null;
+  }
+
+  function sensorBatteryLabel(dev) {
+    const pct = sensorBatteryPct(dev);
+    return pct != null ? pct + "% battery" : "";
+  }
+
+  function sensorExFooter(dev) {
+    const ex = (dev.ex || []).filter((e) => e.k !== "battery");
     if (!ex.length) return "";
     const parts = [];
     for (const e of ex.slice(0, 2)) {
       let txt = humanizeAttr(e.k);
       const v = e.v;
       if (v != null && v !== "") {
-        if (e.k === "battery") txt += " " + Math.round(Number(v)) + "%";
-        else if (e.k === "temperature") txt += " " + Math.round(Number(v)) + tstatTempSuffix(e.u);
+        if (e.k === "temperature") txt += " " + Math.round(Number(v)) + tstatTempSuffix(e.u);
         else if (e.k === "humidity") txt += " " + Math.round(Number(v)) + "%";
         else if (e.k === "illuminance") txt += " " + Math.round(Number(v)) + " lx";
         else txt += " " + v + (e.u ? " " + e.u : "");
@@ -1959,7 +1978,10 @@ async function setHsmApi(mode, pin, padApi) {
     }
     rec.footEl.textContent = sensorExFooter(dev);
     rec.footEl.hidden = !rec.footEl.textContent;
-    card.setAttribute("aria-label", `${dev.n || "Sensor"}, ${roomLabel(dev.r)}, ${sensorTypeLabel(dev.t)}${pill ? ", " + pill : ""}`);
+    const batTxt = sensorBatteryLabel(dev);
+    rec.batteryEl.textContent = batTxt;
+    rec.batteryEl.hidden = !batTxt;
+    card.setAttribute("aria-label", `${dev.n || "Sensor"}, ${roomLabel(dev.r)}, ${sensorTypeLabel(dev.t)}${pill ? ", " + pill : ""}${batTxt ? ", " + batTxt : ""}`);
   }
 
   function makeSensorCard(dev, context) {
@@ -1983,16 +2005,20 @@ async function setHsmApi(mode, pin, padApi) {
     const metaRow = ce("div", "sensor-card-meta");
     metaRow.textContent = roomLabel(dev.r) + " · " + sensorTypeLabel(dev.t);
     const foot = ce("div", "sensor-card-foot");
+    const actions = ce("div", "sensor-card-actions");
+    const battery = ce("div", "sensor-card-battery");
     const fav = ce("button", "sensor-card-fav tile-fav");
     fav.type = "button";
     attachFavButton(fav, dev.i);
+    actions.appendChild(battery);
+    actions.appendChild(fav);
     card.appendChild(top);
     card.appendChild(hero);
     card.appendChild(name);
     card.appendChild(metaRow);
     card.appendChild(foot);
-    card.appendChild(fav);
-    const rec = { el: card, heroEl: hero, pillEl: pill, pillTxt, dot, footEl: foot, favBtn: fav, t: dev.t, i: dev.i };
+    card.appendChild(actions);
+    const rec = { el: card, heroEl: hero, pillEl: pill, pillTxt, dot, footEl: foot, batteryEl: battery, favBtn: fav, t: dev.t, i: dev.i };
     applySensorCardState(card, dev, rec);
     if (context === "favorites") M.favSensorMap.set(dev.i, rec);
     else M.sensorCardMap.set(dev.i, rec);
@@ -2522,5 +2548,5 @@ async function setHsmApi(mode, pin, padApi) {
     ruleSection.appendChild(ruleModes);
     body.appendChild(ruleSection);
   }
-  Object.assign(M, { setHubModeApi, activateSceneApi, bulkLightsApi, snapshotSaveApi, snapshotRestoreApi, saveFavorites, hubModeLocked, hsmLocked, roomLabel, snapshotRoomKey, snapshotHouseKey, setRoomGestureLock, attachRoomSlideAction, updateRoomSnapshotUi, getFavoriteEntries, updateAllFavButtons, attachFavButton, toggleFavorite, currentRoomOrderFromDom, updateDraftOrderFromDom, updateMoveButtons, moveRoom, enterReorderMode, exitReorderMode, finishReorderMode, cancelReorderMode, closeTopbarOverflowMenu, openTopbarOverflowMenu, toggleTopbarOverflowMenu, attachRoomReorder, render, buildDom, makeTile, attachSwitchTap, attachBulbTap, attachColorNameClick, clampLevel, setSliderLevel, syncTileState, updateStates, updateRoomMeta, attachDrag, attachShadeDrag, testHaptics, toggleSwitch, toggleDimmer, reconcileDevice, refreshDevice, reconcileLock, reconcileShade, reconcileMusic, sendMusicCmd, broadcastMusic, broadcastMusicVolume, sendLockCmd, sendShadeCmd, applySwitchCmdOptimistic, roomAll, allLights, ensureQuickPopup, renderLocksPopup, renderBlindsPopup, normalizeTempSensorForCard, mergedSensorList, sensorsPopupSignature, sensorTypesWithCounts, sensorMatchesFilter, syncSensorFilterBtn, syncSensorFilterChips, applySensorTypeFilter, buildSensorFilterBar, sensorExFooter, applySensorCardState, makeSensorCard, makeFavoriteSensorCard, updateSensorCard, renderSensorsPopup, refreshSensorsPopup, renderMusicPopup, renderHubModePopup, ensurePinPadPopup, showPinPadError, clearPinPadError, renderPinPadDots, appendPinDigit, backspacePinDigit, closePinPad, openPinPad, promptUnlockPin, runHsmAction, appendHsmModeButtons, renderSecurityPopup });
+  Object.assign(M, { setHubModeApi, activateSceneApi, bulkLightsApi, snapshotSaveApi, snapshotRestoreApi, saveFavorites, hubModeLocked, hsmLocked, roomLabel, snapshotRoomKey, snapshotHouseKey, setRoomGestureLock, attachRoomSlideAction, updateRoomSnapshotUi, getFavoriteEntries, updateAllFavButtons, attachFavButton, toggleFavorite, currentRoomOrderFromDom, updateDraftOrderFromDom, updateMoveButtons, moveRoom, enterReorderMode, exitReorderMode, finishReorderMode, cancelReorderMode, closeTopbarOverflowMenu, openTopbarOverflowMenu, toggleTopbarOverflowMenu, attachRoomReorder, render, buildDom, makeTile, attachSwitchTap, attachBulbTap, attachColorNameClick, clampLevel, setSliderLevel, syncTileState, updateStates, updateRoomMeta, attachDrag, attachShadeDrag, testHaptics, toggleSwitch, toggleDimmer, reconcileDevice, refreshDevice, reconcileLock, reconcileShade, reconcileMusic, sendMusicCmd, broadcastMusic, broadcastMusicVolume, sendLockCmd, sendShadeCmd, applySwitchCmdOptimistic, roomAll, allLights, ensureQuickPopup, renderLocksPopup, renderBlindsPopup, normalizeTempSensorForCard, mergedSensorList, sensorsPopupSignature, sensorTypesWithCounts, sensorMatchesFilter, syncSensorFilterBtn, syncSensorFilterChips, applySensorTypeFilter, buildSensorFilterBar, sensorBatteryPct, sensorBatteryLabel, sensorExFooter, applySensorCardState, makeSensorCard, makeFavoriteSensorCard, updateSensorCard, renderSensorsPopup, refreshSensorsPopup, renderMusicPopup, renderHubModePopup, ensurePinPadPopup, showPinPadError, clearPinPadError, renderPinPadDots, appendPinDigit, backspacePinDigit, closePinPad, openPinPad, promptUnlockPin, runHsmAction, appendHsmModeButtons, renderSecurityPopup });
 })();
