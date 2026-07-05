@@ -5074,6 +5074,10 @@
     pinPadPopup.setAttribute("aria-modal", "true");
     const panel = ce("div", "pin-pad-panel");
     const title = ce("h2", "pin-pad-title");
+    const error = ce("p", "pin-pad-error");
+    error.hidden = true;
+    error.setAttribute("role", "alert");
+    error.setAttribute("aria-live", "polite");
     const dots = ce("div", "pin-dots");
     const keys = ce("div", "pin-keys");
     const actions = ce("div", "pin-actions");
@@ -5086,6 +5090,7 @@
     actions.appendChild(cancel);
     actions.appendChild(submit);
     panel.appendChild(title);
+    panel.appendChild(error);
     panel.appendChild(dots);
     panel.appendChild(keys);
     panel.appendChild(actions);
@@ -5127,10 +5132,23 @@
     });
 
     pinPadPopup._title = title;
+    pinPadPopup._error = error;
     pinPadPopup._dots = dots;
     pinPadPopup._keys = keys;
     pinPadPopup._submit = submit;
     return pinPadPopup;
+  }
+
+  function showPinPadError(message) {
+    if (!pinPadPopup?._error) return;
+    pinPadPopup._error.textContent = message;
+    pinPadPopup._error.hidden = false;
+  }
+
+  function clearPinPadError() {
+    if (!pinPadPopup?._error) return;
+    pinPadPopup._error.textContent = "";
+    pinPadPopup._error.hidden = true;
   }
 
   function renderPinPadDots() {
@@ -5148,6 +5166,7 @@
   function appendPinDigit(d) {
     if (!pinPadState || pinPadState.pin.length >= 8) return;
     hapticTap();
+    clearPinPadError();
     pinPadState.pin += d;
     renderPinPadDots();
   }
@@ -5155,6 +5174,7 @@
   function backspacePinDigit() {
     if (!pinPadState || !pinPadState.pin.length) return;
     hapticTap();
+    clearPinPadError();
     pinPadState.pin = pinPadState.pin.slice(0, -1);
     renderPinPadDots();
   }
@@ -5164,6 +5184,7 @@
     pinPadPopup.hidden = true;
     pinPadPopup.classList.remove("open");
     pinPadPopup.classList.remove("shake");
+    clearPinPadError();
     pinPadState = null;
   }
 
@@ -5204,6 +5225,7 @@
     });
     popup._keys.appendChild(back);
     renderPinPadDots();
+    clearPinPadError();
     popup.hidden = false;
     popup.classList.remove("shake");
     popup.classList.add("open");
@@ -5215,6 +5237,7 @@
         popup.classList.remove("shake");
         void popup.offsetWidth;
         popup.classList.add("shake");
+        showPinPadError("Wrong PIN. Try again.");
         if (pinPadState) pinPadState.pin = "";
         renderPinPadDots();
       },

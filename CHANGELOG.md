@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.4
+
+- PIN pad shows a clear "Wrong PIN. Try again." message on incorrect entry (HSM and lock unlock).
+
 ## 0.2.3
 
 - HSM popup semantic state colors: status banner, mode buttons, and section labels reflect armed, arming, disarmed, monitoring, and alert states.

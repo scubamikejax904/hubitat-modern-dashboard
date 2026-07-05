@@ -110,8 +110,8 @@ body {
   line-height: 1.05; min-width: 0;
 }
 .brand-name {
-  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--text-faint);
+  font-size: 11px; font-weight: 700; letter-spacing: -0.01em;
+  color: var(--text-faint);
   padding-left: 19px;
 }
 .brand-current {
@@ -1033,6 +1033,11 @@ body {
   margin: 0; font-size: 15px; font-weight: 700; color: var(--text);
   text-align: center; line-height: 1.4;
 }
+.pin-pad-error {
+  margin: 0; min-height: 18px; font-size: 13px; font-weight: 600;
+  color: #e5484d; text-align: center; line-height: 1.3;
+}
+.pin-pad-error[hidden] { display: none; }
 .pin-dots {
   display: flex; justify-content: center; gap: 10px; min-height: 16px;
 }

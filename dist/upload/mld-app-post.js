@@ -2228,6 +2228,10 @@ async function setHsmApi(mode, pin, padApi) {
     M.pinPadPopup.setAttribute("aria-modal", "true");
     const panel = ce("div", "pin-pad-panel");
     const title = ce("h2", "pin-pad-title");
+    const error = ce("p", "pin-pad-error");
+    error.hidden = true;
+    error.setAttribute("role", "alert");
+    error.setAttribute("aria-live", "polite");
     const dots = ce("div", "pin-dots");
     const keys = ce("div", "pin-keys");
     const actions = ce("div", "pin-actions");
@@ -2240,6 +2244,7 @@ async function setHsmApi(mode, pin, padApi) {
     actions.appendChild(cancel);
     actions.appendChild(submit);
     panel.appendChild(title);
+    panel.appendChild(error);
     panel.appendChild(dots);
     panel.appendChild(keys);
     panel.appendChild(actions);
@@ -2281,10 +2286,23 @@ async function setHsmApi(mode, pin, padApi) {
     });
 
     M.pinPadPopup._title = title;
+    M.pinPadPopup._error = error;
     M.pinPadPopup._dots = dots;
     M.pinPadPopup._keys = keys;
     M.pinPadPopup._submit = submit;
     return M.pinPadPopup;
+  }
+
+  function showPinPadError(message) {
+    if (!M.pinPadPopup?._error) return;
+    M.pinPadPopup._error.textContent = message;
+    M.pinPadPopup._error.hidden = false;
+  }
+
+  function clearPinPadError() {
+    if (!M.pinPadPopup?._error) return;
+    M.pinPadPopup._error.textContent = "";
+    M.pinPadPopup._error.hidden = true;
   }
 
   function renderPinPadDots() {
@@ -2302,6 +2320,7 @@ async function setHsmApi(mode, pin, padApi) {
   function appendPinDigit(d) {
     if (!M.pinPadState || M.pinPadState.pin.length >= 8) return;
     M.hapticTap();
+    clearPinPadError();
     M.pinPadState.pin += d;
     renderPinPadDots();
   }
@@ -2309,6 +2328,7 @@ async function setHsmApi(mode, pin, padApi) {
   function backspacePinDigit() {
     if (!M.pinPadState || !M.pinPadState.pin.length) return;
     M.hapticTap();
+    clearPinPadError();
     M.pinPadState.pin = M.pinPadState.pin.slice(0, -1);
     renderPinPadDots();
   }
@@ -2318,6 +2338,7 @@ async function setHsmApi(mode, pin, padApi) {
     M.pinPadPopup.hidden = true;
     M.pinPadPopup.classList.remove("open");
     M.pinPadPopup.classList.remove("shake");
+    clearPinPadError();
     M.pinPadState = null;
   }
 
@@ -2358,6 +2379,7 @@ async function setHsmApi(mode, pin, padApi) {
     });
     popup._keys.appendChild(back);
     renderPinPadDots();
+    clearPinPadError();
     popup.hidden = false;
     popup.classList.remove("shake");
     popup.classList.add("open");
@@ -2369,6 +2391,7 @@ async function setHsmApi(mode, pin, padApi) {
         popup.classList.remove("shake");
         void popup.offsetWidth;
         popup.classList.add("shake");
+        showPinPadError("Wrong PIN. Try again.");
         if (M.pinPadState) M.pinPadState.pin = "";
         renderPinPadDots();
       },
@@ -2499,5 +2522,5 @@ async function setHsmApi(mode, pin, padApi) {
     ruleSection.appendChild(ruleModes);
     body.appendChild(ruleSection);
   }
-  Object.assign(M, { setHubModeApi, activateSceneApi, bulkLightsApi, snapshotSaveApi, snapshotRestoreApi, saveFavorites, hubModeLocked, hsmLocked, roomLabel, snapshotRoomKey, snapshotHouseKey, setRoomGestureLock, attachRoomSlideAction, updateRoomSnapshotUi, getFavoriteEntries, updateAllFavButtons, attachFavButton, toggleFavorite, currentRoomOrderFromDom, updateDraftOrderFromDom, updateMoveButtons, moveRoom, enterReorderMode, exitReorderMode, finishReorderMode, cancelReorderMode, closeTopbarOverflowMenu, openTopbarOverflowMenu, toggleTopbarOverflowMenu, attachRoomReorder, render, buildDom, makeTile, attachSwitchTap, attachBulbTap, attachColorNameClick, clampLevel, setSliderLevel, syncTileState, updateStates, updateRoomMeta, attachDrag, attachShadeDrag, testHaptics, toggleSwitch, toggleDimmer, reconcileDevice, refreshDevice, reconcileLock, reconcileShade, reconcileMusic, sendMusicCmd, broadcastMusic, broadcastMusicVolume, sendLockCmd, sendShadeCmd, applySwitchCmdOptimistic, roomAll, allLights, ensureQuickPopup, renderLocksPopup, renderBlindsPopup, normalizeTempSensorForCard, mergedSensorList, sensorsPopupSignature, sensorTypesWithCounts, sensorMatchesFilter, syncSensorFilterBtn, syncSensorFilterChips, applySensorTypeFilter, buildSensorFilterBar, sensorExFooter, applySensorCardState, makeSensorCard, makeFavoriteSensorCard, updateSensorCard, renderSensorsPopup, refreshSensorsPopup, renderMusicPopup, renderHubModePopup, ensurePinPadPopup, renderPinPadDots, appendPinDigit, backspacePinDigit, closePinPad, openPinPad, promptUnlockPin, runHsmAction, appendHsmModeButtons, renderSecurityPopup });
+  Object.assign(M, { setHubModeApi, activateSceneApi, bulkLightsApi, snapshotSaveApi, snapshotRestoreApi, saveFavorites, hubModeLocked, hsmLocked, roomLabel, snapshotRoomKey, snapshotHouseKey, setRoomGestureLock, attachRoomSlideAction, updateRoomSnapshotUi, getFavoriteEntries, updateAllFavButtons, attachFavButton, toggleFavorite, currentRoomOrderFromDom, updateDraftOrderFromDom, updateMoveButtons, moveRoom, enterReorderMode, exitReorderMode, finishReorderMode, cancelReorderMode, closeTopbarOverflowMenu, openTopbarOverflowMenu, toggleTopbarOverflowMenu, attachRoomReorder, render, buildDom, makeTile, attachSwitchTap, attachBulbTap, attachColorNameClick, clampLevel, setSliderLevel, syncTileState, updateStates, updateRoomMeta, attachDrag, attachShadeDrag, testHaptics, toggleSwitch, toggleDimmer, reconcileDevice, refreshDevice, reconcileLock, reconcileShade, reconcileMusic, sendMusicCmd, broadcastMusic, broadcastMusicVolume, sendLockCmd, sendShadeCmd, applySwitchCmdOptimistic, roomAll, allLights, ensureQuickPopup, renderLocksPopup, renderBlindsPopup, normalizeTempSensorForCard, mergedSensorList, sensorsPopupSignature, sensorTypesWithCounts, sensorMatchesFilter, syncSensorFilterBtn, syncSensorFilterChips, applySensorTypeFilter, buildSensorFilterBar, sensorExFooter, applySensorCardState, makeSensorCard, makeFavoriteSensorCard, updateSensorCard, renderSensorsPopup, refreshSensorsPopup, renderMusicPopup, renderHubModePopup, ensurePinPadPopup, showPinPadError, clearPinPadError, renderPinPadDots, appendPinDigit, backspacePinDigit, closePinPad, openPinPad, promptUnlockPin, runHsmAction, appendHsmModeButtons, renderSecurityPopup });
 })();
