@@ -961,7 +961,7 @@ function renderScenesPopup() {
           if (m.name === "hsmStatus" && !M.hsmLocked()) {
             M.hsmStatus = String(m.value || "");
             if (currentCategory() === "security") M.renderSecurityPopup();
-          } else if (m.name === "hsmAlert") {
+          } else if (m.name === "hsmAlert" && !M.hsmLocked()) {
             M.hsmAlert = String(m.value || "");
             if (m.descriptionText) M.hsmAlertDesc = String(m.descriptionText);
             if (currentCategory() === "security") M.renderSecurityPopup();

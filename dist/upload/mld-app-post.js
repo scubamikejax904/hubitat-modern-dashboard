@@ -32,7 +32,7 @@ async function setHsmApi(mode, pin, padApi) {
     if (result.data?.alert !== undefined) M.hsmAlert = result.data.alert || "";
     if (result.data?.alertDesc !== undefined) M.hsmAlertDesc = result.data.alertDesc || "";
     if (M.currentCategory() === "security") renderSecurityPopup();
-    setTimeout(() => { M.fetchData().catch(() => {}); }, 3000);
+    setTimeout(() => { M.refresh().catch(() => {}); }, 3000);
     return true;
   }
 
@@ -2412,7 +2412,11 @@ async function setHsmApi(mode, pin, padApi) {
       const b = ce("button", "tstat-mode quick-hsm-mode");
       b.type = "button";
       b.innerHTML = (mode.svg || "") + '<span class="quick-hsm-mode-label">' + mode.label + "</span>";
-      if (hsmModeIsActive(M.hsmStatus, mode)) b.classList.add("active");
+      if (hsmModeIsActive(M.hsmStatus, mode)) {
+        b.classList.add("active");
+        const activeClass = hsmModeActiveClass(mode, M.hsmStatus);
+        if (activeClass) b.classList.add(activeClass);
+      }
       b.addEventListener("click", () => {
         if (skipActive && hsmModeIsActive(M.hsmStatus, mode)) return;
         runHsmAction(mode.label, mode.cmd);
@@ -2431,11 +2435,13 @@ async function setHsmApi(mode, pin, padApi) {
       return;
     }
 
-    const statusWrap = ce("div", "quick-hsm-status");
+    const statusTone = hsmStatusTone(M.hsmStatus, M.hsmAlert);
+    const statusWrap = ce("div", "quick-hsm-status quick-hsm-status--" + statusTone);
+    if (hsmHasActiveAlert(M.hsmAlert)) statusWrap.classList.add("alert");
     const statusLabel = ce("span", "quick-hsm-status-label");
     statusLabel.textContent = hsmStatusLabel(M.hsmStatus);
     statusWrap.appendChild(statusLabel);
-    const monMeta = ce("span", "quick-hsm-status-meta");
+    const monMeta = ce("span", "quick-hsm-status-meta quick-hsm-status-meta--" + hsmMonitoringTone(M.hsmStatus));
     monMeta.textContent = hsmMonitoringLabel(M.hsmStatus);
     statusWrap.appendChild(monMeta);
     body.appendChild(statusWrap);
@@ -2459,6 +2465,11 @@ async function setHsmApi(mode, pin, padApi) {
     const intrTitle = ce("h3", "quick-hsm-section-title");
     intrTitle.textContent = "Intrusion";
     intrSection.appendChild(intrTitle);
+    if (hsmIntrusionArmed(M.hsmStatus)) {
+      const intrMeta = ce("p", "quick-hsm-section-meta quick-hsm-section-meta--" + hsmIntrusionTone(M.hsmStatus));
+      intrMeta.textContent = hsmStatusLabel(M.hsmStatus);
+      intrSection.appendChild(intrMeta);
+    }
     const intrModes = ce("div", "tstat-modes quick-hsm-modes");
     appendHsmModeButtons(intrModes, HSM_INTRUSION_MODES);
     intrSection.appendChild(intrModes);
@@ -2468,8 +2479,8 @@ async function setHsmApi(mode, pin, padApi) {
     const monTitle = ce("h3", "quick-hsm-section-title");
     monTitle.textContent = "Leak & Environmental";
     monSection.appendChild(monTitle);
-    const monDesc = ce("p", "quick-hsm-section-meta");
-    monDesc.textContent = "Water leak, smoke, and CO monitoring";
+    const monDesc = ce("p", "quick-hsm-section-meta quick-hsm-section-meta--" + hsmMonitoringTone(M.hsmStatus));
+    monDesc.textContent = hsmMonitoringLabel(M.hsmStatus);
     monSection.appendChild(monDesc);
     const monModes = ce("div", "tstat-modes quick-hsm-modes");
     appendHsmModeButtons(monModes, HSM_MONITORING_MODES);

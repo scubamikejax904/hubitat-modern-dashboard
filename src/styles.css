@@ -964,6 +964,41 @@ body {
   font-size: 13px; font-weight: 700; line-height: 1.2; text-align: center;
 }
 
+/* HSM semantic state tones */
+.quick-hsm-status--safe {
+  border-color: rgba(52,199,89,0.45);
+  background: rgba(52,199,89,0.08);
+}
+.quick-hsm-status--safe .quick-hsm-status-label { color: #34c759; }
+.quick-hsm-status--all-safe {
+  border-color: rgba(142,142,147,0.45);
+  background: rgba(142,142,147,0.08);
+}
+.quick-hsm-status--all-safe .quick-hsm-status-label { color: var(--muted); }
+.quick-hsm-status--armed {
+  border-color: rgba(229,72,77,0.45);
+  background: rgba(229,72,77,0.08);
+}
+.quick-hsm-status--armed .quick-hsm-status-label { color: #e5484d; }
+.quick-hsm-status--arming {
+  border-color: rgba(255,159,10,0.45);
+  background: rgba(255,159,10,0.08);
+}
+.quick-hsm-status--arming .quick-hsm-status-label { color: #ff9f0a; }
+.quick-hsm-status--alert {
+  border-color: rgba(229,72,77,0.55);
+  background: rgba(229,72,77,0.12);
+}
+.quick-hsm-status--alert .quick-hsm-status-label { color: #e5484d; }
+.quick-hsm-status-meta--mon-armed { color: #5b8cff; font-weight: 600; }
+.quick-hsm-status-meta--mon-disarmed { color: var(--muted); }
+.quick-hsm-section-meta--safe { color: #34c759; font-weight: 600; }
+.quick-hsm-section-meta--armed { color: #e5484d; font-weight: 600; }
+.quick-hsm-section-meta--arming { color: #ff9f0a; font-weight: 600; }
+.quick-hsm-section-meta--all-safe { color: var(--muted); font-weight: 600; }
+.quick-hsm-section-meta--mon-armed { color: #5b8cff; font-weight: 600; }
+.quick-hsm-section-meta--mon-disarmed { color: var(--muted); }
+
 /* PIN pad (HSM security) */
 .pin-pad-popup {
   position: fixed; inset: 0; z-index: 80; pointer-events: none;
@@ -1964,6 +1999,28 @@ body {
 }
 .tstat-mode svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .tstat-mode.active { background: var(--accent); color: #fff; border-color: transparent; box-shadow: 0 4px 14px var(--accent-glow); }
+.tstat-mode.quick-hsm-mode.hsm-active-disarm.active {
+  background: #34c759; color: #fff; border-color: transparent;
+  box-shadow: 0 4px 14px rgba(52,199,89,0.35);
+}
+.tstat-mode.quick-hsm-mode.hsm-active-disarm-all.active {
+  background: var(--panel-solid); color: var(--muted); border-color: var(--text-faint);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-faint) 55%, transparent);
+}
+.tstat-mode.quick-hsm-mode.hsm-active-away.active,
+.tstat-mode.quick-hsm-mode.hsm-active-home.active,
+.tstat-mode.quick-hsm-mode.hsm-active-night.active {
+  background: #e5484d; color: #fff; border-color: transparent;
+  box-shadow: 0 4px 14px rgba(229,72,77,0.35);
+}
+.tstat-mode.quick-hsm-mode.hsm-active-arming.active {
+  background: #ff9f0a; color: #fff; border-color: transparent;
+  box-shadow: 0 4px 14px rgba(255,159,10,0.35);
+}
+.tstat-mode.quick-hsm-mode.hsm-active-mon-armed.active {
+  background: #5b8cff; color: #fff; border-color: transparent;
+  box-shadow: 0 4px 14px var(--accent-glow);
+}
 .tstat-mode.off.active { background: var(--panel-solid); color: var(--text); border-color: var(--text-faint); box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-faint) 55%, transparent); }
 .tstat-mode:active { transform: scale(.95); }
 .tstat-mode.quick-hsm-mode {

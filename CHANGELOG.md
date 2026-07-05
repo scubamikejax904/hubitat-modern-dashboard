@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+- HSM popup semantic state colors: status banner, mode buttons, and section labels reflect armed, arming, disarmed, monitoring, and alert states.
+- HSM backend subscribes to `hsmStatus`/`hsmAlert` events and persists state for more reliable status after commands and refreshes.
+
 ## 0.2.2
 
 - Optional navigation drawer: overflow menu toggle moves search and category icons into a side menu; topbar shows the active category (Lights, Scheduler, etc.).

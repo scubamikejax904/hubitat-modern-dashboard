@@ -212,7 +212,7 @@ function hsmStatusLabel(status) {
 function hsmModeIsActive(status, modeDef) {
   const s = String(status || "").toLowerCase();
   if (modeDef.cmd === "disarm") {
-    return s === "disarmed" || s === "alldisarmed";
+    return s === "disarmed";
   }
   if (modeDef.cmd === "disarmAll") {
     return s === "alldisarmed";
@@ -224,6 +224,48 @@ function hsmModeIsActive(status, modeDef) {
   const armed = modeDef.status.toLowerCase();
   const arming = ("arming" + modeDef.cmd.slice(3)).toLowerCase();
   return s === armed || s === arming;
+}
+
+function hsmIntrusionArmed(status) {
+  const s = String(status || "").toLowerCase();
+  return s.startsWith("armed") || s.startsWith("arming");
+}
+
+function hsmStatusTone(status, alert) {
+  if (hsmHasActiveAlert(alert)) return "alert";
+  const s = String(status || "").toLowerCase();
+  if (s === "alldisarmed") return "all-safe";
+  if (s.startsWith("arming")) return "arming";
+  if (s.startsWith("armed")) return "armed";
+  return "safe";
+}
+
+function hsmIntrusionTone(status) {
+  const s = String(status || "").toLowerCase();
+  if (s === "alldisarmed") return "all-safe";
+  if (s.startsWith("arming")) return "arming";
+  if (s.startsWith("armed")) return "armed";
+  return "safe";
+}
+
+function hsmMonitoringTone(status) {
+  return hsmMonitoringArmed(status) ? "mon-armed" : "mon-disarmed";
+}
+
+function hsmModeActiveClass(modeDef, status) {
+  if (!hsmModeIsActive(status, modeDef)) return "";
+  const s = String(status || "").toLowerCase();
+  const cmd = modeDef.cmd;
+  if (cmd === "disarm") return "hsm-active-disarm";
+  if (cmd === "disarmAll") return "hsm-active-disarm-all";
+  if (cmd === "armAll") return "hsm-active-mon-armed";
+  if (s.startsWith("arming") && (cmd === "armAway" || cmd === "armHome" || cmd === "armNight")) {
+    return "hsm-active-arming";
+  }
+  if (cmd === "armAway") return "hsm-active-away";
+  if (cmd === "armHome") return "hsm-active-home";
+  if (cmd === "armNight") return "hsm-active-night";
+  return "";
 }
 
 function hsmMonitoringArmed(status) {

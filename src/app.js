@@ -2878,7 +2878,7 @@
     if (result.data?.alert !== undefined) hsmAlert = result.data.alert || "";
     if (result.data?.alertDesc !== undefined) hsmAlertDesc = result.data.alertDesc || "";
     if (currentCategory() === "security") renderSecurityPopup();
-    setTimeout(() => { fetchData().catch(() => {}); }, 3000);
+    setTimeout(() => { refresh().catch(() => {}); }, 3000);
     return true;
   }
 
@@ -5258,7 +5258,11 @@
       const b = ce("button", "tstat-mode quick-hsm-mode");
       b.type = "button";
       b.innerHTML = (mode.svg || "") + '<span class="quick-hsm-mode-label">' + mode.label + "</span>";
-      if (hsmModeIsActive(hsmStatus, mode)) b.classList.add("active");
+      if (hsmModeIsActive(hsmStatus, mode)) {
+        b.classList.add("active");
+        const activeClass = hsmModeActiveClass(mode, hsmStatus);
+        if (activeClass) b.classList.add(activeClass);
+      }
       b.addEventListener("click", () => {
         if (skipActive && hsmModeIsActive(hsmStatus, mode)) return;
         runHsmAction(mode.label, mode.cmd);
@@ -5277,11 +5281,13 @@
       return;
     }
 
-    const statusWrap = ce("div", "quick-hsm-status");
+    const statusTone = hsmStatusTone(hsmStatus, hsmAlert);
+    const statusWrap = ce("div", "quick-hsm-status quick-hsm-status--" + statusTone);
+    if (hsmHasActiveAlert(hsmAlert)) statusWrap.classList.add("alert");
     const statusLabel = ce("span", "quick-hsm-status-label");
     statusLabel.textContent = hsmStatusLabel(hsmStatus);
     statusWrap.appendChild(statusLabel);
-    const monMeta = ce("span", "quick-hsm-status-meta");
+    const monMeta = ce("span", "quick-hsm-status-meta quick-hsm-status-meta--" + hsmMonitoringTone(hsmStatus));
     monMeta.textContent = hsmMonitoringLabel(hsmStatus);
     statusWrap.appendChild(monMeta);
     body.appendChild(statusWrap);
@@ -5305,6 +5311,11 @@
     const intrTitle = ce("h3", "quick-hsm-section-title");
     intrTitle.textContent = "Intrusion";
     intrSection.appendChild(intrTitle);
+    if (hsmIntrusionArmed(hsmStatus)) {
+      const intrMeta = ce("p", "quick-hsm-section-meta quick-hsm-section-meta--" + hsmIntrusionTone(hsmStatus));
+      intrMeta.textContent = hsmStatusLabel(hsmStatus);
+      intrSection.appendChild(intrMeta);
+    }
     const intrModes = ce("div", "tstat-modes quick-hsm-modes");
     appendHsmModeButtons(intrModes, HSM_INTRUSION_MODES);
     intrSection.appendChild(intrModes);
@@ -5314,8 +5325,8 @@
     const monTitle = ce("h3", "quick-hsm-section-title");
     monTitle.textContent = "Leak & Environmental";
     monSection.appendChild(monTitle);
-    const monDesc = ce("p", "quick-hsm-section-meta");
-    monDesc.textContent = "Water leak, smoke, and CO monitoring";
+    const monDesc = ce("p", "quick-hsm-section-meta quick-hsm-section-meta--" + hsmMonitoringTone(hsmStatus));
+    monDesc.textContent = hsmMonitoringLabel(hsmStatus);
     monSection.appendChild(monDesc);
     const monModes = ce("div", "tstat-modes quick-hsm-modes");
     appendHsmModeButtons(monModes, HSM_MONITORING_MODES);
@@ -6293,7 +6304,7 @@
           if (m.name === "hsmStatus" && !hsmLocked()) {
             hsmStatus = String(m.value || "");
             if (currentCategory() === "security") renderSecurityPopup();
-          } else if (m.name === "hsmAlert") {
+          } else if (m.name === "hsmAlert" && !hsmLocked()) {
             hsmAlert = String(m.value || "");
             if (m.descriptionText) hsmAlertDesc = String(m.descriptionText);
             if (currentCategory() === "security") renderSecurityPopup();

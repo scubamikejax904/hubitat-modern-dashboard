@@ -163,11 +163,13 @@ def installed() {
     if (!state.accessToken) { createAccessToken() }
     logInit()
     try { initializeScheduler() } catch (e) { log.warn "Modern Dashboard: scheduler init failed: ${e}" }
+    try { initializeHsm() } catch (e) { log.warn "Modern Dashboard: HSM init failed: ${e}" }
 }
 
 def updated() {
     logInit()
     try { initializeScheduler() } catch (e) { log.warn "Modern Dashboard: scheduler init failed: ${e}" }
+    try { initializeHsm() } catch (e) { log.warn "Modern Dashboard: HSM init failed: ${e}" }
 }
 
 def logInit() {
@@ -937,15 +939,9 @@ def renderData() {
     def hubModeCurrent = ""
     try { hubModeCurrent = location.mode?.toString() ?: "" } catch (e) {}
     out << "],\"currentHubMode\":" << jsonStr(hubModeCurrent)
-    def hsmStatusVal = ""
-    def hsmAlertVal = ""
-    def hsmAlertDescVal = ""
-    try { hsmStatusVal = location.currentState("hsmStatus")?.value?.toString() ?: "" } catch (e) {}
-    try {
-        def alertSt = location.currentState("hsmAlert")
-        hsmAlertVal = alertSt?.value?.toString() ?: ""
-        hsmAlertDescVal = alertSt?.descriptionText?.toString() ?: ""
-    } catch (e) {}
+    def hsmStatusVal = readHsmStatus()
+    def hsmAlertVal = readHsmAlert()
+    def hsmAlertDescVal = readHsmAlertDesc()
     out << ",\"hsmStatus\":" << jsonStr(hsmStatusVal)
     out << ",\"hsmAlert\":" << jsonStr(hsmAlertVal)
     out << ",\"hsmAlertDesc\":" << jsonStr(hsmAlertDescVal)
@@ -2062,6 +2058,62 @@ def pinsMatch(expected, provided) {
     return diff == 0
 }
 
+def initializeHsm() {
+    if (hsmEnabled != true) return
+    try { subscribe(location, "hsmStatus", hsmStatusChanged) } catch (e) {}
+    try { subscribe(location, "hsmAlert", hsmAlertChanged) } catch (e) {}
+    def seeded = readHsmStatus()
+    if (seeded) state.hsmStatus = seeded
+    def alert = readHsmAlert()
+    if (alert) state.hsmAlert = alert
+    def alertDesc = readHsmAlertDesc()
+    if (alertDesc) state.hsmAlertDesc = alertDesc
+}
+
+def hsmStatusChanged(evt) {
+    state.hsmStatus = evt?.value?.toString() ?: ""
+}
+
+def hsmAlertChanged(evt) {
+    state.hsmAlert = evt?.value?.toString() ?: ""
+    state.hsmAlertDesc = evt?.descriptionText?.toString() ?: ""
+}
+
+def readHsmStatus() {
+    def val = ""
+    try { val = location.hsmStatus?.toString()?.trim() ?: "" } catch (e) {}
+    if (!val && state.hsmStatus) val = state.hsmStatus.toString().trim()
+    return val ?: ""
+}
+
+def readHsmAlert() {
+    def val = ""
+    if (state.hsmAlert) val = state.hsmAlert.toString().trim()
+    return val ?: ""
+}
+
+def readHsmAlertDesc() {
+    def val = ""
+    if (state.hsmAlertDesc) val = state.hsmAlertDesc.toString().trim()
+    return val ?: ""
+}
+
+def persistHsmFromCommand(mode) {
+    def status = hsmModeToStatus(mode)
+    def read = readHsmStatus()
+    if (read) status = read
+    if (status) state.hsmStatus = status
+    if (mode == "cancelAlerts") {
+        state.hsmAlert = ""
+        state.hsmAlertDesc = ""
+    } else {
+        def alert = readHsmAlert()
+        def alertDesc = readHsmAlertDesc()
+        if (alert) state.hsmAlert = alert
+        if (alertDesc) state.hsmAlertDesc = alertDesc
+    }
+}
+
 def hsmModeToStatus(mode) {
     switch (mode) {
         case "armAway": return "armedAway"
@@ -2075,18 +2127,10 @@ def hsmModeToStatus(mode) {
 }
 
 def hsmResponseAfterCommand(mode) {
-    def status = hsmModeToStatus(mode)
-    def alertVal = ""
-    def alertDescVal = ""
-    try {
-        def current = location.currentState("hsmStatus")?.value?.toString()
-        if (current) status = current
-    } catch (e) {}
-    try {
-        def alertSt = location.currentState("hsmAlert")
-        alertVal = alertSt?.value?.toString() ?: ""
-        alertDescVal = alertSt?.descriptionText?.toString() ?: ""
-    } catch (e) {}
+    def status = readHsmStatus()
+    if (!status) status = hsmModeToStatus(mode)
+    def alertVal = readHsmAlert()
+    def alertDescVal = readHsmAlertDesc()
     if (mode == "cancelAlerts") {
         alertVal = ""
         alertDescVal = ""
@@ -2141,6 +2185,7 @@ def setHsmFromMode(mode, pin) {
     }
     try {
         sendLocationEvent(name: "hsmSetArm", value: mode)
+        persistHsmFromCommand(mode)
         def out = hsmResponseAfterCommand(mode)
         return render(contentType: "application/json", data: "{\"ok\":true,\"mode\":${jsonStr(mode)},\"status\":${jsonStr(out.status)},\"alert\":${jsonStr(out.alert)},\"alertDesc\":${jsonStr(out.alertDesc)}}", status: 200)
     } catch (e) {
