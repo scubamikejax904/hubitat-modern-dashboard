@@ -147,9 +147,22 @@ function renderScenesPopup() {
       return;
     }
     for (const entry of M.getFavoriteEntries()) {
-      if (entry.type !== "thermostat") continue;
-      const t = M.thermostats.find((x) => x.i === entry.dev.i) || entry.dev;
-      updateQuickTstatCard(t, M.favTstatMap);
+      if (entry.type === "thermostat") {
+        const t = M.thermostats.find((x) => x.i === entry.dev.i) || entry.dev;
+        updateQuickTstatCard(t, M.favTstatMap);
+      } else if (entry.type === "sensor") {
+        const dev = M.mergedSensorList().find((x) => x.i === entry.dev.i) || entry.dev;
+        M.updateSensorCard(dev);
+      } else if (entry.type === "music") {
+        const mp = M.music.find((x) => x.i === entry.dev.i) || entry.dev;
+        M.updateFavoriteMusicRow(mp);
+      } else if (entry.type === "lock") {
+        const lk = M.locks.find((x) => x.i === entry.dev.i) || entry.dev;
+        M.updateFavoriteLockRow(lk);
+      } else if (entry.type === "shade") {
+        const sh = M.windowShades.find((x) => x.i === entry.dev.i) || entry.dev;
+        M.updateFavoriteShadeTile(sh);
+      }
     }
     M.updateStates();
     if (M.favTstatModeMenu) M.repositionFavoriteTstatModeMenu();
@@ -165,10 +178,13 @@ function renderScenesPopup() {
     M.favDevMap.clear();
     M.favTstatMap.clear();
     M.favSensorMap.clear();
+    M.favMusicMap.clear();
+    M.favLockMap.clear();
+    M.favShadeMap.clear();
     const entries = M.getFavoriteEntries();
     M.favPopupSig = favoritesPopupSignature();
     if (!entries.length) {
-      body.textContent = "Tap the star on any light, thermostat, or sensor to add it here";
+      body.textContent = "Tap the star on any device to add it here";
       return;
     }
     const grid = ce("div", "quick-fav-grid");
@@ -177,8 +193,14 @@ function renderScenesPopup() {
         grid.appendChild(M.makeTile(entry.dev, "favorites"));
       } else if (entry.type === "thermostat") {
         grid.appendChild(makeQuickTstatCard(entry.dev, M.favTstatMap));
-      } else {
+      } else if (entry.type === "sensor") {
         grid.appendChild(M.makeFavoriteSensorCard(entry.dev));
+      } else if (entry.type === "music") {
+        grid.appendChild(M.makeMusicRow(entry.dev, "favorites"));
+      } else if (entry.type === "lock") {
+        grid.appendChild(M.makeLockRow(entry.dev, "favorites"));
+      } else if (entry.type === "shade") {
+        grid.appendChild(M.makeShadeTile(entry.dev, "favorites"));
       }
     }
     body.appendChild(grid);
@@ -264,6 +286,7 @@ function renderScenesPopup() {
         case "favorites": refreshFavoritesPopup(); break;
         case "thermostats": refreshThermostatsPopup(); break;
         case "sensors": M.refreshSensorsPopup(); break;
+        case "blinds": M.renderBlindsPopup(); break;
         case "scheduling":
           if (globalThis.__MLD?.renderSchedulerView) globalThis.__MLD.renderSchedulerView();
           break;
@@ -338,6 +361,9 @@ function renderScenesPopup() {
     M.favDevMap.clear();
     M.favTstatMap.clear();
     M.favSensorMap.clear();
+    M.favMusicMap.clear();
+    M.favLockMap.clear();
+    M.favShadeMap.clear();
     M.favPopupSig = "";
     M.tstatsPopupMap.clear();
     M.tstatsPopupSig = "";
@@ -421,6 +447,7 @@ function renderScenesPopup() {
         case "sensors": M.renderSensorsPopup(); break;
         case "thermostats": renderThermostatsPopup(); break;
         case "music": M.renderMusicPopup(); break;
+        case "blinds": M.renderBlindsPopup(); break;
         case "scheduling":
           if (globalThis.__MLD?.renderSchedulerView) globalThis.__MLD.renderSchedulerView();
           break;
@@ -941,14 +968,52 @@ function renderScenesPopup() {
   }
 
   function restartPolling() {
-    if (M.pollTimer) startPolling();
+    if (!document.hidden && !M.reorderMode) startPolling();
   }
   function stopPolling() { if (M.pollTimer) { clearInterval(M.pollTimer); M.pollTimer = null; } }
+
+  function clearWsReconnectTimer() {
+    if (M.wsReconnectTimer) {
+      clearTimeout(M.wsReconnectTimer);
+      M.wsReconnectTimer = null;
+    }
+  }
+
+  function stopWS() {
+    clearWsReconnectTimer();
+    M.wsConnected = false;
+    if (M.ws) {
+      try { M.ws.close(); } catch {}
+      M.ws = null;
+    }
+  }
+
+  function pauseApp() {
+    stopPolling();
+    stopWS();
+  }
+
+  function resumeApp() {
+    if (document.hidden) return;
+    M.cancelAllSlideGestures();
+    closeConfirm(false);
+    if (drawerOpen) closeDrawer();
+    if (M.quickPopupOpenType) closeQuickPopup();
+    if (M.colorSession) M.closeColorPopup(false);
+    refresh();
+    if (!M.reorderMode) startPolling();
+    startWS();
+  }
 
   // ---------- websocket (local only) ----------
   function startWS() {
     if (!M.cfg.useWebSocket) return;
-    if (M.ws) return;
+    if (M.ws) {
+      if (M.ws.readyState === WebSocket.OPEN) return;
+      try { M.ws.close(); } catch {}
+      M.ws = null;
+      M.wsConnected = false;
+    }
     if (location.hostname === "cloud.hubitat.com" || location.protocol === "https:") return; // M.ws not available via cloud proxy
     const wsUrl = "ws://" + location.host + "/eventsocket";
     try { M.ws = new WebSocket(wsUrl); } catch { M.ws = null; return; }
@@ -1017,6 +1082,7 @@ function renderScenesPopup() {
           lock.st = val;
           lock.lk = val === "locked" ? 1 : 0;
           if (currentCategory() === "locks") M.renderLocksPopup();
+          else if (currentCategory() === "favorites") M.postCall("refreshFavoritesPopup");
           return;
         }
         const shade = M.windowShades.find(x => x.i === Number(m.deviceId));
@@ -1030,7 +1096,8 @@ function renderScenesPopup() {
             const pos = Math.round(Number(m.value));
             if (!isNaN(pos)) shade.pos = pos;
           } else return;
-          if (M.quickPopupOpenType === "blinds") M.renderBlindsPopup();
+          if (currentCategory() === "blinds") M.renderBlindsPopup();
+          else if (currentCategory() === "favorites") M.postCall("refreshFavoritesPopup");
           return;
         }
         // thermostat / sensor events
@@ -1086,19 +1153,40 @@ function renderScenesPopup() {
         }
       } catch {}
     };
-    M.ws.onclose = () => { M.ws = null; M.wsConnected = false; restartPolling(); scheduleReconnect(); };
+    M.ws.onclose = () => {
+      M.ws = null;
+      M.wsConnected = false;
+      restartPolling();
+      if (!document.hidden) scheduleReconnect();
+    };
     M.ws.onerror = () => { try { M.ws.close(); } catch {} };
   }
   function scheduleReconnect() {
-    if (!M.cfg.useWebSocket) return;
+    if (!M.cfg.useWebSocket || document.hidden) return;
     M.wsRetry = Math.min(M.wsRetry + 1, 6);
     const delay = Math.min(15000, 1000 * 2 ** M.wsRetry);
-    setTimeout(startWS, delay);
+    clearWsReconnectTimer();
+    M.wsReconnectTimer = setTimeout(() => {
+      M.wsReconnectTimer = null;
+      startWS();
+    }, delay);
   }
 
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) { stopPolling(); }
-    else { refresh(); startPolling(); startWS(); }
+    if (document.hidden) pauseApp();
+    else resumeApp();
+  });
+  window.addEventListener("pageshow", () => {
+    if (!document.hidden) resumeApp();
+  });
+  let focusResumeTimer = null;
+  window.addEventListener("focus", () => {
+    if (document.hidden) return;
+    if (focusResumeTimer) clearTimeout(focusResumeTimer);
+    focusResumeTimer = setTimeout(() => {
+      focusResumeTimer = null;
+      resumeApp();
+    }, 300);
   });
 
   // ---------- init ----------
@@ -1182,5 +1270,5 @@ function renderScenesPopup() {
   })();
 
   if (globalThis.__MLD) globalThis.__MLD.updateQuickNavVisibility = updateQuickNavVisibility;
-  Object.assign(M, { favoritesPopupSignature, makeQuickTstatCard, updateQuickTstatCard, refreshFavoritesPopup, renderFavoritesPopup, thermostatsListSignature, refreshThermostatsPopup, renderThermostatsPopup, quickNavPopupHasContent, updateQuickNavVisibility, refreshQuickPopupIfOpen, openQuickPopup, closeQuickPopup, ensureTabView, currentBody, currentCategory, currentCategoryLabel, updateCurrentCategoryTitle, inTabView, updateTabActiveStates, showTab, closeCurrentView, setTabMode, resolveDrawerDom, setDrawerLabels, openDrawer, closeDrawer, toggleDrawer, setDrawerMode, closeConfirm, ensureConfirmPopup, confirmAction, collapsedIdSet, applyFilter, applyTabSearch, applySearch, collapsedSet, persistCollapsed, allRoomsCollapsed, updateExpandAllBtn, collapseAllRooms, expandAllRooms, restoreCollapsed, refresh, effectivePollInterval, startPolling, restartPolling, stopPolling, startWS, scheduleReconnect });
+  Object.assign(M, { favoritesPopupSignature, makeQuickTstatCard, updateQuickTstatCard, refreshFavoritesPopup, renderFavoritesPopup, thermostatsListSignature, refreshThermostatsPopup, renderThermostatsPopup, quickNavPopupHasContent, updateQuickNavVisibility, refreshQuickPopupIfOpen, openQuickPopup, closeQuickPopup, ensureTabView, currentBody, currentCategory, currentCategoryLabel, updateCurrentCategoryTitle, inTabView, updateTabActiveStates, showTab, closeCurrentView, setTabMode, resolveDrawerDom, setDrawerLabels, openDrawer, closeDrawer, toggleDrawer, setDrawerMode, closeConfirm, ensureConfirmPopup, confirmAction, collapsedIdSet, applyFilter, applyTabSearch, applySearch, collapsedSet, persistCollapsed, allRoomsCollapsed, updateExpandAllBtn, collapseAllRooms, expandAllRooms, restoreCollapsed, refresh, effectivePollInterval, startPolling, restartPolling, stopPolling, clearWsReconnectTimer, stopWS, pauseApp, resumeApp, startWS, scheduleReconnect });
 })();

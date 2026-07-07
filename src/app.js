@@ -112,6 +112,7 @@
   let ws = null;
   let wsConnected = false;
   let wsRetry = 0;
+  let wsReconnectTimer = null;
   let reorderMode = false;
   let reorderBusy = false;
   let reorderSnapshot = null;
@@ -175,8 +176,8 @@
   }
 
   // ---------- tab mode (inline tabs instead of popups) ----------
-  const TAB_CATEGORIES = new Set(["favorites", "sensors", "thermostats", "music", "scheduling"]);
-  const TAB_LABELS = { lights: "Lights", favorites: "Favorites", sensors: "Sensors", thermostats: "Thermostats", music: "Music", scheduling: "Scheduler" };
+  const TAB_CATEGORIES = new Set(["favorites", "sensors", "thermostats", "music", "blinds", "scheduling"]);
+  const TAB_LABELS = { lights: "Lights", favorites: "Favorites", sensors: "Sensors", thermostats: "Thermostats", music: "Music", blinds: "Blinds", scheduling: "Scheduler" };
   let tabMode = cfg.enableTabs;
   let activeTab = "lights";
   let tabViewEl = null;
@@ -330,7 +331,8 @@
     };
     entry.timer = setTimeout(() => {
       shadeOptimistic.delete(id);
-      if (quickPopupOpenType === "blinds") postCall("renderBlindsPopup");
+      if (postCall("currentCategory") === "blinds") postCall("renderBlindsPopup");
+      else if (postCall("currentCategory") === "favorites") postCall("refreshFavoritesPopup");
     }, LEVEL_OPTIMISTIC_MS);
     shadeOptimistic.set(id, entry);
   }
@@ -2613,8 +2615,18 @@
     return path + sep + "access_token=" + encodeURIComponent(ACCESS_TOKEN);
   }
 
+  async function fetchWithTimeout(url, opts = {}, ms = 15000) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try {
+      return await fetch(url, { ...opts, signal: ctrl.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async function getJson(url) {
-    const r = await fetch(withToken(url), { cache: "no-store", headers: { "Accept": "application/json" } });
+    const r = await fetchWithTimeout(withToken(url), { cache: "no-store", headers: { "Accept": "application/json" } });
     if (!r.ok) throw new Error("HTTP " + r.status);
     return r.json();
   }
@@ -2721,6 +2733,9 @@
   let sensors = [];
   const sensorCardMap = new Map(); // id -> { el, heroEl, pillEl, pillTxt, dot, footEl, batteryEl, favBtn, t, i }
   const favSensorMap = new Map(); // id -> sensor card rec (favorites popup)
+  const favMusicMap = new Map(); // id -> music row rec (favorites popup)
+  const favLockMap = new Map(); // id -> lock row rec (favorites popup)
+  const favShadeMap = new Map(); // id -> shade tile rec (favorites popup)
   let sensorsPopupSig = "";
   const sensorTypeFilter = new Set(); // empty = show all types
   let sensorFilterOpen = false;
@@ -3370,7 +3385,13 @@
       const ts = tempSensors.find(x => x.i === id);
       if (ts) { out.push({ type: "sensor", dev: normalizeTempSensorForCard(ts) }); continue; }
       const sen = sensors.find(x => x.i === id);
-      if (sen) out.push({ type: "sensor", dev: sen });
+      if (sen) { out.push({ type: "sensor", dev: sen }); continue; }
+      const mp = music.find(x => x.i === id);
+      if (mp) { out.push({ type: "music", dev: mp }); continue; }
+      const lk = locks.find(x => x.i === id);
+      if (lk) { out.push({ type: "lock", dev: lk }); continue; }
+      const shade = windowShades.find(x => x.i === id);
+      if (shade) out.push({ type: "shade", dev: shade });
     }
     return out;
   }
@@ -3380,6 +3401,9 @@
     for (const [, rec] of favDevMap) syncFavButton(rec.el.querySelector(".tile-fav"), rec.data.i);
     for (const [, rec] of sensorCardMap) syncFavButton(rec.favBtn, rec.i);
     for (const [, rec] of favSensorMap) syncFavButton(rec.favBtn, rec.i);
+    for (const [, rec] of favMusicMap) syncFavButton(rec.favBtn, rec.i);
+    for (const [, rec] of favLockMap) syncFavButton(rec.favBtn, rec.i);
+    for (const [, rec] of favShadeMap) syncFavButton(rec.favBtn, rec.i);
     updateTstatFavButton();
   }
 
@@ -3402,6 +3426,9 @@
     updateAllFavButtons();
     updateQuickNavVisibility();
     if (currentCategory() === "favorites") renderFavoritesPopup();
+    else if (quickPopupOpenType === "locks") renderLocksPopup();
+    else if (quickPopupOpenType === "music") renderMusicPopup();
+    else if (quickPopupOpenType === "blinds") renderBlindsPopup();
     const ok = await saveFavorites(favorites);
     if (!ok) {
       if (wasFav) favorites.push(numId);
@@ -3409,6 +3436,9 @@
       updateAllFavButtons();
       updateQuickNavVisibility();
       if (currentCategory() === "favorites") renderFavoritesPopup();
+      else if (quickPopupOpenType === "locks") renderLocksPopup();
+      else if (quickPopupOpenType === "music") renderMusicPopup();
+      else if (quickPopupOpenType === "blinds") renderBlindsPopup();
     }
   }
 
@@ -4381,6 +4411,7 @@
         const opt = lockOptimistic.get(Number(d.i));
         if (opt && !!lock.lk === !!opt.lk) clearLockOptimistic(Number(d.i));
         if (currentCategory() === "locks") renderLocksPopup();
+        else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
         return;
       }
       const shade = windowShades.find(x => x.i === Number(d.i));
@@ -4394,7 +4425,8 @@
           if (opt.pos != null && shade.pos !== opt.pos) matched = false;
           if (matched) clearShadeOptimistic(Number(d.i));
         }
-        if (quickPopupOpenType === "blinds") renderBlindsPopup();
+        if (currentCategory() === "blinds") renderBlindsPopup();
+        else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
         return;
       }
       const mp = music.find(x => x.i === Number(d.i));
@@ -4409,6 +4441,7 @@
           clearMusicOptimistic(Number(d.i));
         }
         if (currentCategory() === "music") renderMusicPopup();
+        else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
       }
     } catch {}
   }
@@ -4447,12 +4480,14 @@
     if (patch.st != null || patch.v != null) {
       setMusicOptimistic(id, patch);
       if (currentCategory() === "music") renderMusicPopup();
+      else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
     }
     const result = await sendCmd(id, cmd, val);
     if (!result.ok) {
       clearMusicOptimistic(id);
       reconcileMusic(id);
       if (currentCategory() === "music") renderMusicPopup();
+      else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
     } else {
       reconcileMusic(id);
     }
@@ -4482,9 +4517,11 @@
         if (!result.ok) { clearMusicOptimistic(dev.i); reconcileMusic(dev.i); }
         else reconcileMusic(dev.i);
         if (currentCategory() === "music") renderMusicPopup();
+        else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
       });
     }
     if (currentCategory() === "music") renderMusicPopup();
+    else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
   }
 
   async function sendLockCmd(id, cmd, pin) {
@@ -4495,11 +4532,13 @@
     hapticTap();
     setLockOptimistic(id, lk, st);
     if (currentCategory() === "locks") renderLocksPopup();
+    else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
     const result = await sendCmd(id, cmd, null, pin);
     if (!result.ok) {
       clearLockOptimistic(id);
       reconcileLock(id);
       if (currentCategory() === "locks") renderLocksPopup();
+      else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
     } else {
       reconcileLock(id);
     }
@@ -4516,13 +4555,15 @@
     else if (cmd === "setPosition") patch = { pos: Math.max(0, Math.min(100, Number(val))) };
     if (patch.st != null || patch.pos != null) {
       setShadeOptimistic(id, patch);
-      if (quickPopupOpenType === "blinds") renderBlindsPopup();
+      if (currentCategory() === "blinds") renderBlindsPopup();
+      else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
     }
     const result = await sendCmd(id, cmd, val);
     if (!result.ok) {
       clearShadeOptimistic(id);
       reconcileShade(id);
-      if (quickPopupOpenType === "blinds") renderBlindsPopup();
+      if (currentCategory() === "blinds") renderBlindsPopup();
+      else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
     } else {
       reconcileShade(id);
     }
@@ -4595,6 +4636,62 @@
     return el;
   }
 
+  function makeLockRow(lock, context) {
+    const inFav = context === "favorites";
+    const row = ce("div", "quick-lock-row" + (inFav ? " quick-fav-span" : ""));
+    row.dataset.name = String(lock.n || "").toLowerCase();
+    const head = ce("div", "quick-fav-row-head");
+    const info = ce("div", "quick-lock-info");
+    const name = ce("span", "quick-fav-name");
+    name.textContent = lock.n || ("Lock " + lock.i);
+    const meta = ce("span", "quick-fav-meta");
+    meta.textContent = roomLabel(lock.r) + " · " + lockStatusLabel(lock);
+    info.appendChild(name);
+    info.appendChild(meta);
+    head.appendChild(info);
+    const fav = ce("button", "tile-fav");
+    fav.type = "button";
+    attachFavButton(fav, lock.i);
+    head.appendChild(fav);
+    row.appendChild(head);
+
+    const actions = ce("div", "quick-lock-actions");
+    const lockBtn = ce("button", "quick-lock-btn");
+    lockBtn.type = "button";
+    lockBtn.innerHTML = LOCK_BTN_SVG + '<span class="quick-lock-btn-label">Lock</span>';
+    const unlockBtn = ce("button", "quick-lock-btn");
+    unlockBtn.type = "button";
+    unlockBtn.innerHTML = UNLOCK_BTN_SVG + '<span class="quick-lock-btn-label">Unlock</span>';
+    const isLocked = effectiveLock(lock);
+    if (isLocked) lockBtn.classList.add("active");
+    else unlockBtn.classList.add("active");
+    lockBtn.addEventListener("click", () => {
+      if (!effectiveLock(lock)) sendLockCmd(lock.i, "lock");
+    });
+    unlockBtn.addEventListener("click", () => {
+      if (!effectiveLock(lock)) return;
+      if (unlockPinRequired) promptUnlockPin(lock.i, lock.n);
+      else sendLockCmd(lock.i, "unlock");
+    });
+    actions.appendChild(lockBtn);
+    actions.appendChild(unlockBtn);
+    row.appendChild(actions);
+
+    if (inFav) {
+      favLockMap.set(lock.i, { el: row, meta, lockBtn, unlockBtn, favBtn: fav });
+    }
+    return row;
+  }
+
+  function updateFavoriteLockRow(lock) {
+    const rec = favLockMap.get(lock.i);
+    if (!rec) return;
+    rec.meta.textContent = roomLabel(lock.r) + " · " + lockStatusLabel(lock);
+    const isLocked = effectiveLock(lock);
+    rec.lockBtn.classList.toggle("active", isLocked);
+    rec.unlockBtn.classList.toggle("active", !isLocked);
+  }
+
   function renderLocksPopup() {
     const popup = ensureQuickPopup();
     const body = popup._body;
@@ -4615,46 +4712,116 @@
       return String(a.n || "").localeCompare(String(b.n || ""));
     });
     const list = ce("div", "quick-list");
-    for (const lock of sorted) {
-      const row = ce("div", "quick-lock-row");
-      const info = ce("div", "quick-lock-info");
-      const name = ce("span", "quick-fav-name");
-      name.textContent = lock.n || ("Lock " + lock.i);
-      const meta = ce("span", "quick-fav-meta");
-      meta.textContent = roomLabel(lock.r) + " · " + lockStatusLabel(lock);
-      info.appendChild(name);
-      info.appendChild(meta);
-      const actions = ce("div", "quick-lock-actions");
-      const lockBtn = ce("button", "quick-lock-btn");
-      lockBtn.type = "button";
-      lockBtn.innerHTML = LOCK_BTN_SVG + '<span class="quick-lock-btn-label">Lock</span>';
-      const unlockBtn = ce("button", "quick-lock-btn");
-      unlockBtn.type = "button";
-      unlockBtn.innerHTML = UNLOCK_BTN_SVG + '<span class="quick-lock-btn-label">Unlock</span>';
-      const isLocked = effectiveLock(lock);
-      if (isLocked) lockBtn.classList.add("active");
-      else unlockBtn.classList.add("active");
-      lockBtn.addEventListener("click", () => {
-        if (!effectiveLock(lock)) sendLockCmd(lock.i, "lock");
-      });
-      unlockBtn.addEventListener("click", () => {
-        if (!effectiveLock(lock)) return;
-        if (unlockPinRequired) promptUnlockPin(lock.i, lock.n);
-        else sendLockCmd(lock.i, "unlock");
-      });
-      actions.appendChild(lockBtn);
-      actions.appendChild(unlockBtn);
-      row.appendChild(info);
-      row.appendChild(actions);
-      list.appendChild(row);
-    }
+    for (const lock of sorted) list.appendChild(makeLockRow(lock, "popup"));
     body.appendChild(list);
+  }
+
+  function makeShadeTile(shade, context) {
+    const inFav = context === "favorites";
+    const tile = ce("div", "shade-tile" + (inFav ? " quick-fav-span" : ""));
+    tile.dataset.name = String(shade.n || "").toLowerCase();
+    const head = ce("div", "quick-fav-row-head");
+    const info = ce("div", "shade-info");
+    const name = ce("span", "quick-fav-name");
+    name.textContent = shade.n || ("Shade " + shade.i);
+    const meta = ce("span", "quick-fav-meta");
+    meta.textContent = roomLabel(shade.r) + " · " + shadeStatusLabel(shade);
+    info.appendChild(name);
+    info.appendChild(meta);
+    head.appendChild(info);
+    const fav = ce("button", "tile-fav");
+    fav.type = "button";
+    attachFavButton(fav, shade.i);
+    head.appendChild(fav);
+    tile.appendChild(head);
+
+    const moving = shadeIsMoving(shade);
+    const pos = effectiveShadePosition(shade);
+    const hasPos = shade.pos != null;
+    let levelLabel = null;
+    let slider = null;
+    if (hasPos) {
+      const sliderWrap = ce("div", "shade-slider-wrap");
+      levelLabel = ce("span", "shade-level-label");
+      levelLabel.textContent = (pos != null ? pos : "—") + "%";
+      slider = ce("div", "slider shade-slider");
+      slider.appendChild(ce("div", "slider-fill"));
+      slider.appendChild(ce("div", "slider-thumb"));
+      setSliderLevel(slider, pos != null ? pos : 0);
+      if (moving) slider.classList.add("disabled");
+      sliderWrap.appendChild(levelLabel);
+      sliderWrap.appendChild(slider);
+      tile.appendChild(sliderWrap);
+      if (!moving) {
+        attachShadeDrag(tile, slider, shade.i, (lvl) => { levelLabel.textContent = lvl + "%"; });
+      }
+    }
+
+    const actions = ce("div", "shade-actions");
+    const openBtn = ce("button", "quick-lock-btn shade-btn");
+    openBtn.type = "button";
+    openBtn.innerHTML = SHADE_OPEN_SVG + '<span class="quick-lock-btn-label">Open</span>';
+    const closeBtn = ce("button", "quick-lock-btn shade-btn");
+    closeBtn.type = "button";
+    closeBtn.innerHTML = SHADE_CLOSE_SVG + '<span class="quick-lock-btn-label">Close</span>';
+    const st = effectiveShadeState(shade);
+    if (st === "open") openBtn.classList.add("active");
+    else if (st === "closed") closeBtn.classList.add("active");
+    if (moving) {
+      openBtn.classList.add("moving");
+      closeBtn.classList.add("moving");
+      openBtn.disabled = true;
+      closeBtn.disabled = true;
+    }
+    openBtn.addEventListener("click", () => {
+      if (!shadeIsMoving(shade) && effectiveShadeState(shade) !== "open") sendShadeCmd(shade.i, "open");
+    });
+    closeBtn.addEventListener("click", () => {
+      if (!shadeIsMoving(shade) && effectiveShadeState(shade) !== "closed") sendShadeCmd(shade.i, "close");
+    });
+    actions.appendChild(openBtn);
+    actions.appendChild(closeBtn);
+    let stopBtn = null;
+    if (moving) {
+      stopBtn = ce("button", "quick-lock-btn shade-btn shade-stop-btn");
+      stopBtn.type = "button";
+      stopBtn.innerHTML = SHADE_STOP_SVG + '<span class="quick-lock-btn-label">Stop</span>';
+      stopBtn.addEventListener("click", () => sendShadeCmd(shade.i, "stop"));
+      actions.appendChild(stopBtn);
+    }
+    tile.appendChild(actions);
+
+    if (inFav) {
+      favShadeMap.set(shade.i, { el: tile, meta, levelLabel, slider, openBtn, closeBtn, stopBtn, favBtn: fav });
+    }
+    return tile;
+  }
+
+  function updateFavoriteShadeTile(shade) {
+    const rec = favShadeMap.get(shade.i);
+    if (!rec) return;
+    const moving = shadeIsMoving(shade);
+    const pos = effectiveShadePosition(shade);
+    rec.meta.textContent = roomLabel(shade.r) + " · " + shadeStatusLabel(shade);
+    if (rec.levelLabel) rec.levelLabel.textContent = (pos != null ? pos : "—") + "%";
+    if (rec.slider) {
+      setSliderLevel(rec.slider, pos != null ? pos : 0);
+      rec.slider.classList.toggle("disabled", moving);
+    }
+    const st = effectiveShadeState(shade);
+    rec.openBtn.classList.toggle("active", st === "open");
+    rec.closeBtn.classList.toggle("active", st === "closed");
+    rec.openBtn.classList.toggle("moving", moving);
+    rec.closeBtn.classList.toggle("moving", moving);
+    rec.openBtn.disabled = moving;
+    rec.closeBtn.disabled = moving;
   }
 
   function renderBlindsPopup() {
     const popup = ensureQuickPopup();
-    const body = popup._body;
-    body.className = "quick-body quick-body-blinds";
+    popup.classList.toggle("quick-popup-wide", !inTabView());
+    const body = currentBody();
+    body.className = "quick-body quick-body-blinds" + (inTabView() ? " tab-body" : "");
     body.innerHTML = "";
     if (!windowShades.length) {
       body.textContent = "No shades selected — add shades in the Hubitat app settings";
@@ -4666,71 +4833,7 @@
       return String(a.n || "").localeCompare(String(b.n || ""));
     });
     const list = ce("div", "quick-list");
-    for (const shade of sorted) {
-      const tile = ce("div", "shade-tile");
-      const info = ce("div", "shade-info");
-      const name = ce("span", "quick-fav-name");
-      name.textContent = shade.n || ("Shade " + shade.i);
-      const meta = ce("span", "quick-fav-meta");
-      meta.textContent = roomLabel(shade.r) + " · " + shadeStatusLabel(shade);
-      info.appendChild(name);
-      info.appendChild(meta);
-      tile.appendChild(info);
-
-      const moving = shadeIsMoving(shade);
-      const pos = effectiveShadePosition(shade);
-      const hasPos = shade.pos != null;
-      if (hasPos) {
-        const sliderWrap = ce("div", "shade-slider-wrap");
-        const levelLabel = ce("span", "shade-level-label");
-        levelLabel.textContent = (pos != null ? pos : "—") + "%";
-        const slider = ce("div", "slider shade-slider");
-        slider.appendChild(ce("div", "slider-fill"));
-        slider.appendChild(ce("div", "slider-thumb"));
-        setSliderLevel(slider, pos != null ? pos : 0);
-        if (moving) slider.classList.add("disabled");
-        sliderWrap.appendChild(levelLabel);
-        sliderWrap.appendChild(slider);
-        tile.appendChild(sliderWrap);
-        if (!moving) {
-          attachShadeDrag(tile, slider, shade.i, (lvl) => { levelLabel.textContent = lvl + "%"; });
-        }
-      }
-
-      const actions = ce("div", "shade-actions");
-      const openBtn = ce("button", "quick-lock-btn shade-btn");
-      openBtn.type = "button";
-      openBtn.innerHTML = SHADE_OPEN_SVG + '<span class="quick-lock-btn-label">Open</span>';
-      const closeBtn = ce("button", "quick-lock-btn shade-btn");
-      closeBtn.type = "button";
-      closeBtn.innerHTML = SHADE_CLOSE_SVG + '<span class="quick-lock-btn-label">Close</span>';
-      const st = effectiveShadeState(shade);
-      if (st === "open") openBtn.classList.add("active");
-      else if (st === "closed") closeBtn.classList.add("active");
-      if (moving) {
-        openBtn.classList.add("moving");
-        closeBtn.classList.add("moving");
-        openBtn.disabled = true;
-        closeBtn.disabled = true;
-      }
-      openBtn.addEventListener("click", () => {
-        if (!shadeIsMoving(shade) && effectiveShadeState(shade) !== "open") sendShadeCmd(shade.i, "open");
-      });
-      closeBtn.addEventListener("click", () => {
-        if (!shadeIsMoving(shade) && effectiveShadeState(shade) !== "closed") sendShadeCmd(shade.i, "close");
-      });
-      actions.appendChild(openBtn);
-      actions.appendChild(closeBtn);
-      if (moving) {
-        const stopBtn = ce("button", "quick-lock-btn shade-btn shade-stop-btn");
-        stopBtn.type = "button";
-        stopBtn.innerHTML = SHADE_STOP_SVG + '<span class="quick-lock-btn-label">Stop</span>';
-        stopBtn.addEventListener("click", () => sendShadeCmd(shade.i, "stop"));
-        actions.appendChild(stopBtn);
-      }
-      tile.appendChild(actions);
-      list.appendChild(tile);
-    }
+    for (const shade of sorted) list.appendChild(makeShadeTile(shade, "popup"));
     body.appendChild(list);
   }
 
@@ -4970,7 +5073,7 @@
   }
 
   function updateSensorCard(dev) {
-    const rec = sensorCardMap.get(dev.i);
+    const rec = sensorCardMap.get(dev.i) || favSensorMap.get(dev.i);
     if (rec) applySensorCardState(rec.el, dev, rec);
   }
 
@@ -5018,6 +5121,179 @@
   }
 
   let musicVolTimer = null;
+
+  function makeMusicRow(dev, context) {
+    const inFav = context === "favorites";
+    const ctrl = musicControls(dev);
+    const playing = isMusicPlaying(effectiveMusicStatus(dev));
+    const status = effectiveMusicStatus(dev);
+    const vol = effectiveMusicVolume(dev);
+    const muted = dev.m === "muted";
+    const canPlayPause = ctrl.play || ctrl.pause;
+
+    const row = ce("div", "music-row" + (playing ? " is-playing" : "") + (inFav ? " quick-fav-span" : ""));
+    row.dataset.name = String(dev.n || "").toLowerCase();
+
+    const art = ce("div", "music-art" + (playing ? " playing" : ""));
+    art.innerHTML = MUSIC_ART_SVG;
+    const eq = ce("div", "music-eq");
+    eq.setAttribute("aria-hidden", "true");
+    for (let b = 0; b < 4; b++) {
+      const bar = ce("span");
+      bar.style.setProperty("animation-delay", (b * 140) + "ms");
+      eq.appendChild(bar);
+    }
+    art.appendChild(eq);
+    let muteBadge = null;
+    if (muted && ctrl.mute) {
+      muteBadge = ce("span", "music-muted-badge");
+      muteBadge.textContent = "Muted";
+      art.appendChild(muteBadge);
+    }
+
+    const infoHead = ce("div", "music-info-head");
+    const info = ce("div", "music-info");
+    const name = ce("span", "music-name");
+    name.textContent = dev.n || ("Player " + dev.i);
+    const track = ce("span", "music-track");
+    track.textContent = dev.tr ? dev.tr : (playing ? "Streaming…" : "—");
+    const meta = ce("span", "music-meta");
+    meta.textContent = roomLabel(dev.r) + " · " + musicStatusLabel(dev);
+    info.appendChild(name);
+    info.appendChild(track);
+    info.appendChild(meta);
+    infoHead.appendChild(info);
+    const favBtn = ce("button", "tile-fav");
+    favBtn.type = "button";
+    attachFavButton(favBtn, dev.i);
+    infoHead.appendChild(favBtn);
+
+    const transportCount = (ctrl.prev ? 1 : 0) + (canPlayPause ? 1 : 0) + (ctrl.stop ? 1 : 0) + (ctrl.next ? 1 : 0);
+    const transport = ce("div", "music-transport" + (transportCount <= 3 ? " is-compact" : ""));
+    let playPauseBtn = null;
+    let stopBtn = null;
+    if (ctrl.prev) {
+      const prevBtn = ce("button", "music-btn");
+      prevBtn.type = "button";
+      prevBtn.setAttribute("aria-label", "Previous track");
+      prevBtn.innerHTML = MUSIC_PREV_SVG;
+      prevBtn.addEventListener("click", () => sendMusicCmd(dev.i, "previousTrack"));
+      transport.appendChild(prevBtn);
+    }
+    if (canPlayPause) {
+      playPauseBtn = ce("button", "music-btn music-btn-primary");
+      playPauseBtn.type = "button";
+      const isPlay = !playing;
+      playPauseBtn.setAttribute("aria-label", isPlay ? "Play" : "Pause");
+      playPauseBtn.innerHTML = isPlay ? MUSIC_PLAY_SVG : MUSIC_PAUSE_SVG;
+      if (playing) playPauseBtn.classList.add("active");
+      playPauseBtn.addEventListener("click", () => {
+        sendMusicCmd(dev.i, playing ? "pause" : "play");
+      });
+      transport.appendChild(playPauseBtn);
+    }
+    if (ctrl.stop) {
+      stopBtn = ce("button", "music-btn");
+      stopBtn.type = "button";
+      stopBtn.setAttribute("aria-label", "Stop");
+      stopBtn.innerHTML = MUSIC_STOP_SVG;
+      if (status === "stopped") stopBtn.classList.add("active");
+      stopBtn.addEventListener("click", () => sendMusicCmd(dev.i, "stop"));
+      transport.appendChild(stopBtn);
+    }
+    if (ctrl.next) {
+      const nextBtn = ce("button", "music-btn");
+      nextBtn.type = "button";
+      nextBtn.setAttribute("aria-label", "Next track");
+      nextBtn.innerHTML = MUSIC_NEXT_SVG;
+      nextBtn.addEventListener("click", () => sendMusicCmd(dev.i, "nextTrack"));
+      transport.appendChild(nextBtn);
+    }
+
+    const volWrap = ce("div", "music-volume");
+    const volIcon = ce("span", "music-volume-icon");
+    volIcon.textContent = vol == null ? "♪" : (vol === 0 || muted ? "🔇" : (vol < 34 ? "🔈" : (vol < 67 ? "🔉" : "🔊")));
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = "0";
+    slider.max = "100";
+    slider.step = "1";
+    slider.value = String(vol == null ? 0 : vol);
+    slider.className = "music-volume-slider";
+    slider.setAttribute("aria-label", "Volume");
+    slider.style.setProperty("--vol", String(vol == null ? 0 : vol) + "%");
+    if (vol == null || !ctrl.volume) slider.disabled = true;
+    let pendingVol = null;
+    slider.addEventListener("input", () => {
+      pendingVol = Number(slider.value);
+      slider.style.setProperty("--vol", String(pendingVol) + "%");
+      setMusicOptimistic(dev.i, { v: pendingVol });
+      const volNow = Number(slider.value);
+      volIcon.textContent = volNow === 0 || muted ? "🔇" : (volNow < 34 ? "🔈" : (volNow < 67 ? "🔉" : "🔊"));
+      if (musicVolTimer) clearTimeout(musicVolTimer);
+      musicVolTimer = setTimeout(() => {
+        const v = pendingVol;
+        pendingVol = null;
+        musicVolTimer = null;
+        if (v == null) return;
+        sendMusicCmd(dev.i, "setVolume", v);
+      }, 280);
+    });
+    volWrap.appendChild(volIcon);
+    volWrap.appendChild(slider);
+
+    row.appendChild(art);
+    row.appendChild(infoHead);
+    const right = ce("div", "music-right");
+    if (transport.childElementCount) right.appendChild(transport);
+    if (ctrl.volume) right.appendChild(volWrap);
+    row.appendChild(right);
+
+    if (inFav) {
+      favMusicMap.set(dev.i, {
+        el: row, art, track, meta, playPauseBtn, stopBtn, volIcon, slider, muteBadge, favBtn, i: dev.i,
+      });
+    }
+    return row;
+  }
+
+  function updateFavoriteMusicRow(dev) {
+    const rec = favMusicMap.get(dev.i);
+    if (!rec) return;
+    const ctrl = musicControls(dev);
+    const playing = isMusicPlaying(effectiveMusicStatus(dev));
+    const status = effectiveMusicStatus(dev);
+    const vol = effectiveMusicVolume(dev);
+    const muted = dev.m === "muted";
+    rec.el.classList.toggle("is-playing", playing);
+    rec.art.classList.toggle("playing", playing);
+    rec.track.textContent = dev.tr ? dev.tr : (playing ? "Streaming…" : "—");
+    rec.meta.textContent = roomLabel(dev.r) + " · " + musicStatusLabel(dev);
+    if (rec.playPauseBtn) {
+      rec.playPauseBtn.setAttribute("aria-label", playing ? "Pause" : "Play");
+      rec.playPauseBtn.innerHTML = playing ? MUSIC_PAUSE_SVG : MUSIC_PLAY_SVG;
+      rec.playPauseBtn.classList.toggle("active", playing);
+    }
+    if (rec.stopBtn) rec.stopBtn.classList.toggle("active", status === "stopped");
+    if (rec.slider && vol != null) {
+      rec.slider.value = String(vol);
+      rec.slider.style.setProperty("--vol", String(vol) + "%");
+    }
+    if (rec.volIcon) {
+      rec.volIcon.textContent = vol == null ? "♪" : (vol === 0 || muted ? "🔇" : (vol < 34 ? "🔈" : (vol < 67 ? "🔉" : "🔊")));
+    }
+    if (ctrl.mute) {
+      if (muted && !rec.muteBadge) {
+        rec.muteBadge = ce("span", "music-muted-badge");
+        rec.muteBadge.textContent = "Muted";
+        rec.art.appendChild(rec.muteBadge);
+      } else if (!muted && rec.muteBadge) {
+        rec.muteBadge.remove();
+        rec.muteBadge = null;
+      }
+    }
+  }
+
   function renderMusicPopup() {
     const popup = ensureQuickPopup();
     const body = currentBody();
@@ -5033,124 +5309,7 @@
       return String(a.n || "").localeCompare(String(b.n || ""));
     });
     const list = ce("div", "quick-list music-list");
-    for (const dev of sorted) {
-      const ctrl = musicControls(dev);
-      const playing = isMusicPlaying(effectiveMusicStatus(dev));
-      const status = effectiveMusicStatus(dev);
-      const vol = effectiveMusicVolume(dev);
-      const muted = dev.m === "muted";
-      const canPlayPause = ctrl.play || ctrl.pause;
-
-      const row = ce("div", "music-row" + (playing ? " is-playing" : ""));
-      row.dataset.name = String(dev.n || "").toLowerCase();
-
-      const art = ce("div", "music-art" + (playing ? " playing" : ""));
-      art.innerHTML = MUSIC_ART_SVG;
-      const eq = ce("div", "music-eq");
-      eq.setAttribute("aria-hidden", "true");
-      for (let b = 0; b < 4; b++) {
-        const bar = ce("span");
-        bar.style.setProperty("animation-delay", (b * 140) + "ms");
-        eq.appendChild(bar);
-      }
-      art.appendChild(eq);
-      if (muted && ctrl.mute) {
-        const mute = ce("span", "music-muted-badge");
-        mute.textContent = "Muted";
-        art.appendChild(mute);
-      }
-
-      const info = ce("div", "music-info");
-      const name = ce("span", "music-name");
-      name.textContent = dev.n || ("Player " + dev.i);
-      const track = ce("span", "music-track");
-      track.textContent = dev.tr ? dev.tr : (playing ? "Streaming…" : "—");
-      const meta = ce("span", "music-meta");
-      meta.textContent = roomLabel(dev.r) + " · " + musicStatusLabel(dev);
-      info.appendChild(name);
-      info.appendChild(track);
-      info.appendChild(meta);
-
-      const transportCount = (ctrl.prev ? 1 : 0) + (canPlayPause ? 1 : 0) + (ctrl.stop ? 1 : 0) + (ctrl.next ? 1 : 0);
-      const transport = ce("div", "music-transport" + (transportCount <= 3 ? " is-compact" : ""));
-      if (ctrl.prev) {
-        const prevBtn = ce("button", "music-btn");
-        prevBtn.type = "button";
-        prevBtn.setAttribute("aria-label", "Previous track");
-        prevBtn.innerHTML = MUSIC_PREV_SVG;
-        prevBtn.addEventListener("click", () => sendMusicCmd(dev.i, "previousTrack"));
-        transport.appendChild(prevBtn);
-      }
-      if (canPlayPause) {
-        const playPauseBtn = ce("button", "music-btn music-btn-primary");
-        playPauseBtn.type = "button";
-        const isPlay = !playing;
-        playPauseBtn.setAttribute("aria-label", isPlay ? "Play" : "Pause");
-        playPauseBtn.innerHTML = isPlay ? MUSIC_PLAY_SVG : MUSIC_PAUSE_SVG;
-        if (playing) playPauseBtn.classList.add("active");
-        playPauseBtn.addEventListener("click", () => {
-          sendMusicCmd(dev.i, playing ? "pause" : "play");
-        });
-        transport.appendChild(playPauseBtn);
-      }
-      if (ctrl.stop) {
-        const stopBtn = ce("button", "music-btn");
-        stopBtn.type = "button";
-        stopBtn.setAttribute("aria-label", "Stop");
-        stopBtn.innerHTML = MUSIC_STOP_SVG;
-        if (status === "stopped") stopBtn.classList.add("active");
-        stopBtn.addEventListener("click", () => sendMusicCmd(dev.i, "stop"));
-        transport.appendChild(stopBtn);
-      }
-      if (ctrl.next) {
-        const nextBtn = ce("button", "music-btn");
-        nextBtn.type = "button";
-        nextBtn.setAttribute("aria-label", "Next track");
-        nextBtn.innerHTML = MUSIC_NEXT_SVG;
-        nextBtn.addEventListener("click", () => sendMusicCmd(dev.i, "nextTrack"));
-        transport.appendChild(nextBtn);
-      }
-
-      const volWrap = ce("div", "music-volume");
-      const volIcon = ce("span", "music-volume-icon");
-      volIcon.textContent = vol == null ? "♪" : (vol === 0 || muted ? "🔇" : (vol < 34 ? "🔈" : (vol < 67 ? "🔉" : "🔊")));
-      const slider = document.createElement("input");
-      slider.type = "range";
-      slider.min = "0";
-      slider.max = "100";
-      slider.step = "1";
-      slider.value = String(vol == null ? 0 : vol);
-      slider.className = "music-volume-slider";
-      slider.setAttribute("aria-label", "Volume");
-      slider.style.setProperty("--vol", String(vol == null ? 0 : vol) + "%");
-      if (vol == null || !ctrl.volume) slider.disabled = true;
-      let pendingVol = null;
-      slider.addEventListener("input", () => {
-        pendingVol = Number(slider.value);
-        slider.style.setProperty("--vol", String(pendingVol) + "%");
-        setMusicOptimistic(dev.i, { v: pendingVol });
-        const volNow = Number(slider.value);
-        volIcon.textContent = volNow === 0 || muted ? "🔇" : (volNow < 34 ? "🔈" : (volNow < 67 ? "🔉" : "🔊"));
-        if (musicVolTimer) clearTimeout(musicVolTimer);
-        musicVolTimer = setTimeout(() => {
-          const v = pendingVol;
-          pendingVol = null;
-          musicVolTimer = null;
-          if (v == null) return;
-          sendMusicCmd(dev.i, "setVolume", v);
-        }, 280);
-      });
-      volWrap.appendChild(volIcon);
-      volWrap.appendChild(slider);
-
-      row.appendChild(art);
-      row.appendChild(info);
-      const right = ce("div", "music-right");
-      if (transport.childElementCount) right.appendChild(transport);
-      if (ctrl.volume) right.appendChild(volWrap);
-      row.appendChild(right);
-      list.appendChild(row);
-    }
+    for (const dev of sorted) list.appendChild(makeMusicRow(dev, "popup"));
     body.appendChild(list);
   }
 
@@ -5633,9 +5792,22 @@
       return;
     }
     for (const entry of getFavoriteEntries()) {
-      if (entry.type !== "thermostat") continue;
-      const t = thermostats.find((x) => x.i === entry.dev.i) || entry.dev;
-      updateQuickTstatCard(t, favTstatMap);
+      if (entry.type === "thermostat") {
+        const t = thermostats.find((x) => x.i === entry.dev.i) || entry.dev;
+        updateQuickTstatCard(t, favTstatMap);
+      } else if (entry.type === "sensor") {
+        const dev = mergedSensorList().find((x) => x.i === entry.dev.i) || entry.dev;
+        updateSensorCard(dev);
+      } else if (entry.type === "music") {
+        const mp = music.find((x) => x.i === entry.dev.i) || entry.dev;
+        updateFavoriteMusicRow(mp);
+      } else if (entry.type === "lock") {
+        const lk = locks.find((x) => x.i === entry.dev.i) || entry.dev;
+        updateFavoriteLockRow(lk);
+      } else if (entry.type === "shade") {
+        const sh = windowShades.find((x) => x.i === entry.dev.i) || entry.dev;
+        updateFavoriteShadeTile(sh);
+      }
     }
     updateStates();
     if (favTstatModeMenu) repositionFavoriteTstatModeMenu();
@@ -5651,10 +5823,13 @@
     favDevMap.clear();
     favTstatMap.clear();
     favSensorMap.clear();
+    favMusicMap.clear();
+    favLockMap.clear();
+    favShadeMap.clear();
     const entries = getFavoriteEntries();
     favPopupSig = favoritesPopupSignature();
     if (!entries.length) {
-      body.textContent = "Tap the star on any light, thermostat, or sensor to add it here";
+      body.textContent = "Tap the star on any device to add it here";
       return;
     }
     const grid = ce("div", "quick-fav-grid");
@@ -5663,8 +5838,14 @@
         grid.appendChild(makeTile(entry.dev, "favorites"));
       } else if (entry.type === "thermostat") {
         grid.appendChild(makeQuickTstatCard(entry.dev, favTstatMap));
-      } else {
+      } else if (entry.type === "sensor") {
         grid.appendChild(makeFavoriteSensorCard(entry.dev));
+      } else if (entry.type === "music") {
+        grid.appendChild(makeMusicRow(entry.dev, "favorites"));
+      } else if (entry.type === "lock") {
+        grid.appendChild(makeLockRow(entry.dev, "favorites"));
+      } else if (entry.type === "shade") {
+        grid.appendChild(makeShadeTile(entry.dev, "favorites"));
       }
     }
     body.appendChild(grid);
@@ -5750,6 +5931,7 @@
         case "favorites": refreshFavoritesPopup(); break;
         case "thermostats": refreshThermostatsPopup(); break;
         case "sensors": refreshSensorsPopup(); break;
+        case "blinds": renderBlindsPopup(); break;
         case "scheduling":
           if (globalThis.__MLD?.renderSchedulerView) globalThis.__MLD.renderSchedulerView();
           break;
@@ -5824,6 +6006,9 @@
     favDevMap.clear();
     favTstatMap.clear();
     favSensorMap.clear();
+    favMusicMap.clear();
+    favLockMap.clear();
+    favShadeMap.clear();
     favPopupSig = "";
     tstatsPopupMap.clear();
     tstatsPopupSig = "";
@@ -5907,6 +6092,7 @@
         case "sensors": renderSensorsPopup(); break;
         case "thermostats": renderThermostatsPopup(); break;
         case "music": renderMusicPopup(); break;
+        case "blinds": renderBlindsPopup(); break;
         case "scheduling":
           if (globalThis.__MLD?.renderSchedulerView) globalThis.__MLD.renderSchedulerView();
           break;
@@ -6427,14 +6613,52 @@
   }
 
   function restartPolling() {
-    if (pollTimer) startPolling();
+    if (!document.hidden && !reorderMode) startPolling();
   }
   function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+  function clearWsReconnectTimer() {
+    if (wsReconnectTimer) {
+      clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = null;
+    }
+  }
+
+  function stopWS() {
+    clearWsReconnectTimer();
+    wsConnected = false;
+    if (ws) {
+      try { ws.close(); } catch {}
+      ws = null;
+    }
+  }
+
+  function pauseApp() {
+    stopPolling();
+    stopWS();
+  }
+
+  function resumeApp() {
+    if (document.hidden) return;
+    cancelAllSlideGestures();
+    closeConfirm(false);
+    if (drawerOpen) closeDrawer();
+    if (quickPopupOpenType) closeQuickPopup();
+    if (colorSession) closeColorPopup(false);
+    refresh();
+    if (!reorderMode) startPolling();
+    startWS();
+  }
 
   // ---------- websocket (local only) ----------
   function startWS() {
     if (!cfg.useWebSocket) return;
-    if (ws) return;
+    if (ws) {
+      if (ws.readyState === WebSocket.OPEN) return;
+      try { ws.close(); } catch {}
+      ws = null;
+      wsConnected = false;
+    }
     if (location.hostname === "cloud.hubitat.com" || location.protocol === "https:") return; // ws not available via cloud proxy
     const wsUrl = "ws://" + location.host + "/eventsocket";
     try { ws = new WebSocket(wsUrl); } catch { ws = null; return; }
@@ -6503,6 +6727,7 @@
           lock.st = val;
           lock.lk = val === "locked" ? 1 : 0;
           if (currentCategory() === "locks") renderLocksPopup();
+          else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
           return;
         }
         const shade = windowShades.find(x => x.i === Number(m.deviceId));
@@ -6516,7 +6741,8 @@
             const pos = Math.round(Number(m.value));
             if (!isNaN(pos)) shade.pos = pos;
           } else return;
-          if (quickPopupOpenType === "blinds") renderBlindsPopup();
+          if (currentCategory() === "blinds") renderBlindsPopup();
+          else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
           return;
         }
         // thermostat / sensor events
@@ -6572,19 +6798,40 @@
         }
       } catch {}
     };
-    ws.onclose = () => { ws = null; wsConnected = false; restartPolling(); scheduleReconnect(); };
+    ws.onclose = () => {
+      ws = null;
+      wsConnected = false;
+      restartPolling();
+      if (!document.hidden) scheduleReconnect();
+    };
     ws.onerror = () => { try { ws.close(); } catch {} };
   }
   function scheduleReconnect() {
-    if (!cfg.useWebSocket) return;
+    if (!cfg.useWebSocket || document.hidden) return;
     wsRetry = Math.min(wsRetry + 1, 6);
     const delay = Math.min(15000, 1000 * 2 ** wsRetry);
-    setTimeout(startWS, delay);
+    clearWsReconnectTimer();
+    wsReconnectTimer = setTimeout(() => {
+      wsReconnectTimer = null;
+      startWS();
+    }, delay);
   }
 
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) { stopPolling(); }
-    else { refresh(); startPolling(); startWS(); }
+    if (document.hidden) pauseApp();
+    else resumeApp();
+  });
+  window.addEventListener("pageshow", () => {
+    if (!document.hidden) resumeApp();
+  });
+  let focusResumeTimer = null;
+  window.addEventListener("focus", () => {
+    if (document.hidden) return;
+    if (focusResumeTimer) clearTimeout(focusResumeTimer);
+    focusResumeTimer = setTimeout(() => {
+      focusResumeTimer = null;
+      resumeApp();
+    }, 300);
   });
 
   // ---------- init ----------

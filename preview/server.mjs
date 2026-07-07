@@ -635,6 +635,9 @@ const server = createServer(async (req, res) => {
       ...(state.thermostats || []).map(t => t.i),
       ...(state.tempSensors || []).map(s => s.i),
       ...(state.sensors || []).map(s => s.i),
+      ...(state.music || []).map(m => m.i),
+      ...(state.locks || []).map(l => l.i),
+      ...(state.windowShades || []).map(s => s.i),
     ]);
     const validateIds = (raw) => {
       const validated = [];

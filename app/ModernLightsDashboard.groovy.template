@@ -2003,6 +2003,9 @@ def validFavoriteIdSet() {
     thermostats?.each { set.add(it.id.toString()) }
     tempSensors?.each { set.add(it.id.toString()) }
     allSensorDevices()?.each { set.add(it.device.id.toString()) }
+    locks?.each { set.add(it.id.toString()) }
+    windowShades?.each { set.add(it.id.toString()) }
+    allAudioDevices()?.each { set.add(it.id.toString()) }
     return set
 }
 
