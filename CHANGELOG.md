@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.7
+
+- Scheduler time picker uses +/- stepper buttons with hold-to-repeat (12h and 24h).
+- Dimmer and color-temperature slider thumbs align correctly at track edges via CSS positioning.
+- Scheduler device-action step gets clearer headings, hints, and room-grouped layout.
+
 ## 0.2.6
 
 - Dimmer sliders and color-popup level track use a warm brightness gradient with a dim overlay (matches tile drag-to-dim behavior).

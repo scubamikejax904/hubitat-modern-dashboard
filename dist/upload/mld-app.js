@@ -854,8 +854,6 @@
   function updateLevelTrackVisual(track, thumbEl, dimEl, level) {
     const l = Math.max(0, Math.min(100, Math.round(level)));
     track.style.setProperty("--level", String(l));
-    if (thumbEl) thumbEl.style.left = l + "%";
-    if (dimEl) dimEl.style.left = l + "%";
     return l;
   }
 
@@ -930,7 +928,7 @@
   function updateCtTrackVisual(thumbEl, k) {
     const clamped = Math.max(CT_K_MIN, Math.min(CT_K_MAX, Math.round(k)));
     const pct = ((clamped - CT_K_MIN) / (CT_K_MAX - CT_K_MIN)) * 100;
-    if (thumbEl) thumbEl.style.left = pct + "%";
+    if (thumbEl) thumbEl.style.setProperty("--pct", String(pct));
     return clamped;
   }
 
@@ -1123,7 +1121,7 @@
     const popup = ensureColorPopup();
     const pct = kToPct(k);
     popup._valueEl.textContent = k + "K";
-    popup._thumbEl.style.left = pct + "%";
+    popup._thumbEl.style.setProperty("--pct", String(pct));
     popup.querySelectorAll(".ct-preset").forEach((btn) => {
       btn.classList.toggle("active", Number(btn.dataset.k) === k);
     });
