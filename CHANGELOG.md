@@ -1,9 +1,23 @@
 # Changelog
 
+## 0.2.20
+
+- Re-land valve controls and sensor normalization from 0.2.18.
+- Fix Hubitat valves picker: use `capability.valve` (lowercase). Capital
+  `capability.Valve` in 0.2.18 could break Groovy compile and leave the dashboard
+  shell empty aside from All on/All off.
+
 ## 0.2.19
 
 - Revert 0.2.18 (valve controls and sensor normalization) — restores the previous
   stable release.
+
+## 0.2.18
+
+- **Valves** (water shutoff, irrigation): companion app picker; open/close controls in
+  Sensors view and favorites with optimistic UI.
+- Sensor readings: more reliable attribute fallbacks and normalization (motion, contact,
+  leak, presence, smoke/CO); live WebSocket updates for secondary attributes.
 
 ## 0.2.17
 
