@@ -37,6 +37,8 @@
   const THEME_OPTIONS = ["dark", "light", "auto"];
   const APP_EL = document.getElementById("app");
   const REORDER_DRAG_THRESHOLD = 8;
+  const NAV_MOVE_PREV_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>';
+  const NAV_MOVE_NEXT_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>';
   const DASHBOARD_TITLE_EL = document.getElementById("dashboard-title");
   const CURRENT_CATEGORY_TITLE_EL = document.getElementById("current-category-title");
 
@@ -94,7 +96,7 @@
     try { localStorage.setItem(DRAWER_STORAGE_KEY, on ? "1" : "0"); } catch {}
   }
 
-  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", roomOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), localUrl: "", cloudUrl: "" };
+  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", roomOrder: null, navOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), localUrl: "", cloudUrl: "" };
 
   let localModeBannerEl = null;
   let localBannerDismissed = false;
@@ -118,6 +120,10 @@
   let reorderBusy = false;
   let reorderSnapshot = null;
   let reorderDraftOrder = null;
+  let navReorderSnapshot = null;
+  let navReorderDraftOrder = null;
+  let navReorderDrawerRelocated = false;
+  const navEls = new Map(); // navKey -> { wrap, btn, handle, movePrev, moveNext }
 
   let colorPopup = null;
   let colorSession = null;
@@ -2898,6 +2904,10 @@
       if (!reorderMode && Array.isArray(d.config.roomOrder)) {
         cfg.roomOrder = d.config.roomOrder.length ? d.config.roomOrder : null;
       }
+      if (!reorderMode && Array.isArray(d.config.navOrder)) {
+        cfg.navOrder = d.config.navOrder.length ? d.config.navOrder : null;
+        applyNavOrder(getDisplayNavOrder());
+      }
       if (d.config.localUrl != null) cfg.localUrl = String(d.config.localUrl || "");
       if (d.config.cloudUrl != null) cfg.cloudUrl = String(d.config.cloudUrl || "");
     }
@@ -3134,86 +3144,28 @@
     return order.filter(rid => hasContent(rid));
   }
 
-  async function saveRoomOrder(order) {
-    if (!order?.length) {
-      flash("No rooms to save", true);
-      return false;
-    }
-    const headers = { "Accept": "application/json" };
-    const paths = ["room-order", "settings/room-order"];
-    let lastMsg = "Could not save room order";
-    for (const path of paths) {
-      try {
-        let r = await fetch(withToken(path), {
-          method: "POST",
-          cache: "no-store",
-          headers: { ...headers, "Content-Type": "application/json" },
-          body: JSON.stringify({ order }),
-        });
-        if (r.ok) return true;
-        try {
-          const body = await r.json();
-          if (body?.error) lastMsg = String(body.error);
-        } catch {}
-        if (r.status === 404) continue;
-        r = await fetch(withToken(path + "?order=" + encodeURIComponent(order.join(","))), {
-          method: "GET",
-          cache: "no-store",
-          headers,
-        });
-        if (r.ok) return true;
-        try {
-          const body = await r.json();
-          if (body?.error) lastMsg = String(body.error);
-        } catch {}
-      } catch {}
-    }
-    flash(lastMsg === "Could not save room order"
-      ? "Could not save room order — update the hub app code and try again"
-      : lastMsg, true);
-    return false;
+  function getDefaultNavOrder() {
+    return ["lights", ...QUICK_NAV.map(n => n.popup)];
   }
 
-  async function postJson(path, body) {
-    try {
-      const r = await fetch(withToken(path), {
-        method: "POST",
-        cache: "no-store",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!r.ok) {
-        let msg = "Request failed";
-        try {
-          const j = await r.json();
-          if (j?.error) msg = String(j.error);
-        } catch {}
-        flash(msg, true);
-        return { ok: false };
-      }
-      let data = {};
-      try { data = await r.json(); } catch {}
-      return { ok: true, data };
-    } catch {
-      flash("Request failed", true);
-      return { ok: false };
+  function getDisplayNavOrder() {
+    const defaults = getDefaultNavOrder();
+    if (!cfg.navOrder?.length) return defaults.slice();
+    const known = new Set(defaults);
+    const order = cfg.navOrder.filter(k => known.has(k));
+    for (const key of defaults) {
+      if (!order.includes(key)) order.push(key);
     }
+    return order;
   }
 
-  async function postJsonSilent(path, body) {
-    try {
-      const r = await fetch(withToken(path), {
-        method: "POST",
-        cache: "no-store",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(body),
-      });
-      let data = {};
-      try { data = await r.json(); } catch {}
-      return { ok: r.ok, status: r.status, data, error: data?.error };
-    } catch {
-      return { ok: false, error: "Request failed" };
+  function applyNavOrder(order) {
+    const nav = document.querySelector(".quick-nav");
+    if (!nav) return;
+    for (const key of order) {
+      const rec = navEls.get(key);
+      if (rec?.wrap) nav.appendChild(rec.wrap);
     }
   }
-  globalThis.__MLD = { ROOMS_EL, SEARCH_EL, STATUS_EL, ALL_ON_BTN, ALL_OFF_BTN, ALL_ON_TRACK, ALL_OFF_TRACK, ALL_ON_RESTORE_BTN, ALL_OFF_SAVE_BTN, CENTRAL_TSTAT_BTN, CENTRAL_MUSIC_BTN, EXPAND_ALL_BTN, REORDER_DONE_BTN, REORDER_CANCEL_BTN, OVERFLOW_BTN, OVERFLOW_MENU, MENU_REORDER_BTN, MENU_HAPTICS_EL, MENU_TABS_EL, MENU_DRAWER_EL, MENU_THEME_SEGMENT, MENU_OPEN_LOCAL_BTN, MENU_OPEN_CLOUD_BTN, MENU_LOCAL_URL_EL, HAPTICS_STORAGE_KEY, THEME_STORAGE_KEY, TABS_STORAGE_KEY, DRAWER_STORAGE_KEY, LOCAL_URL_STORAGE_KEY, LOCAL_OK_STORAGE_KEY, CLOUD_URL_STORAGE_KEY, PREFER_CLOUD_STORAGE_KEY, LOCAL_OK_MAX_AGE_MS, THEME_OPTIONS, APP_EL, REORDER_DRAG_THRESHOLD, DASHBOARD_TITLE_EL, CURRENT_CATEGORY_TITLE_EL, POLL_DEFAULT, POLL_WS_FALLBACK, loadHapticsPref, saveHapticsPref, loadThemePref, saveThemePref, loadTabsPref, saveTabsPref, loadDrawerPref, saveDrawerPref, cfg, localModeBannerEl, localBannerDismissed, rooms, roomMap, devices, devicesByRoom, devMap, favDevMap, roomEls, lastDataSig, pollTimer, ws, wsConnected, wsRetry, wsReconnectTimer, pageWasHidden, reorderMode, reorderBusy, reorderSnapshot, reorderDraftOrder, colorPopup, colorSession, levelOptimistic, switchOptimistic, lockOptimistic, shadeOptimistic, musicOptimistic, setpointOptimistic, rgbWheelCache, thermostats, tempSensors, thermoByRoom, sensorByRoom, climateEls, tstatPopup, tstatSession, tstatDeviceModeLock, musicMasterPopup, MUSIC_VOL_STEP, hubModes, currentHubMode, scenes, locks, windowShades, plainSwitches, outlets, music, favorites, snapshots, roomGestureLockCount, hubModeLockUntil, hsmStatus, hsmAlert, hsmAlertDesc, hsmEnabled, hsmPinRequired, thermostatsPopupEnabled, unlockPinEnabled, unlockPinRequired, hsmLockUntil, pinPadPopup, pinPadState, confirmPopup, confirmPending, quickPopup, quickPopupOpenType, syncQuickPopupRef, TAB_CATEGORIES, TAB_LABELS, tabMode, activeTab, tabViewEl, QUICK_LIGHTS_BTN, favTstatModeMenu, favTstatModeMenuCleanup, favTstatModeMenuId, favTstatModeMenuAnchor, centralTstatTargetMenu, centralTstatTargetMenuCleanup, centralTstatTargetMenuAnchor, favTstatMap, favPopupSig, tstatsPopupMap, tstatsPopupSig, setLevelOptimistic, setSwitchOptimistic, clearSwitchOptimistic, reapplySwitchOptimistic, effectiveSwitch, effectiveLevel, setLockOptimistic, clearLockOptimistic, reapplyLockOptimistic, effectiveLock, lockStatusLabel, setShadeOptimistic, clearShadeOptimistic, reapplyShadeOptimistic, effectiveShadeState, effectiveShadePosition, shadeIsMoving, shadeStatusLabel, isMusicPlaying, musicControls, effectiveMusicStatus, effectiveMusicVolume, musicStatusLabel, setMusicOptimistic, clearMusicOptimistic, reapplyMusicOptimistic, setSetpointOptimistic, clearSetpointOptimistic, reapplySetpointOptimistic, applyTstatSetpoints, drawRgbWheel, activeSlideGestures, cancelAllSlideGestures, appendPopup, bindPopupDismiss, ensureColorPopup, setColorTab, updateColorPopupUI, tileRecsFor, applyLevelChange, applyCtChange, applyRgbChange, attachCtPresets, attachLevelPresets, trackPctFromEvent, levelFromTrackEvent, updateLevelTrackVisual, bindLevelTrackDrag, makeLevelTrackSlider, updateCtTrackVisual, bindCtTrackDrag, makeCtTrackSlider, attachLevelTrackDrag, attachRgbPresets, attachRgbWheel, ensureLightOn, attachCtTrackDrag, kToPct, pctToK, kFromEvent, setCtVisual, setRgbVisual, setLevelVisual, openColorPopup, closeColorPopup, closeCtPopup, supportedModes, supportedFanModes, deviceHasFanSpeed, supportedFanSpeeds, showFanSpeedControls, fanModeActive, tstatSectionLabel, tstatStateClass, formatRoomTemp, roomClimateInfo, roomHasClimate, roomTstatState, isFavorite, syncFavButton, isFavoriteableDeviceId, centralThermostatsSorted, buildCentralTstat, applyCentralTstatSelection, updateCentralTstatTargetButton, updateTstatHeadExtras, updateTstatFavButton, postCall, ensureTstatPopup, activeTstat, tstatSetpointTarget, commitTstatSetpoint, adjustTstatSetpoint, renderTstatDial, renderTstatControls, attachTstatDialDrag, tstatModeLocked, reapplyTstatDeviceModeLocks, tstatModeDisplayLabel, favoriteTstatTarget, favoriteTstatTemps, favoriteTstatState, modeCmdForKey, applyTstatModeOptimistic, sendTstatModeCmd, adjustFavoriteTstat, refreshOpenTstatQuickPopups, closeFavoriteTstatModeMenu, repositionFavoriteTstatModeMenu, syncFavoriteTstatModeMenu, applyFavoriteTstatMode, openFavoriteTstatModeMenu, closeCentralTstatTargetMenu, repositionCentralTstatTargetMenu, syncCentralTstatTargetMenu, openCentralTstatTargetMenu, setTstatMode, setFanMode, setFanSpeed, positionTstatPopup, openCentralTstatPopup, openTstatPopup, closeTstatPopup, ensureMusicMasterPopup, renderMusicMasterBody, openMusicMasterPopup, closeMusicMasterPopup, reconcileTstat, updateClimateWidgets, setStatus, flash, hapticTap, effectiveTheme, updateThemeSegmentUI, applyTheme, applyDashboardName, isCloudOrigin, isLocalOrigin, isAndroid, isStandaloneDisplay, initAndroidLocalImmersive, loadStoredLocalUrl, saveStoredLocalUrl, loadStoredCloudUrl, saveStoredCloudUrl, preferCloudMode, setPreferCloudMode, consumePreferCloudParam, loadLocalOkTs, saveLocalOkTs, localOkFresh, refreshLocalUrlFromConfig, navigateToLocal, maybeRefreshLocalOkFromReferrer, navigateToCloud, updateLocalModeMenuUI, hideLocalModeBanner, showLocalModeBanner, applyLocalModeStrategy, ACCESS_TOKEN, withToken, fetchWithTimeout, getJson, fetchData, sendCmd, sendCmdBatch, publishMld, rebuildDevicesByRoom, applyTstatSessionModeLock, sensors, sensorCardMap, favSensorMap, favMusicMap, favLockMap, favShadeMap, sensorsPopupSig, sensorTypeFilter, sensorFilterOpen, sensorFilterChipsEl, sensorFilterBtnEl, sensorFilterEmptyEl, replaceList, repopulateThermoByRoom, repopulateSensorByRoom, syncRoomMap, emptyState, loadingState, noDevicesState, sortRoomsByOrder, ensureRoomsFromDevices, contentRoomIds, getDisplayRoomIds, saveRoomOrder, postJson, postJsonSilent };
+  globalThis.__MLD = { ROOMS_EL, SEARCH_EL, STATUS_EL, ALL_ON_BTN, ALL_OFF_BTN, ALL_ON_TRACK, ALL_OFF_TRACK, ALL_ON_RESTORE_BTN, ALL_OFF_SAVE_BTN, CENTRAL_TSTAT_BTN, CENTRAL_MUSIC_BTN, EXPAND_ALL_BTN, REORDER_DONE_BTN, REORDER_CANCEL_BTN, OVERFLOW_BTN, OVERFLOW_MENU, MENU_REORDER_BTN, MENU_HAPTICS_EL, MENU_TABS_EL, MENU_DRAWER_EL, MENU_THEME_SEGMENT, MENU_OPEN_LOCAL_BTN, MENU_OPEN_CLOUD_BTN, MENU_LOCAL_URL_EL, HAPTICS_STORAGE_KEY, THEME_STORAGE_KEY, TABS_STORAGE_KEY, DRAWER_STORAGE_KEY, LOCAL_URL_STORAGE_KEY, LOCAL_OK_STORAGE_KEY, CLOUD_URL_STORAGE_KEY, PREFER_CLOUD_STORAGE_KEY, LOCAL_OK_MAX_AGE_MS, THEME_OPTIONS, APP_EL, REORDER_DRAG_THRESHOLD, NAV_MOVE_PREV_SVG, NAV_MOVE_NEXT_SVG, DASHBOARD_TITLE_EL, CURRENT_CATEGORY_TITLE_EL, POLL_DEFAULT, POLL_WS_FALLBACK, loadHapticsPref, saveHapticsPref, loadThemePref, saveThemePref, loadTabsPref, saveTabsPref, loadDrawerPref, saveDrawerPref, cfg, localModeBannerEl, localBannerDismissed, rooms, roomMap, devices, devicesByRoom, devMap, favDevMap, roomEls, lastDataSig, pollTimer, ws, wsConnected, wsRetry, wsReconnectTimer, pageWasHidden, reorderMode, reorderBusy, reorderSnapshot, reorderDraftOrder, navReorderSnapshot, navReorderDraftOrder, navReorderDrawerRelocated, navEls, colorPopup, colorSession, levelOptimistic, switchOptimistic, lockOptimistic, shadeOptimistic, musicOptimistic, setpointOptimistic, rgbWheelCache, thermostats, tempSensors, thermoByRoom, sensorByRoom, climateEls, tstatPopup, tstatSession, tstatDeviceModeLock, musicMasterPopup, MUSIC_VOL_STEP, hubModes, currentHubMode, scenes, locks, windowShades, plainSwitches, outlets, music, favorites, snapshots, roomGestureLockCount, hubModeLockUntil, hsmStatus, hsmAlert, hsmAlertDesc, hsmEnabled, hsmPinRequired, thermostatsPopupEnabled, unlockPinEnabled, unlockPinRequired, hsmLockUntil, pinPadPopup, pinPadState, confirmPopup, confirmPending, quickPopup, quickPopupOpenType, syncQuickPopupRef, TAB_CATEGORIES, TAB_LABELS, tabMode, activeTab, tabViewEl, QUICK_LIGHTS_BTN, favTstatModeMenu, favTstatModeMenuCleanup, favTstatModeMenuId, favTstatModeMenuAnchor, centralTstatTargetMenu, centralTstatTargetMenuCleanup, centralTstatTargetMenuAnchor, favTstatMap, favPopupSig, tstatsPopupMap, tstatsPopupSig, setLevelOptimistic, setSwitchOptimistic, clearSwitchOptimistic, reapplySwitchOptimistic, effectiveSwitch, effectiveLevel, setLockOptimistic, clearLockOptimistic, reapplyLockOptimistic, effectiveLock, lockStatusLabel, setShadeOptimistic, clearShadeOptimistic, reapplyShadeOptimistic, effectiveShadeState, effectiveShadePosition, shadeIsMoving, shadeStatusLabel, isMusicPlaying, musicControls, effectiveMusicStatus, effectiveMusicVolume, musicStatusLabel, setMusicOptimistic, clearMusicOptimistic, reapplyMusicOptimistic, setSetpointOptimistic, clearSetpointOptimistic, reapplySetpointOptimistic, applyTstatSetpoints, drawRgbWheel, activeSlideGestures, cancelAllSlideGestures, appendPopup, bindPopupDismiss, ensureColorPopup, setColorTab, updateColorPopupUI, tileRecsFor, applyLevelChange, applyCtChange, applyRgbChange, attachCtPresets, attachLevelPresets, trackPctFromEvent, levelFromTrackEvent, updateLevelTrackVisual, bindLevelTrackDrag, makeLevelTrackSlider, updateCtTrackVisual, bindCtTrackDrag, makeCtTrackSlider, attachLevelTrackDrag, attachRgbPresets, attachRgbWheel, ensureLightOn, attachCtTrackDrag, kToPct, pctToK, kFromEvent, setCtVisual, setRgbVisual, setLevelVisual, openColorPopup, closeColorPopup, closeCtPopup, supportedModes, supportedFanModes, deviceHasFanSpeed, supportedFanSpeeds, showFanSpeedControls, fanModeActive, tstatSectionLabel, tstatStateClass, formatRoomTemp, roomClimateInfo, roomHasClimate, roomTstatState, isFavorite, syncFavButton, isFavoriteableDeviceId, centralThermostatsSorted, buildCentralTstat, applyCentralTstatSelection, updateCentralTstatTargetButton, updateTstatHeadExtras, updateTstatFavButton, postCall, ensureTstatPopup, activeTstat, tstatSetpointTarget, commitTstatSetpoint, adjustTstatSetpoint, renderTstatDial, renderTstatControls, attachTstatDialDrag, tstatModeLocked, reapplyTstatDeviceModeLocks, tstatModeDisplayLabel, favoriteTstatTarget, favoriteTstatTemps, favoriteTstatState, modeCmdForKey, applyTstatModeOptimistic, sendTstatModeCmd, adjustFavoriteTstat, refreshOpenTstatQuickPopups, closeFavoriteTstatModeMenu, repositionFavoriteTstatModeMenu, syncFavoriteTstatModeMenu, applyFavoriteTstatMode, openFavoriteTstatModeMenu, closeCentralTstatTargetMenu, repositionCentralTstatTargetMenu, syncCentralTstatTargetMenu, openCentralTstatTargetMenu, setTstatMode, setFanMode, setFanSpeed, positionTstatPopup, openCentralTstatPopup, openTstatPopup, closeTstatPopup, ensureMusicMasterPopup, renderMusicMasterBody, openMusicMasterPopup, closeMusicMasterPopup, reconcileTstat, updateClimateWidgets, setStatus, flash, hapticTap, effectiveTheme, updateThemeSegmentUI, applyTheme, applyDashboardName, isCloudOrigin, isLocalOrigin, isAndroid, isStandaloneDisplay, initAndroidLocalImmersive, loadStoredLocalUrl, saveStoredLocalUrl, loadStoredCloudUrl, saveStoredCloudUrl, preferCloudMode, setPreferCloudMode, consumePreferCloudParam, loadLocalOkTs, saveLocalOkTs, localOkFresh, refreshLocalUrlFromConfig, navigateToLocal, maybeRefreshLocalOkFromReferrer, navigateToCloud, updateLocalModeMenuUI, hideLocalModeBanner, showLocalModeBanner, applyLocalModeStrategy, ACCESS_TOKEN, withToken, fetchWithTimeout, getJson, fetchData, sendCmd, sendCmdBatch, publishMld, rebuildDevicesByRoom, applyTstatSessionModeLock, sensors, sensorCardMap, favSensorMap, favMusicMap, favLockMap, favShadeMap, sensorsPopupSig, sensorTypeFilter, sensorFilterOpen, sensorFilterChipsEl, sensorFilterBtnEl, sensorFilterEmptyEl, replaceList, repopulateThermoByRoom, repopulateSensorByRoom, syncRoomMap, emptyState, loadingState, noDevicesState, sortRoomsByOrder, ensureRoomsFromDevices, contentRoomIds, getDisplayRoomIds, getDefaultNavOrder, getDisplayNavOrder, applyNavOrder };
 })();

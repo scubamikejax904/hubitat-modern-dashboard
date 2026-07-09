@@ -37,6 +37,8 @@
   const THEME_OPTIONS = ["dark", "light", "auto"];
   const APP_EL = document.getElementById("app");
   const REORDER_DRAG_THRESHOLD = 8;
+  const NAV_MOVE_PREV_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>';
+  const NAV_MOVE_NEXT_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>';
   const DASHBOARD_TITLE_EL = document.getElementById("dashboard-title");
   const CURRENT_CATEGORY_TITLE_EL = document.getElementById("current-category-title");
 
@@ -94,7 +96,7 @@
     try { localStorage.setItem(DRAWER_STORAGE_KEY, on ? "1" : "0"); } catch {}
   }
 
-  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", roomOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), localUrl: "", cloudUrl: "" };
+  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", roomOrder: null, navOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), localUrl: "", cloudUrl: "" };
 
   let localModeBannerEl = null;
   let localBannerDismissed = false;
@@ -118,6 +120,10 @@
   let reorderBusy = false;
   let reorderSnapshot = null;
   let reorderDraftOrder = null;
+  let navReorderSnapshot = null;
+  let navReorderDraftOrder = null;
+  let navReorderDrawerRelocated = false;
+  const navEls = new Map(); // navKey -> { wrap, btn, handle, movePrev, moveNext }
 
   let colorPopup = null;
   let colorSession = null;
@@ -2898,6 +2904,10 @@
       if (!reorderMode && Array.isArray(d.config.roomOrder)) {
         cfg.roomOrder = d.config.roomOrder.length ? d.config.roomOrder : null;
       }
+      if (!reorderMode && Array.isArray(d.config.navOrder)) {
+        cfg.navOrder = d.config.navOrder.length ? d.config.navOrder : null;
+        applyNavOrder(getDisplayNavOrder());
+      }
       if (d.config.localUrl != null) cfg.localUrl = String(d.config.localUrl || "");
       if (d.config.cloudUrl != null) cfg.cloudUrl = String(d.config.cloudUrl || "");
     }
@@ -3134,6 +3144,32 @@
     return order.filter(rid => hasContent(rid));
   }
 
+  function getDefaultNavOrder() {
+    return ["lights", ...QUICK_NAV.map(n => n.popup)];
+  }
+
+  function getDisplayNavOrder() {
+    const defaults = getDefaultNavOrder();
+    if (!cfg.navOrder?.length) return defaults.slice();
+    const known = new Set(defaults);
+    const order = cfg.navOrder.filter(k => known.has(k));
+    for (const key of defaults) {
+      if (!order.includes(key)) order.push(key);
+    }
+    return order;
+  }
+
+  function applyNavOrder(order) {
+    const nav = document.querySelector(".quick-nav");
+    if (!nav) return;
+    for (const key of order) {
+      const rec = navEls.get(key);
+      if (rec?.wrap) nav.appendChild(rec.wrap);
+    }
+  }
+
+  // __MLD_SPLIT__
+
   async function saveRoomOrder(order) {
     if (!order?.length) {
       flash("No rooms to save", true);
@@ -3170,6 +3206,95 @@
     }
     flash(lastMsg === "Could not save room order"
       ? "Could not save room order — update the hub app code and try again"
+      : lastMsg, true);
+    return false;
+  }
+
+  function currentNavOrderFromDom() {
+    const nav = document.querySelector(".quick-nav");
+    if (!nav) return [];
+    return Array.from(nav.querySelectorAll(".nav-reorder-item"))
+      .map(el => el.dataset.navKey)
+      .filter(Boolean);
+  }
+
+  function updateNavDraftOrderFromDom() {
+    navReorderDraftOrder = currentNavOrderFromDom();
+  }
+
+  function updateNavMoveButtons() {
+    if (!reorderMode) return;
+    const items = Array.from(document.querySelectorAll(".quick-nav .nav-reorder-item"));
+    items.forEach((wrap, i) => {
+      const rec = navEls.get(wrap.dataset.navKey);
+      if (!rec?.movePrev || !rec?.moveNext) return;
+      rec.movePrev.disabled = i === 0;
+      rec.moveNext.disabled = i === items.length - 1;
+    });
+  }
+
+  function moveNav(key, delta) {
+    const nav = document.querySelector(".quick-nav");
+    if (!nav) return;
+    const items = Array.from(nav.querySelectorAll(".nav-reorder-item"));
+    const idx = items.findIndex(w => w.dataset.navKey === key);
+    if (idx < 0) return;
+    const newIdx = idx + delta;
+    if (newIdx < 0 || newIdx >= items.length) return;
+    const wrap = items[idx];
+    const sibling = items[newIdx];
+    if (delta < 0) nav.insertBefore(wrap, sibling);
+    else nav.insertBefore(sibling, wrap);
+    updateNavDraftOrderFromDom();
+    updateNavMoveButtons();
+    hapticTap();
+  }
+
+  function showAllNavForReorder() {
+    const nav = document.querySelector(".quick-nav");
+    if (nav) nav.hidden = false;
+    for (const [, rec] of navEls) {
+      if (rec.wrap) rec.wrap.hidden = false;
+      if (rec.btn) rec.btn.hidden = false;
+    }
+  }
+
+  async function saveNavOrder(order) {
+    if (!order?.length) {
+      flash("No icons to save", true);
+      return false;
+    }
+    const headers = { "Accept": "application/json" };
+    const paths = ["nav-order", "settings/nav-order"];
+    let lastMsg = "Could not save icon order";
+    for (const path of paths) {
+      try {
+        let r = await fetch(withToken(path), {
+          method: "POST",
+          cache: "no-store",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ order }),
+        });
+        if (r.ok) return true;
+        try {
+          const body = await r.json();
+          if (body?.error) lastMsg = String(body.error);
+        } catch {}
+        if (r.status === 404) continue;
+        r = await fetch(withToken(path + "?order=" + encodeURIComponent(order.join(","))), {
+          method: "GET",
+          cache: "no-store",
+          headers,
+        });
+        if (r.ok) return true;
+        try {
+          const body = await r.json();
+          if (body?.error) lastMsg = String(body.error);
+        } catch {}
+      } catch {}
+    }
+    flash(lastMsg === "Could not save icon order"
+      ? "Could not save icon order — update the hub app code and try again"
       : lastMsg, true);
     return false;
   }
@@ -3215,8 +3340,6 @@
       return { ok: false, error: "Request failed" };
     }
   }
-
-  // __MLD_SPLIT__
 
   async function setHsmApi(mode, pin, padApi) {
     let result = await postJsonSilent("hsm", { mode, pin });
@@ -3754,17 +3877,22 @@
   function enterReorderMode() {
     reorderSnapshot = cfg.roomOrder?.length ? cfg.roomOrder.slice() : null;
     reorderDraftOrder = currentRoomOrderFromDom();
+    navReorderSnapshot = cfg.navOrder?.length ? cfg.navOrder.slice() : null;
+    navReorderDraftOrder = currentNavOrderFromDom();
     for (const [, rec] of roomEls) rec.card.classList.remove("collapsed");
     updateExpandAllBtn();
     stopPolling();
     reorderMode = true;
     APP_EL?.classList.toggle("reorder-mode", true);
     closeTopbarOverflowMenu();
+    relocateNavForReorder();
+    showAllNavForReorder();
     if (REORDER_DONE_BTN) REORDER_DONE_BTN.hidden = false;
     if (REORDER_CANCEL_BTN) REORDER_CANCEL_BTN.hidden = false;
     SEARCH_EL.disabled = true;
     SEARCH_EL.blur();
     updateMoveButtons();
+    updateNavMoveButtons();
   }
 
   function exitReorderMode(resumePoll) {
@@ -3772,10 +3900,14 @@
     reorderBusy = false;
     reorderDraftOrder = null;
     reorderSnapshot = null;
+    navReorderDraftOrder = null;
+    navReorderSnapshot = null;
     APP_EL?.classList.toggle("reorder-mode", false);
+    restoreNavAfterReorder();
     if (REORDER_DONE_BTN) REORDER_DONE_BTN.hidden = true;
     if (REORDER_CANCEL_BTN) REORDER_CANCEL_BTN.hidden = true;
     SEARCH_EL.disabled = false;
+    updateQuickNavVisibility();
     if (resumePoll) {
       startPolling();
       refresh();
@@ -3786,17 +3918,25 @@
 
   async function finishReorderMode() {
     const order = reorderDraftOrder ?? currentRoomOrderFromDom();
-    const saved = await saveRoomOrder(order);
-    if (!saved) return;
+    const navOrder = navReorderDraftOrder ?? currentNavOrderFromDom();
+    const [roomsSaved, navSaved] = await Promise.all([
+      saveRoomOrder(order),
+      saveNavOrder(navOrder),
+    ]);
+    if (!roomsSaved || !navSaved) return;
     cfg.roomOrder = order.length ? order.slice() : null;
+    cfg.navOrder = navOrder.length ? navOrder.slice() : null;
     lastDataSig = "";
     exitReorderMode(true);
+    flash("Order saved");
   }
 
   function cancelReorderMode() {
     cfg.roomOrder = reorderSnapshot ? reorderSnapshot.slice() : null;
+    cfg.navOrder = navReorderSnapshot ? navReorderSnapshot.slice() : null;
     lastDataSig = "";
     exitReorderMode(false);
+    applyNavOrder(getDisplayNavOrder());
     buildDom();
   }
 
@@ -3942,6 +4082,172 @@
       document.addEventListener("pointerup", onUp);
       document.addEventListener("pointercancel", onUp);
     });
+  }
+
+  function attachNavReorder(wrap, handle) {
+    let active = false;
+    let dragging = false;
+    let pointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let floatOffsetX = 0;
+    let placeholder = null;
+    const nav = () => document.querySelector(".quick-nav");
+
+    function visibleItems() {
+      const el = nav();
+      if (!el) return [];
+      return Array.from(el.querySelectorAll(".nav-reorder-item:not(.nav-dragging)"));
+    }
+
+    function movePlaceholderForX(x) {
+      if (!placeholder) return;
+      const el = nav();
+      if (!el) return;
+      const items = visibleItems();
+      let insertBefore = null;
+      for (const item of items) {
+        const rect = item.getBoundingClientRect();
+        if (x < rect.left + rect.width / 2) {
+          insertBefore = item;
+          break;
+        }
+      }
+      if (insertBefore) el.insertBefore(placeholder, insertBefore);
+      else el.appendChild(placeholder);
+    }
+
+    function positionFloat(clientX) {
+      wrap.style.left = (clientX - floatOffsetX) + "px";
+    }
+
+    function beginDrag(e) {
+      dragging = true;
+      reorderBusy = true;
+      const rect = wrap.getBoundingClientRect();
+      floatOffsetX = e.clientX - rect.left;
+      placeholder = ce("div", "nav-drag-placeholder");
+      placeholder.style.width = rect.width + "px";
+      placeholder.style.height = rect.height + "px";
+      wrap.parentNode.insertBefore(placeholder, wrap);
+      wrap.classList.add("nav-dragging");
+      wrap.style.width = rect.width + "px";
+      wrap.style.left = rect.left + "px";
+      wrap.style.top = rect.top + "px";
+      positionFloat(e.clientX);
+      movePlaceholderForX(e.clientX);
+    }
+
+    function commitDrag() {
+      const el = nav();
+      if (placeholder?.parentNode && el) el.insertBefore(wrap, placeholder);
+      placeholder?.remove();
+      wrap.classList.remove("nav-dragging");
+      wrap.style.width = "";
+      wrap.style.left = "";
+      wrap.style.top = "";
+      placeholder = null;
+      updateNavDraftOrderFromDom();
+      updateNavMoveButtons();
+    }
+
+    function cleanupListeners() {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+    }
+
+    function onMove(e) {
+      if (!active) return;
+      if (!dragging) {
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        if (Math.hypot(dx, dy) < REORDER_DRAG_THRESHOLD) return;
+        beginDrag(e);
+      }
+      e.preventDefault();
+      positionFloat(e.clientX);
+      movePlaceholderForX(e.clientX);
+    }
+
+    function onUp() {
+      if (!active) return;
+      if (dragging) commitDrag();
+      active = false;
+      dragging = false;
+      reorderBusy = false;
+      cleanupListeners();
+      try { handle.releasePointerCapture(pointerId); } catch {}
+    }
+
+    handle.addEventListener("pointerdown", (e) => {
+      if (!reorderMode) return;
+      e.preventDefault();
+      e.stopPropagation();
+      active = true;
+      pointerId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      handle.setPointerCapture(pointerId);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    });
+  }
+
+  function setupNavReorderItems() {
+    const nav = document.querySelector(".quick-nav");
+    if (!nav || nav.dataset.reorderReady) return;
+    nav.dataset.reorderReady = "1";
+    const entries = [{ key: "lights", btn: QUICK_LIGHTS_BTN }];
+    for (const { id, popup } of QUICK_NAV) entries.push({ key: popup, btn: document.getElementById(id) });
+    for (const { key, btn } of entries) {
+      if (!btn) continue;
+      btn.dataset.navKey = key;
+      const wrap = ce("div", "nav-reorder-item");
+      wrap.dataset.navKey = key;
+      nav.insertBefore(wrap, btn);
+      const handle = ce("button", "nav-drag-handle");
+      handle.type = "button";
+      handle.setAttribute("aria-label", "Drag to reorder");
+      handle.innerHTML = DRAG_HANDLE_SVG;
+      wrap.appendChild(handle);
+      wrap.appendChild(btn);
+      const moveBtns = ce("div", "nav-move-btns");
+      const movePrev = ce("button", "nav-move-btn nav-move-prev");
+      movePrev.type = "button";
+      movePrev.setAttribute("aria-label", "Move icon left");
+      movePrev.innerHTML = NAV_MOVE_PREV_SVG;
+      movePrev.addEventListener("click", (e) => { e.stopPropagation(); moveNav(key, -1); });
+      const moveNext = ce("button", "nav-move-btn nav-move-next");
+      moveNext.type = "button";
+      moveNext.setAttribute("aria-label", "Move icon right");
+      moveNext.innerHTML = NAV_MOVE_NEXT_SVG;
+      moveNext.addEventListener("click", (e) => { e.stopPropagation(); moveNav(key, 1); });
+      moveBtns.appendChild(movePrev);
+      moveBtns.appendChild(moveNext);
+      wrap.appendChild(moveBtns);
+      attachNavReorder(wrap, handle);
+      navEls.set(key, { wrap, btn, handle, movePrev, moveNext });
+    }
+  }
+
+  function relocateNavForReorder() {
+    if (!cfg.enableDrawer || navReorderDrawerRelocated) return;
+    const d = resolveDrawerDom();
+    const nav = document.querySelector(".quick-nav");
+    if (!d || !nav || nav.parentElement === d.topbar) return;
+    if (drawerOpen || drawerClosing) closeDrawer();
+    d.topbar.appendChild(nav);
+    navReorderDrawerRelocated = true;
+  }
+
+  function restoreNavAfterReorder() {
+    if (!navReorderDrawerRelocated) return;
+    const d = resolveDrawerDom();
+    const nav = document.querySelector(".quick-nav");
+    if (d && nav) d.navSlot.appendChild(nav);
+    navReorderDrawerRelocated = false;
   }
 
   function render(d) {
@@ -4909,6 +5215,11 @@
     popup.classList.toggle("quick-popup-hub-mode", type === HUB_MODE_POPUP_TYPE);
   }
 
+  function syncQuickPopupWidthForOpen(popup) {
+    const type = inTabView() ? activeTab : quickPopupOpenType;
+    if (type) syncQuickPopupWidth(popup, type);
+  }
+
   function makeLockRow(lock, context) {
     const inFav = context === "favorites";
     const row = ce("div", "quick-lock-row" + (inFav ? " quick-fav-span" : ""));
@@ -4967,6 +5278,7 @@
 
   function renderLocksPopup() {
     const popup = ensureQuickPopup();
+    syncQuickPopupWidthForOpen(popup);
     const body = popup._body;
     body.className = "quick-body quick-body-locks";
     body.innerHTML = "";
@@ -5094,7 +5406,7 @@
 
   function renderBlindsPopup() {
     const popup = ensureQuickPopup();
-    syncQuickPopupWidth(popup, "blinds");
+    syncQuickPopupWidthForOpen(popup);
     const body = currentBody();
     body.className = "quick-body quick-body-blinds" + (inTabView() ? " tab-body" : "");
     body.innerHTML = "";
@@ -5354,7 +5666,7 @@
 
   function renderSensorsPopup() {
     const popup = ensureQuickPopup();
-    syncQuickPopupWidth(popup, "sensors");
+    syncQuickPopupWidthForOpen(popup);
     const body = currentBody();
     body.className = "quick-body quick-body-sensors" + (inTabView() ? " tab-body" : "");
     body.innerHTML = "";
@@ -5572,6 +5884,7 @@
 
   function renderMusicPopup() {
     const popup = ensureQuickPopup();
+    syncQuickPopupWidthForOpen(popup);
     const body = currentBody();
     body.className = "quick-body quick-body-music" + (inTabView() ? " tab-body" : "");
     body.innerHTML = "";
@@ -5591,6 +5904,7 @@
 
   function renderHubModePopup() {
     const popup = ensureQuickPopup();
+    syncQuickPopupWidthForOpen(popup);
     const body = popup._body;
     body.className = "quick-body quick-body-hub-mode";
     body.innerHTML = "";
@@ -5851,6 +6165,7 @@
 
   function renderSecurityPopup() {
     const popup = ensureQuickPopup();
+    syncQuickPopupWidthForOpen(popup);
     const body = popup._body;
     body.className = "quick-body quick-body-security";
     body.innerHTML = "";
@@ -5928,6 +6243,7 @@
 
   function renderScenesPopup() {
     const popup = ensureQuickPopup();
+    syncQuickPopupWidthForOpen(popup);
     const body = popup._body;
     body.className = "quick-body quick-body-scenes";
     body.innerHTML = "";
@@ -6092,7 +6408,7 @@
   function renderFavoritesPopup() {
     closeFavoriteTstatModeMenu();
     const popup = ensureQuickPopup();
-    syncQuickPopupWidth(popup, "favorites");
+    syncQuickPopupWidthForOpen(popup);
     const body = currentBody();
     body.className = "quick-body quick-body-favorites" + (inTabView() ? " tab-body" : "");
     body.innerHTML = "";
@@ -6147,7 +6463,7 @@
   function renderThermostatsPopup() {
     closeFavoriteTstatModeMenu();
     const popup = ensureQuickPopup();
-    syncQuickPopupWidth(popup, "thermostats");
+    syncQuickPopupWidthForOpen(popup);
     const body = currentBody();
     body.className = "quick-body quick-body-thermostats" + (inTabView() ? " tab-body" : "");
     body.innerHTML = "";
@@ -6184,16 +6500,27 @@
   }
 
   function updateQuickNavVisibility() {
+    if (reorderMode) return;
     let anyVisible = false;
     for (const { id, popup } of QUICK_NAV) {
       const btn = document.getElementById(id);
       if (!btn) continue;
       const show = quickNavPopupHasContent(popup);
       btn.hidden = !show;
+      const rec = navEls.get(popup);
+      if (rec?.wrap) rec.wrap.hidden = !show;
       if (show) anyVisible = true;
     }
     // Lights tab is shown whenever tab mode is on (independent of content)
-    if (tabMode && QUICK_LIGHTS_BTN) { QUICK_LIGHTS_BTN.hidden = false; anyVisible = true; }
+    if (tabMode && QUICK_LIGHTS_BTN) {
+      QUICK_LIGHTS_BTN.hidden = false;
+      const lightsRec = navEls.get("lights");
+      if (lightsRec?.wrap) lightsRec.wrap.hidden = false;
+      anyVisible = true;
+    } else {
+      const lightsRec = navEls.get("lights");
+      if (lightsRec?.wrap) lightsRec.wrap.hidden = true;
+    }
     const nav = document.querySelector(".quick-nav");
     if (nav) nav.hidden = !anyVisible;
     if (quickPopupOpenType && !quickNavPopupHasContent(quickPopupOpenType)) closeQuickPopup();
@@ -7125,6 +7452,7 @@
     if (!btn) return;
     btn.innerHTML = svg;
     btn.addEventListener("click", () => {
+      if (reorderMode) return;
       hapticTap();
       if (tabMode && TAB_CATEGORIES.has(popup)) showTab(popup);
       else openQuickPopup(popup, title);
@@ -7134,12 +7462,15 @@
   if (QUICK_LIGHTS_BTN) {
     QUICK_LIGHTS_BTN.innerHTML = LIGHTS_SVG;
     QUICK_LIGHTS_BTN.addEventListener("click", () => {
+      if (reorderMode) return;
       hapticTap();
       if (tabMode) showTab("lights");
       if (cfg.enableDrawer) closeDrawer();
     });
     QUICK_LIGHTS_BTN.hidden = !tabMode;
   }
+  setupNavReorderItems();
+  applyNavOrder(getDisplayNavOrder());
   if (CENTRAL_TSTAT_BTN) {
     CENTRAL_TSTAT_BTN.innerHTML = CENTRAL_TSTAT_SVG + '<span>All thermostats</span>';
     CENTRAL_TSTAT_BTN.addEventListener("click", () => {
@@ -7209,7 +7540,6 @@
   let schedules = [];
   let sunTimes = { sunrise: null, sunset: null };
   let schedUse24Hour = false;
-  let schedViewOpen = false;
   let schedDraft = null;     // in-progress create/edit draft
   let schedStep = 1;         // 1 | 2 | 3
   let schedEditingId = null;
@@ -7221,7 +7551,12 @@
       sunTimes = { sunrise: data.sunTimes.sunrise ?? null, sunset: data.sunTimes.sunset ?? null };
     }
     schedUse24Hour = data.schedUse24Hour === true;
-    if (schedViewOpen) renderSchedulerActive();
+    if (schedulerViewIsActive()) renderSchedulerActive();
+  }
+
+  function schedulerViewIsActive() {
+    if (inTabView()) return activeTab === "scheduling";
+    return quickPopupOpenType === "scheduling";
   }
 
   function schedulerHasContent() {
@@ -7597,14 +7932,14 @@
   }
 
   function renderSchedulerView() {
-    schedViewOpen = true;
     renderSchedulerActive();
   }
 
   function renderSchedulerActive() {
+    if (!schedulerViewIsActive()) return;
     const popup = ensureQuickPopup();
     syncQuickPopupRef(popup);
-    syncQuickPopupWidth(popup, "scheduling");
+    syncQuickPopupWidthForOpen(popup);
     const body = currentBody();
     body.className = "quick-body quick-body-scheduler" + (inTabView() ? " tab-body" : "");
     body.innerHTML = "";

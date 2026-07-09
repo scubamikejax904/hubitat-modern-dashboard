@@ -171,7 +171,7 @@ function buildMockData(count) {
     { i: 4004, n: "Office HomePod", r: 4, st: "playing", v: 28, tr: "Khruangbin — Texas Sun", m: "unmuted", trackIdx: 3, f: AUDIO_F_AIRPLAY },
     { i: 4005, n: "Patio Speaker", r: 7, st: "stopped", v: 0, tr: "", m: "muted", trackIdx: 2, f: AUDIO_F_FULL },
   ];
-  return { config: { pollIntervalMs: 5000, useWebSocket: false, dashboardName: "mDash", roomOrder: [], favorites: [1, 5, 1001, 2103] }, rooms, devices, plainSwitches: [
+  return { config: { pollIntervalMs: 5000, useWebSocket: false, dashboardName: "mDash", roomOrder: [], navOrder: [], favorites: [1, 5, 1001, 2103] }, rooms, devices, plainSwitches: [
     { i: 501, n: "Garage Door Switch", r: 6, s: 0 },
     { i: 502, n: "Porch Switch", r: 7, s: 1 },
   ], outlets: [
@@ -509,6 +509,54 @@ const server = createServer(async (req, res) => {
         return res.end('{"ok":false,"error":"empty order"}');
       }
       state.config.roomOrder = validated;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ ok: true, order: validated }));
+    }
+  }
+  const VALID_NAV_KEYS = new Set(["lights", "locks", "scenes", "hub-mode", "security", "blinds", "scheduling", "sensors", "thermostats", "music", "favorites"]);
+  if (p === "/settings/nav-order" || p === "/nav-order") {
+    const orderParam = url.searchParams.get("order");
+    if (req.method === "GET" && orderParam) {
+      const order = orderParam.split(",").map(s => s.trim()).filter(Boolean);
+      const validated = [];
+      const seen = new Set();
+      for (const key of order) {
+        if (!VALID_NAV_KEYS.has(key) || seen.has(key)) continue;
+        seen.add(key);
+        validated.push(key);
+      }
+      if (!validated.length) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end('{"ok":false,"error":"empty order"}');
+      }
+      state.config.navOrder = validated;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ ok: true, order: validated }));
+    }
+    if (req.method === "POST") {
+      let body;
+      try { body = await readJsonBody(req); } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end('{"ok":false,"error":"invalid json"}');
+      }
+      const order = body?.order;
+      if (!Array.isArray(order) || !order.length) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end('{"ok":false,"error":"missing order"}');
+      }
+      const validated = [];
+      const seen = new Set();
+      for (const item of order) {
+        const key = String(item).trim();
+        if (!VALID_NAV_KEYS.has(key) || seen.has(key)) continue;
+        seen.add(key);
+        validated.push(key);
+      }
+      if (!validated.length) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end('{"ok":false,"error":"empty order"}');
+      }
+      state.config.navOrder = validated;
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify({ ok: true, order: validated }));
     }

@@ -1,4 +1,4 @@
-// Modern Dashboard v0.2.12
+// Modern Dashboard v0.2.13
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
@@ -37,7 +37,7 @@ def mainPage() {
             paragraph "<small><b>Smart names:</b> room names are stripped from device labels so you don't see redundant text like \"Kitchen Kitchen Light\".</small>"
             paragraph "<small><b>PWA:</b> use the cloud link below to install on your phone's home screen.</small>"
             paragraph "<small><b>Hub-only:</b> the UI and API are served entirely from your Hubitat hub — no Maker API or external cloud services.</small>"
-            paragraph "<small>Version 0.2.12 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
+            paragraph "<small>Version 0.2.13 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         section("Devices") {
             paragraph "<small>Select the devices you want on the dashboard. Rooms and layout are automatic based on your Hubitat room assignments.</small>"
@@ -537,6 +537,8 @@ mappings {
     path("/cmd/batch") { action: [POST: "doCmdBatch"] }
     path("/settings/room-order") { action: [GET: "saveRoomOrderGet", POST: "saveRoomOrder"] }
     path("/room-order") { action: [GET: "saveRoomOrderGet", POST: "saveRoomOrder"] }
+    path("/settings/nav-order") { action: [GET: "saveNavOrderGet", POST: "saveNavOrder"] }
+    path("/nav-order") { action: [GET: "saveNavOrderGet", POST: "saveNavOrder"] }
     path("/hub-mode") { action: [GET: "setHubModeGet", POST: "setHubMode"] }
     path("/hsm") { action: [GET: "setHsmGet", POST: "setHsm"] }
     path("/scene/activate") { action: [GET: "activateSceneGet", POST: "activateScene"] }
@@ -672,6 +674,7 @@ def renderData() {
     out << ",\"localUrl\":" << jsonStr(dashboardUrl(true))
     out << ",\"cloudUrl\":" << jsonStr(dashboardUrl(false))
     out << roomOrderJsonFragment()
+    out << navOrderJsonFragment()
     out << favoritesJsonFragment()
     out << lightControlConfigJsonFragment()
     out << "},\"rooms\":["
@@ -1967,6 +1970,85 @@ def saveRoomOrderFromList(order) {
     for (id in validated) {
         if (!first) out << ","; first = false
         out << id
+    }
+    out << "]}"
+    return render(contentType: "application/json", data: out.toString(), status: 200)
+}
+
+// ---------------------------------------------------------------------------
+// Nav order (state.navOrder — synced across devices)
+// ---------------------------------------------------------------------------
+def validNavKeySet() {
+    return ["lights", "locks", "scenes", "hub-mode", "security", "blinds", "scheduling", "sensors", "thermostats", "music", "favorites"] as Set
+}
+
+def parseNavOrderState() {
+    if (!state.navOrder) return []
+    try {
+        return state.navOrder.split(",").collect { it.trim() }.findAll { it }
+    } catch (e) {
+        return []
+    }
+}
+
+def navOrderJsonFragment() {
+    def keys = parseNavOrderState()
+    def out = new StringBuilder()
+    out << ",\"navOrder\":["
+    boolean first = true
+    for (key in keys) {
+        if (!first) out << ","; first = false
+        out << jsonStr(key)
+    }
+    out << "]"
+    return out.toString()
+}
+
+def saveNavOrderGet() {
+    def orderStr = params?.order
+    if (!orderStr?.trim()) {
+        return render(contentType: "application/json", data: '{"ok":false,"error":"missing order"}', status: 400)
+    }
+    def order = orderStr.split(",").collect { it.trim() }.findAll { it }
+    return saveNavOrderFromList(order)
+}
+
+def saveNavOrder() {
+    def body = request?.JSON
+    if (body == null) {
+        try {
+            def raw = request?.postBody ?: request?.content
+            if (raw) body = new groovy.json.JsonSlurper().parseText(raw.toString())
+        } catch (e) {}
+    }
+    def order = body?.order
+    return saveNavOrderFromList(order)
+}
+
+def saveNavOrderFromList(order) {
+    if (!(order instanceof List) || order.isEmpty()) {
+        return render(contentType: "application/json", data: '{"ok":false,"error":"missing order"}', status: 400)
+    }
+    def valid = validNavKeySet()
+    def validated = []
+    def seen = new HashSet()
+    for (item in order) {
+        def key = item?.toString()?.trim()
+        if (!key || !valid.contains(key)) continue
+        if (seen.contains(key)) continue
+        seen.add(key)
+        validated << key
+    }
+    if (validated.isEmpty()) {
+        return render(contentType: "application/json", data: '{"ok":false,"error":"empty order"}', status: 400)
+    }
+    state.navOrder = validated.join(",")
+    def out = new StringBuilder()
+    out << "{\"ok\":true,\"order\":["
+    boolean first = true
+    for (key in validated) {
+        if (!first) out << ","; first = false
+        out << jsonStr(key)
     }
     out << "]}"
     return render(contentType: "application/json", data: out.toString(), status: 200)

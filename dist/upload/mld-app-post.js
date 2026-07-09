@@ -5,8 +5,179 @@
     console.error("Modern Dashboard: upload mld-app.js before mld-app-post.js");
     return;
   }
-async function setHsmApi(mode, pin, padApi) {
-    let result = await M.postJsonSilent("hsm", { mode, pin });
+async function saveRoomOrder(order) {
+    if (!order?.length) {
+      M.flash("No rooms to save", true);
+      return false;
+    }
+    const headers = { "Accept": "application/json" };
+    const paths = ["room-order", "settings/room-order"];
+    let lastMsg = "Could not save room order";
+    for (const path of paths) {
+      try {
+        let r = await fetch(M.withToken(path), {
+          method: "POST",
+          cache: "no-store",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ order }),
+        });
+        if (r.ok) return true;
+        try {
+          const body = await r.json();
+          if (body?.error) lastMsg = String(body.error);
+        } catch {}
+        if (r.status === 404) continue;
+        r = await fetch(M.withToken(path + "?order=" + encodeURIComponent(order.join(","))), {
+          method: "GET",
+          cache: "no-store",
+          headers,
+        });
+        if (r.ok) return true;
+        try {
+          const body = await r.json();
+          if (body?.error) lastMsg = String(body.error);
+        } catch {}
+      } catch {}
+    }
+    M.flash(lastMsg === "Could not save room order"
+      ? "Could not save room order — update the hub app code and try again"
+      : lastMsg, true);
+    return false;
+  }
+
+  function currentNavOrderFromDom() {
+    const nav = document.querySelector(".quick-nav");
+    if (!nav) return [];
+    return Array.from(nav.querySelectorAll(".nav-reorder-item"))
+      .map(el => el.dataset.navKey)
+      .filter(Boolean);
+  }
+
+  function updateNavDraftOrderFromDom() {
+    M.navReorderDraftOrder = currentNavOrderFromDom();
+  }
+
+  function updateNavMoveButtons() {
+    if (!M.reorderMode) return;
+    const items = Array.from(document.querySelectorAll(".quick-nav .nav-reorder-item"));
+    items.forEach((wrap, i) => {
+      const rec = M.navEls.get(wrap.dataset.navKey);
+      if (!rec?.movePrev || !rec?.moveNext) return;
+      rec.movePrev.disabled = i === 0;
+      rec.moveNext.disabled = i === items.length - 1;
+    });
+  }
+
+  function moveNav(key, delta) {
+    const nav = document.querySelector(".quick-nav");
+    if (!nav) return;
+    const items = Array.from(nav.querySelectorAll(".nav-reorder-item"));
+    const idx = items.findIndex(w => w.dataset.navKey === key);
+    if (idx < 0) return;
+    const newIdx = idx + delta;
+    if (newIdx < 0 || newIdx >= items.length) return;
+    const wrap = items[idx];
+    const sibling = items[newIdx];
+    if (delta < 0) nav.insertBefore(wrap, sibling);
+    else nav.insertBefore(sibling, wrap);
+    updateNavDraftOrderFromDom();
+    updateNavMoveButtons();
+    M.hapticTap();
+  }
+
+  function showAllNavForReorder() {
+    const nav = document.querySelector(".quick-nav");
+    if (nav) nav.hidden = false;
+    for (const [, rec] of M.navEls) {
+      if (rec.wrap) rec.wrap.hidden = false;
+      if (rec.btn) rec.btn.hidden = false;
+    }
+  }
+
+  async function saveNavOrder(order) {
+    if (!order?.length) {
+      M.flash("No icons to save", true);
+      return false;
+    }
+    const headers = { "Accept": "application/json" };
+    const paths = ["nav-order", "settings/nav-order"];
+    let lastMsg = "Could not save icon order";
+    for (const path of paths) {
+      try {
+        let r = await fetch(M.withToken(path), {
+          method: "POST",
+          cache: "no-store",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ order }),
+        });
+        if (r.ok) return true;
+        try {
+          const body = await r.json();
+          if (body?.error) lastMsg = String(body.error);
+        } catch {}
+        if (r.status === 404) continue;
+        r = await fetch(M.withToken(path + "?order=" + encodeURIComponent(order.join(","))), {
+          method: "GET",
+          cache: "no-store",
+          headers,
+        });
+        if (r.ok) return true;
+        try {
+          const body = await r.json();
+          if (body?.error) lastMsg = String(body.error);
+        } catch {}
+      } catch {}
+    }
+    M.flash(lastMsg === "Could not save icon order"
+      ? "Could not save icon order — update the hub app code and try again"
+      : lastMsg, true);
+    return false;
+  }
+
+  async function postJson(path, body) {
+    try {
+      const r = await fetch(M.withToken(path), {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        let msg = "Request failed";
+        try {
+          const j = await r.json();
+          if (j?.error) msg = String(j.error);
+        } catch {}
+        M.flash(msg, true);
+        return { ok: false };
+      }
+      let data = {};
+      try { data = await r.json(); } catch {}
+      return { ok: true, data };
+    } catch {
+      M.flash("Request failed", true);
+      return { ok: false };
+    }
+  }
+
+  async function postJsonSilent(path, body) {
+    try {
+      const r = await fetch(M.withToken(path), {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(body),
+      });
+      let data = {};
+      try { data = await r.json(); } catch {}
+      return { ok: r.ok, status: r.status, data, error: data?.error };
+    } catch {
+      return { ok: false, error: "Request failed" };
+    }
+  }
+
+  async function setHsmApi(mode, pin, padApi) {
+    let result = await postJsonSilent("hsm", { mode, pin });
     if (!result.ok) {
       if (result.status === 403 || result.error === "wrong pin") {
         padApi?.shake();
@@ -37,7 +208,7 @@ async function setHsmApi(mode, pin, padApi) {
   }
 
   async function setHubModeApi(mode) {
-    let result = await M.postJson("hub-mode", { mode });
+    let result = await postJson("hub-mode", { mode });
     if (result.ok) return true;
     try {
       const r = await fetch(M.withToken("hub-mode?mode=" + encodeURIComponent(mode)), {
@@ -54,7 +225,7 @@ async function setHsmApi(mode, pin, padApi) {
   }
 
   async function activateSceneApi(id) {
-    let result = await M.postJson("scene/activate", { id });
+    let result = await postJson("scene/activate", { id });
     if (result.ok) return true;
     try {
       const r = await fetch(M.withToken("scene/activate?id=" + encodeURIComponent(id)), {
@@ -73,7 +244,7 @@ async function setHsmApi(mode, pin, padApi) {
   async function bulkLightsApi(cmd, scope, roomId) {
     const body = { cmd, scope };
     if (scope === "room") body.roomId = roomId;
-    let result = await M.postJson("lights/bulk", body);
+    let result = await postJson("lights/bulk", body);
     if (result.ok) return true;
     try {
       let url = "lights/bulk?cmd=" + encodeURIComponent(cmd) + "&scope=" + encodeURIComponent(scope);
@@ -94,7 +265,7 @@ async function setHsmApi(mode, pin, padApi) {
   async function snapshotSaveApi(scope, roomId) {
     const body = { scope };
     if (scope === "room") body.roomId = roomId;
-    let result = await M.postJson("snapshot/save", body);
+    let result = await postJson("snapshot/save", body);
     if (result.ok) return true;
     try {
       let url = "snapshot/save?scope=" + encodeURIComponent(scope);
@@ -115,7 +286,7 @@ async function setHsmApi(mode, pin, padApi) {
   async function snapshotRestoreApi(scope, roomId) {
     const body = { scope };
     if (scope === "room") body.roomId = roomId;
-    let result = await M.postJson("snapshot/restore", body);
+    let result = await postJson("snapshot/restore", body);
     if (result.ok) return true;
     try {
       let url = "snapshot/restore?scope=" + encodeURIComponent(scope);
@@ -541,17 +712,22 @@ async function setHsmApi(mode, pin, padApi) {
   function enterReorderMode() {
     M.reorderSnapshot = M.cfg.roomOrder?.length ? M.cfg.roomOrder.slice() : null;
     M.reorderDraftOrder = currentRoomOrderFromDom();
+    M.navReorderSnapshot = M.cfg.navOrder?.length ? M.cfg.navOrder.slice() : null;
+    M.navReorderDraftOrder = currentNavOrderFromDom();
     for (const [, rec] of M.roomEls) rec.card.classList.remove("collapsed");
     M.updateExpandAllBtn();
     M.stopPolling();
     M.reorderMode = true;
     M.APP_EL?.classList.toggle("reorder-mode", true);
     closeTopbarOverflowMenu();
+    relocateNavForReorder();
+    showAllNavForReorder();
     if (M.REORDER_DONE_BTN) M.REORDER_DONE_BTN.hidden = false;
     if (M.REORDER_CANCEL_BTN) M.REORDER_CANCEL_BTN.hidden = false;
     M.SEARCH_EL.disabled = true;
     M.SEARCH_EL.blur();
     updateMoveButtons();
+    updateNavMoveButtons();
   }
 
   function exitReorderMode(resumePoll) {
@@ -559,10 +735,14 @@ async function setHsmApi(mode, pin, padApi) {
     M.reorderBusy = false;
     M.reorderDraftOrder = null;
     M.reorderSnapshot = null;
+    M.navReorderDraftOrder = null;
+    M.navReorderSnapshot = null;
     M.APP_EL?.classList.toggle("reorder-mode", false);
+    restoreNavAfterReorder();
     if (M.REORDER_DONE_BTN) M.REORDER_DONE_BTN.hidden = true;
     if (M.REORDER_CANCEL_BTN) M.REORDER_CANCEL_BTN.hidden = true;
     M.SEARCH_EL.disabled = false;
+    M.updateQuickNavVisibility();
     if (resumePoll) {
       M.startPolling();
       M.refresh();
@@ -573,17 +753,25 @@ async function setHsmApi(mode, pin, padApi) {
 
   async function finishReorderMode() {
     const order = M.reorderDraftOrder ?? currentRoomOrderFromDom();
-    const saved = await M.saveRoomOrder(order);
-    if (!saved) return;
+    const navOrder = M.navReorderDraftOrder ?? currentNavOrderFromDom();
+    const [roomsSaved, navSaved] = await Promise.all([
+      saveRoomOrder(order),
+      saveNavOrder(navOrder),
+    ]);
+    if (!roomsSaved || !navSaved) return;
     M.cfg.roomOrder = order.length ? order.slice() : null;
+    M.cfg.navOrder = navOrder.length ? navOrder.slice() : null;
     M.lastDataSig = "";
     exitReorderMode(true);
+    M.flash("Order saved");
   }
 
   function cancelReorderMode() {
     M.cfg.roomOrder = M.reorderSnapshot ? M.reorderSnapshot.slice() : null;
+    M.cfg.navOrder = M.navReorderSnapshot ? M.navReorderSnapshot.slice() : null;
     M.lastDataSig = "";
     exitReorderMode(false);
+    M.applyNavOrder(M.getDisplayNavOrder());
     buildDom();
   }
 
@@ -729,6 +917,172 @@ async function setHsmApi(mode, pin, padApi) {
       document.addEventListener("pointerup", onUp);
       document.addEventListener("pointercancel", onUp);
     });
+  }
+
+  function attachNavReorder(wrap, handle) {
+    let active = false;
+    let dragging = false;
+    let pointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let floatOffsetX = 0;
+    let placeholder = null;
+    const nav = () => document.querySelector(".quick-nav");
+
+    function visibleItems() {
+      const el = nav();
+      if (!el) return [];
+      return Array.from(el.querySelectorAll(".nav-reorder-item:not(.nav-dragging)"));
+    }
+
+    function movePlaceholderForX(x) {
+      if (!placeholder) return;
+      const el = nav();
+      if (!el) return;
+      const items = visibleItems();
+      let insertBefore = null;
+      for (const item of items) {
+        const rect = item.getBoundingClientRect();
+        if (x < rect.left + rect.width / 2) {
+          insertBefore = item;
+          break;
+        }
+      }
+      if (insertBefore) el.insertBefore(placeholder, insertBefore);
+      else el.appendChild(placeholder);
+    }
+
+    function positionFloat(clientX) {
+      wrap.style.left = (clientX - floatOffsetX) + "px";
+    }
+
+    function beginDrag(e) {
+      dragging = true;
+      M.reorderBusy = true;
+      const rect = wrap.getBoundingClientRect();
+      floatOffsetX = e.clientX - rect.left;
+      placeholder = ce("div", "nav-drag-placeholder");
+      placeholder.style.width = rect.width + "px";
+      placeholder.style.height = rect.height + "px";
+      wrap.parentNode.insertBefore(placeholder, wrap);
+      wrap.classList.add("nav-dragging");
+      wrap.style.width = rect.width + "px";
+      wrap.style.left = rect.left + "px";
+      wrap.style.top = rect.top + "px";
+      positionFloat(e.clientX);
+      movePlaceholderForX(e.clientX);
+    }
+
+    function commitDrag() {
+      const el = nav();
+      if (placeholder?.parentNode && el) el.insertBefore(wrap, placeholder);
+      placeholder?.remove();
+      wrap.classList.remove("nav-dragging");
+      wrap.style.width = "";
+      wrap.style.left = "";
+      wrap.style.top = "";
+      placeholder = null;
+      updateNavDraftOrderFromDom();
+      updateNavMoveButtons();
+    }
+
+    function cleanupListeners() {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+    }
+
+    function onMove(e) {
+      if (!active) return;
+      if (!dragging) {
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        if (Math.hypot(dx, dy) < M.REORDER_DRAG_THRESHOLD) return;
+        beginDrag(e);
+      }
+      e.preventDefault();
+      positionFloat(e.clientX);
+      movePlaceholderForX(e.clientX);
+    }
+
+    function onUp() {
+      if (!active) return;
+      if (dragging) commitDrag();
+      active = false;
+      dragging = false;
+      M.reorderBusy = false;
+      cleanupListeners();
+      try { handle.releasePointerCapture(pointerId); } catch {}
+    }
+
+    handle.addEventListener("pointerdown", (e) => {
+      if (!M.reorderMode) return;
+      e.preventDefault();
+      e.stopPropagation();
+      active = true;
+      pointerId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      handle.setPointerCapture(pointerId);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    });
+  }
+
+  function setupNavReorderItems() {
+    const nav = document.querySelector(".quick-nav");
+    if (!nav || nav.dataset.reorderReady) return;
+    nav.dataset.reorderReady = "1";
+    const entries = [{ key: "lights", btn: M.QUICK_LIGHTS_BTN }];
+    for (const { id, popup } of QUICK_NAV) entries.push({ key: popup, btn: document.getElementById(id) });
+    for (const { key, btn } of entries) {
+      if (!btn) continue;
+      btn.dataset.navKey = key;
+      const wrap = ce("div", "nav-reorder-item");
+      wrap.dataset.navKey = key;
+      nav.insertBefore(wrap, btn);
+      const handle = ce("button", "nav-drag-handle");
+      handle.type = "button";
+      handle.setAttribute("aria-label", "Drag to reorder");
+      handle.innerHTML = DRAG_HANDLE_SVG;
+      wrap.appendChild(handle);
+      wrap.appendChild(btn);
+      const moveBtns = ce("div", "nav-move-btns");
+      const movePrev = ce("button", "nav-move-btn nav-move-prev");
+      movePrev.type = "button";
+      movePrev.setAttribute("aria-label", "Move icon left");
+      movePrev.innerHTML = M.NAV_MOVE_PREV_SVG;
+      movePrev.addEventListener("click", (e) => { e.stopPropagation(); moveNav(key, -1); });
+      const moveNext = ce("button", "nav-move-btn nav-move-next");
+      moveNext.type = "button";
+      moveNext.setAttribute("aria-label", "Move icon right");
+      moveNext.innerHTML = M.NAV_MOVE_NEXT_SVG;
+      moveNext.addEventListener("click", (e) => { e.stopPropagation(); moveNav(key, 1); });
+      moveBtns.appendChild(movePrev);
+      moveBtns.appendChild(moveNext);
+      wrap.appendChild(moveBtns);
+      attachNavReorder(wrap, handle);
+      M.navEls.set(key, { wrap, btn, handle, movePrev, moveNext });
+    }
+  }
+
+  function relocateNavForReorder() {
+    if (!M.cfg.enableDrawer || M.navReorderDrawerRelocated) return;
+    const d = M.resolveDrawerDom();
+    const nav = document.querySelector(".quick-nav");
+    if (!d || !nav || nav.parentElement === d.topbar) return;
+    if (M.drawerOpen || M.drawerClosing) M.closeDrawer();
+    d.topbar.appendChild(nav);
+    M.navReorderDrawerRelocated = true;
+  }
+
+  function restoreNavAfterReorder() {
+    if (!M.navReorderDrawerRelocated) return;
+    const d = M.resolveDrawerDom();
+    const nav = document.querySelector(".quick-nav");
+    if (d && nav) d.navSlot.appendChild(nav);
+    M.navReorderDrawerRelocated = false;
   }
 
   function render(d) {
@@ -1696,6 +2050,11 @@ async function setHsmApi(mode, pin, padApi) {
     popup.classList.toggle("quick-popup-hub-mode", type === HUB_MODE_POPUP_TYPE);
   }
 
+  function syncQuickPopupWidthForOpen(popup) {
+    const type = M.inTabView() ? M.activeTab : M.quickPopupOpenType;
+    if (type) syncQuickPopupWidth(popup, type);
+  }
+
   function makeLockRow(lock, context) {
     const inFav = context === "favorites";
     const row = ce("div", "quick-lock-row" + (inFav ? " quick-fav-span" : ""));
@@ -1754,6 +2113,7 @@ async function setHsmApi(mode, pin, padApi) {
 
   function renderLocksPopup() {
     const popup = ensureQuickPopup();
+    syncQuickPopupWidthForOpen(popup);
     const body = popup._body;
     body.className = "quick-body quick-body-locks";
     body.innerHTML = "";
@@ -1881,7 +2241,7 @@ async function setHsmApi(mode, pin, padApi) {
 
   function renderBlindsPopup() {
     const popup = ensureQuickPopup();
-    syncQuickPopupWidth(popup, "blinds");
+    syncQuickPopupWidthForOpen(popup);
     const body = M.currentBody();
     body.className = "quick-body quick-body-blinds" + (M.inTabView() ? " tab-body" : "");
     body.innerHTML = "";
@@ -2141,7 +2501,7 @@ async function setHsmApi(mode, pin, padApi) {
 
   function renderSensorsPopup() {
     const popup = ensureQuickPopup();
-    syncQuickPopupWidth(popup, "sensors");
+    syncQuickPopupWidthForOpen(popup);
     const body = M.currentBody();
     body.className = "quick-body quick-body-sensors" + (M.inTabView() ? " tab-body" : "");
     body.innerHTML = "";
@@ -2359,6 +2719,7 @@ async function setHsmApi(mode, pin, padApi) {
 
   function renderMusicPopup() {
     const popup = ensureQuickPopup();
+    syncQuickPopupWidthForOpen(popup);
     const body = M.currentBody();
     body.className = "quick-body quick-body-music" + (M.inTabView() ? " tab-body" : "");
     body.innerHTML = "";
@@ -2378,6 +2739,7 @@ async function setHsmApi(mode, pin, padApi) {
 
   function renderHubModePopup() {
     const popup = ensureQuickPopup();
+    syncQuickPopupWidthForOpen(popup);
     const body = popup._body;
     body.className = "quick-body quick-body-hub-mode";
     body.innerHTML = "";
@@ -2638,6 +3000,7 @@ async function setHsmApi(mode, pin, padApi) {
 
   function renderSecurityPopup() {
     const popup = ensureQuickPopup();
+    syncQuickPopupWidthForOpen(popup);
     const body = popup._body;
     body.className = "quick-body quick-body-security";
     body.innerHTML = "";
@@ -2710,5 +3073,5 @@ async function setHsmApi(mode, pin, padApi) {
     ruleSection.appendChild(ruleModes);
     body.appendChild(ruleSection);
   }
-  Object.assign(M, { setHubModeApi, activateSceneApi, bulkLightsApi, snapshotSaveApi, snapshotRestoreApi, saveFavorites, hubModeLocked, hsmLocked, roomLabel, snapshotRoomKey, snapshotHouseKey, setRoomGestureLock, attachRoomSlideAction, updateRoomSnapshotUi, getFavoriteEntries, updateAllFavButtons, attachFavButton, toggleFavorite, currentRoomOrderFromDom, updateDraftOrderFromDom, updateMoveButtons, moveRoom, enterReorderMode, exitReorderMode, finishReorderMode, cancelReorderMode, closeTopbarOverflowMenu, openTopbarOverflowMenu, toggleTopbarOverflowMenu, attachRoomReorder, render, buildDom, makeTile, attachSwitchTap, attachBulbTap, attachColorNameClick, clampLevel, setSliderLevel, syncTileState, updateStates, updateRoomMeta, attachDrag, attachShadeDrag, testHaptics, toggleSwitch, toggleDimmer, reconcileDevice, refreshDevice, reconcileLock, reconcileShade, reconcileMusic, sendMusicCmd, broadcastMusic, broadcastMusicVolume, sendLockCmd, sendShadeCmd, applySwitchCmdOptimistic, roomAll, allLights, ensureQuickPopup, syncQuickPopupWidth, makeLockRow, updateFavoriteLockRow, renderLocksPopup, makeShadeTile, updateFavoriteShadeTile, renderBlindsPopup, normalizeTempSensorForCard, mergedSensorList, sensorsPopupSignature, sensorTypesWithCounts, sensorMatchesFilter, syncSensorFilterBtn, syncSensorFilterChips, applySensorTypeFilter, buildSensorFilterBar, sensorBatteryPct, sensorBatteryLabel, sensorExFooter, applySensorCardState, makeSensorCard, makeFavoriteSensorCard, updateSensorCard, renderSensorsPopup, refreshSensorsPopup, makeMusicRow, updateFavoriteMusicRow, renderMusicPopup, renderHubModePopup, ensurePinPadPopup, showPinPadError, clearPinPadError, renderPinPadDots, appendPinDigit, backspacePinDigit, closePinPad, openPinPad, promptUnlockPin, runHsmAction, appendHsmModeButtons, renderSecurityPopup });
+  Object.assign(M, { currentNavOrderFromDom, updateNavDraftOrderFromDom, updateNavMoveButtons, moveNav, showAllNavForReorder, saveNavOrder, postJson, postJsonSilent, setHsmApi, setHubModeApi, activateSceneApi, bulkLightsApi, snapshotSaveApi, snapshotRestoreApi, saveFavorites, hubModeLocked, hsmLocked, roomLabel, snapshotRoomKey, snapshotHouseKey, setRoomGestureLock, attachRoomSlideAction, updateRoomSnapshotUi, getFavoriteEntries, updateAllFavButtons, attachFavButton, toggleFavorite, currentRoomOrderFromDom, updateDraftOrderFromDom, updateMoveButtons, moveRoom, enterReorderMode, exitReorderMode, finishReorderMode, cancelReorderMode, closeTopbarOverflowMenu, openTopbarOverflowMenu, toggleTopbarOverflowMenu, attachRoomReorder, attachNavReorder, setupNavReorderItems, relocateNavForReorder, restoreNavAfterReorder, render, buildDom, makeTile, attachSwitchTap, attachBulbTap, attachColorNameClick, clampLevel, setSliderLevel, syncTileState, updateStates, updateRoomMeta, attachDrag, attachShadeDrag, testHaptics, toggleSwitch, toggleDimmer, reconcileDevice, refreshDevice, reconcileLock, reconcileShade, reconcileMusic, sendMusicCmd, broadcastMusic, broadcastMusicVolume, sendLockCmd, sendShadeCmd, applySwitchCmdOptimistic, roomAll, allLights, ensureQuickPopup, syncQuickPopupWidth, syncQuickPopupWidthForOpen, makeLockRow, updateFavoriteLockRow, renderLocksPopup, makeShadeTile, updateFavoriteShadeTile, renderBlindsPopup, normalizeTempSensorForCard, mergedSensorList, sensorsPopupSignature, sensorTypesWithCounts, sensorMatchesFilter, syncSensorFilterBtn, syncSensorFilterChips, applySensorTypeFilter, buildSensorFilterBar, sensorBatteryPct, sensorBatteryLabel, sensorExFooter, applySensorCardState, makeSensorCard, makeFavoriteSensorCard, updateSensorCard, renderSensorsPopup, refreshSensorsPopup, makeMusicRow, updateFavoriteMusicRow, renderMusicPopup, renderHubModePopup, ensurePinPadPopup, showPinPadError, clearPinPadError, renderPinPadDots, appendPinDigit, backspacePinDigit, closePinPad, openPinPad, promptUnlockPin, runHsmAction, appendHsmModeButtons, renderSecurityPopup });
 })();

@@ -12,7 +12,6 @@
   let schedules = [];
   let sunTimes = { sunrise: null, sunset: null };
   let schedUse24Hour = false;
-  let schedViewOpen = false;
   let schedDraft = null;     // in-progress create/edit draft
   let schedStep = 1;         // 1 | 2 | 3
   let schedEditingId = null;
@@ -24,7 +23,12 @@
       sunTimes = { sunrise: data.sunTimes.sunrise ?? null, sunset: data.sunTimes.sunset ?? null };
     }
     schedUse24Hour = data.schedUse24Hour === true;
-    if (schedViewOpen) renderSchedulerActive();
+    if (schedulerViewIsActive()) renderSchedulerActive();
+  }
+
+  function schedulerViewIsActive() {
+    if (M.inTabView()) return M.activeTab === "scheduling";
+    return M.quickPopupOpenType === "scheduling";
   }
 
   function schedulerHasContent() {
@@ -400,14 +404,14 @@
   }
 
   function renderSchedulerView() {
-    schedViewOpen = true;
     renderSchedulerActive();
   }
 
   function renderSchedulerActive() {
+    if (!schedulerViewIsActive()) return;
     const popup = M.ensureQuickPopup();
     M.syncQuickPopupRef(popup);
-    M.syncQuickPopupWidth(popup, "scheduling");
+    M.syncQuickPopupWidthForOpen(popup);
     const body = M.currentBody();
     body.className = "quick-body quick-body-scheduler" + (M.inTabView() ? " tab-body" : "");
     body.innerHTML = "";
@@ -1553,5 +1557,5 @@
   Object.assign(globalThis.__MLD, { applySchedulesFromData, schedulerHasContent, renderSchedulerView });
   globalThis.__MLD.updateQuickNavVisibility?.();
 
-  Object.assign(M, { applySchedulesFromData, schedulerHasContent, schedParseTime24, schedFormatTime24, schedTime24To12, schedTime12To24, schedFmtClockTime, schedFmtDateTimeLocal, schedCreateScrollWheel, schedOpenTimeWheelSheet, schedBindStepHold, schedAppendTimeStep, schedAppendTimeColumn, schedAppendClockPicker, fmtSchedTime, newSchedDraft, schedApi, renderSchedulerView, renderSchedulerActive, renderSchedList, renderSchedRow, renderSchedWorkflow, schedNavRow, schedBindPickRow, schedBindPickRoom, renderSchedStep1, validateStep1, renderSchedModeTriggerPicker, renderSchedModeCondition, schedOffsetLabel, renderSchedWhenPicker, renderSchedOffsetPicker, renderSchedSunPreview, renderSchedTimePicker, renderSchedDayPicker, defaultOnceAt, renderSchedOncePicker, renderSchedStep2, schedMountDeviceActionsSection, renderSchedStep3, renderSchedOnOffDeviceAction, renderSchedLightAction, renderSchedThermostatAction, renderSchedHubModeAction, autoSchedName, saveSchedule });
+  Object.assign(M, { applySchedulesFromData, schedulerViewIsActive, schedulerHasContent, schedParseTime24, schedFormatTime24, schedTime24To12, schedTime12To24, schedFmtClockTime, schedFmtDateTimeLocal, schedCreateScrollWheel, schedOpenTimeWheelSheet, schedBindStepHold, schedAppendTimeStep, schedAppendTimeColumn, schedAppendClockPicker, fmtSchedTime, newSchedDraft, schedApi, renderSchedulerView, renderSchedulerActive, renderSchedList, renderSchedRow, renderSchedWorkflow, schedNavRow, schedBindPickRow, schedBindPickRoom, renderSchedStep1, validateStep1, renderSchedModeTriggerPicker, renderSchedModeCondition, schedOffsetLabel, renderSchedWhenPicker, renderSchedOffsetPicker, renderSchedSunPreview, renderSchedTimePicker, renderSchedDayPicker, defaultOnceAt, renderSchedOncePicker, renderSchedStep2, schedMountDeviceActionsSection, renderSchedStep3, renderSchedOnOffDeviceAction, renderSchedLightAction, renderSchedThermostatAction, renderSchedHubModeAction, autoSchedName, saveSchedule });
 })();

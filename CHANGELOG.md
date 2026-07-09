@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.13
+
+- Reorder category nav icons (lights, locks, scenes, etc.) alongside rooms; order syncs across devices via the hub.
+- Popup panels use safer viewport sizing on narrow screens; lock PIN hint wraps long text.
+- Scheduler view stays in sync when switching tabs or popups.
+
 ## 0.2.12
 
 - Central thermostat target menu: toggle select-all off, deselect individual units down to none; controls disable when nothing is selected.

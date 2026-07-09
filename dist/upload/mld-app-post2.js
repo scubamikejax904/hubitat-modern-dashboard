@@ -7,6 +7,7 @@
   }
 function renderScenesPopup() {
     const popup = M.ensureQuickPopup();
+    M.syncQuickPopupWidthForOpen(popup);
     const body = popup._body;
     body.className = "quick-body quick-body-scenes";
     body.innerHTML = "";
@@ -171,7 +172,7 @@ function renderScenesPopup() {
   function renderFavoritesPopup() {
     M.closeFavoriteTstatModeMenu();
     const popup = M.ensureQuickPopup();
-    M.syncQuickPopupWidth(popup, "favorites");
+    M.syncQuickPopupWidthForOpen(popup);
     const body = currentBody();
     body.className = "quick-body quick-body-favorites" + (inTabView() ? " tab-body" : "");
     body.innerHTML = "";
@@ -226,7 +227,7 @@ function renderScenesPopup() {
   function renderThermostatsPopup() {
     M.closeFavoriteTstatModeMenu();
     const popup = M.ensureQuickPopup();
-    M.syncQuickPopupWidth(popup, "thermostats");
+    M.syncQuickPopupWidthForOpen(popup);
     const body = currentBody();
     body.className = "quick-body quick-body-thermostats" + (inTabView() ? " tab-body" : "");
     body.innerHTML = "";
@@ -263,16 +264,27 @@ function renderScenesPopup() {
   }
 
   function updateQuickNavVisibility() {
+    if (M.reorderMode) return;
     let anyVisible = false;
     for (const { id, popup } of QUICK_NAV) {
       const btn = document.getElementById(id);
       if (!btn) continue;
       const show = quickNavPopupHasContent(popup);
       btn.hidden = !show;
+      const rec = M.navEls.get(popup);
+      if (rec?.wrap) rec.wrap.hidden = !show;
       if (show) anyVisible = true;
     }
     // Lights tab is shown whenever tab mode is on (independent of content)
-    if (M.tabMode && M.QUICK_LIGHTS_BTN) { M.QUICK_LIGHTS_BTN.hidden = false; anyVisible = true; }
+    if (M.tabMode && M.QUICK_LIGHTS_BTN) {
+      M.QUICK_LIGHTS_BTN.hidden = false;
+      const lightsRec = M.navEls.get("lights");
+      if (lightsRec?.wrap) lightsRec.wrap.hidden = false;
+      anyVisible = true;
+    } else {
+      const lightsRec = M.navEls.get("lights");
+      if (lightsRec?.wrap) lightsRec.wrap.hidden = true;
+    }
     const nav = document.querySelector(".quick-nav");
     if (nav) nav.hidden = !anyVisible;
     if (M.quickPopupOpenType && !quickNavPopupHasContent(M.quickPopupOpenType)) closeQuickPopup();
@@ -1204,6 +1216,7 @@ function renderScenesPopup() {
     if (!btn) return;
     btn.innerHTML = svg;
     btn.addEventListener("click", () => {
+      if (M.reorderMode) return;
       M.hapticTap();
       if (M.tabMode && M.TAB_CATEGORIES.has(popup)) showTab(popup);
       else openQuickPopup(popup, title);
@@ -1213,12 +1226,15 @@ function renderScenesPopup() {
   if (M.QUICK_LIGHTS_BTN) {
     M.QUICK_LIGHTS_BTN.innerHTML = LIGHTS_SVG;
     M.QUICK_LIGHTS_BTN.addEventListener("click", () => {
+      if (M.reorderMode) return;
       M.hapticTap();
       if (M.tabMode) showTab("lights");
       if (M.cfg.enableDrawer) closeDrawer();
     });
     M.QUICK_LIGHTS_BTN.hidden = !M.tabMode;
   }
+  M.setupNavReorderItems();
+  M.applyNavOrder(M.getDisplayNavOrder());
   if (M.CENTRAL_TSTAT_BTN) {
     M.CENTRAL_TSTAT_BTN.innerHTML = CENTRAL_TSTAT_SVG + '<span>All thermostats</span>';
     M.CENTRAL_TSTAT_BTN.addEventListener("click", () => {

@@ -21,7 +21,7 @@ const hubitat = join(root, "hubitat");
 const MLD_SPLIT = "// __MLD_SPLIT__";
 const MLD_SPLIT2 = "// __MLD_SPLIT2__";
 const MLD_SPLIT3 = "// __MLD_SPLIT3__";
-const HUB_MAX_JS = 128 * 1024;
+const HUB_MAX_BLOB = 128 * 1024;
 
 // Must match definition(namespace:, name:) in the Groovy template
 const NS = "modernlights";
@@ -333,10 +333,19 @@ function splitAppJs(srcPath) {
 }
 
 function assertUnderHubLimit(label, content) {
-  if (content.length >= HUB_MAX_JS) {
+  const size = typeof content === "string" ? content.length : content;
+  if (size >= HUB_MAX_BLOB) {
     throw new Error(
-      `${label} is ${content.length} bytes (limit ${HUB_MAX_JS} / 128 KB). Split src/app.js further.`
+      `${label} is ${size} bytes (limit ${HUB_MAX_BLOB} / 128 KB). Split src/app.js further or trim the asset.`
     );
+  }
+}
+
+function assertUploadBlobLimits() {
+  for (const { name } of FILE_MANAGER_ASSETS) {
+    const path = join(upload, name);
+    const size = readFileSync(path).length;
+    assertUnderHubLimit(name, size);
   }
 }
 
@@ -403,6 +412,7 @@ for (const name of ["mld-app-pre.js", "mld-sw.js"]) {
   const content = readFileSync(join(upload, name), "utf8");
   assertUnderHubLimit(name, content);
 }
+assertUploadBlobLimits();
 
 const groovyRaw = readFileSync(join(root, "app", "ModernLightsDashboard.groovy.template"), "utf8");
 const groovy = substituteGroovyTemplate(groovyRaw);
@@ -525,14 +535,14 @@ const hpmRepository = {
 writeFileSync(join(hubitat, "repository.json"), JSON.stringify(hpmRepository, null, "\t") + "\n");
 
 const kb = (p) => (readFileSync(p).length / 1024).toFixed(1);
+const blobHeadroom = (p) => ((HUB_MAX_BLOB - readFileSync(p).length) / 1024).toFixed(1);
 console.log("Built:");
 console.log(`  dist/ModernLightsDashboard.groovy       ${kb(join(dist, "ModernLightsDashboard.groovy"))} KB`);
 console.log(`  dist/ModernLightsDashboard.bundle.zip   ${kb(bundleZip)} KB  ← manual Bundles → Import`);
-console.log(`  dist/upload/mld-app.js                  ${kb(join(upload, "mld-app.js"))} KB`);
-console.log(`  dist/upload/mld-app-post.js             ${kb(join(upload, "mld-app-post.js"))} KB`);
-console.log(`  dist/upload/mld-app-post2.js            ${kb(join(upload, "mld-app-post2.js"))} KB`);
-console.log(`  dist/upload/mld-app-post3.js            ${kb(join(upload, "mld-app-post3.js"))} KB`);
-console.log(`  dist/upload/                            (${FILE_MANAGER_ASSETS.length} File Manager assets)`);
+for (const { name } of FILE_MANAGER_ASSETS) {
+  const path = join(upload, name);
+  console.log(`  dist/upload/${name.padEnd(24)} ${kb(path).padStart(6)} KB  (${blobHeadroom(path)} KB headroom)`);
+}
 console.log(`  hubitat/packageManifest.json            (HPM: app + oauth + ${FILE_MANAGER_ASSETS.length} files)`);
 console.log(`  hubitat/repository.json                 (HPM custom repository listing)`);
 console.log(`  dist/packageManifest.json               (copy of HPM manifest)`);
