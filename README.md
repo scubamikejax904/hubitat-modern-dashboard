@@ -215,13 +215,13 @@ on the album icon indicates playback (respects reduced-motion preferences).
 
 ### Sensors
 
-Most sensors are **read-only** on the dashboard. Select them in the **Other sensors**
+Sensors are **read-only** on the dashboard. Select them in the **Other sensors**
 section of app preferences (motion, contact, water, presence, humidity,
-illuminance, smoke/CO, valves) plus **Temperature sensors** for display-only temperature.
+illuminance, smoke/CO) plus **Temperature sensors** for display-only temperature.
 
-The **Sensors** quick-nav popup aggregates all selected sensors and valves.
-Temperature sensors also appear in room headers. Battery percentage is shown when
-the device reports it. Valves show open/close controls on their cards.
+The **Sensors** quick-nav popup aggregates all selected sensors. Temperature
+sensors also appear in room headers. Battery percentage is shown when the device
+reports it.
 
 A device selected in multiple sensor pickers appears once, using the first
 matching type.
@@ -567,7 +567,6 @@ All settings below are in **Apps → Modern Dashboard** (the installed app insta
 | Shades | — | — | Blinds popup |
 | Music / speakers | — | — | Music popup |
 | Motion, contact, water, etc. | — | — | Sensors popup |
-| Valves | — | — | Sensors popup (open/close) |
 | Hub scenes | — | — | Scenes popup (all hub scenes) |
 | Hub mode | — | Trigger & action | Hub mode popup |
 
