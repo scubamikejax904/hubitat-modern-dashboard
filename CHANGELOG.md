@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.15
+
+- HPM manifest and README link to the published Hubitat Community release thread.
+
 ## 0.2.14
 
 - Nav reorder mode: drag-only (no arrow buttons), handle above each icon; search bar hidden while reordering.

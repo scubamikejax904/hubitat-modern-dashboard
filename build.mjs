@@ -44,7 +44,8 @@ const FEATURE_SUMMARY =
   "Control-first, minimal-effort Hubitat dashboard (mDash): pick devices and go — rooms and layout are automatic. Optimized for control (not just status): bulk room/house on/off, multi-thermostat control, drag-to-dim. Installable PWA from the cloud URL. Built-in scheduler (daily/weekly/once/sunrise/sunset/mode) managed from the dashboard without Hubitat admin login. Lights, shades, thermostats, locks, HSM, scenes, hub mode, music/media, and sensors. Snapshots, favorites, and reorderable rooms/nav. Fully hosted on your hub — no Maker API or third-party cloud.";
 // Set to your Hubitat Community thread URL after posting docs/hubitat-community-post.md
 const COMMUNITY_LINK =
-  process.env.COMMUNITY_LINK ?? `${GITHUB_URL}/discussions`;
+  process.env.COMMUNITY_LINK ??
+  "https://community.hubitat.com/t/release-modern-dashboard-mdash-minimal-setup-pwa-with-built-in-scheduler-runs-entirely-on-your-hub/165028";
 const HPM_REPO_PACKAGE_ID = "e8f4a1c2-3b5d-4e9f-a7c6-1d2e3f4a5b6c";
 const REPOSITORY_JSON_URL =
   "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/master/hubitat/repository.json";

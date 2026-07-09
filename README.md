@@ -226,12 +226,9 @@ File Manager assets.
 
 ## Community and wider distribution
 
-- **Forum release post:** draft in
-  [`docs/hubitat-community-post.md`](docs/hubitat-community-post.md). After you
-  publish on the [Hubitat Community](https://community.hubitat.com/), set
-  `COMMUNITY_LINK` in [`build.mjs`](build.mjs) (or
-  `COMMUNITY_LINK=... npm run build`) to your thread URL and rebuild so HPM shows
-  the link.
+- **Forum release post:**
+  [Hubitat Community thread](https://community.hubitat.com/t/release-modern-dashboard-mdash-minimal-setup-pwa-with-built-in-scheduler-runs-entirely-on-your-hub/165028)
+  (draft/archive in [`docs/hubitat-community-post.md`](docs/hubitat-community-post.md)).
 - **HPM community registry:** see [`docs/hpm-registry.md`](docs/hpm-registry.md)
   for submitting a PR so the package appears in HPM search (optional; custom repo
   install works today).

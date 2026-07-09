@@ -1,9 +1,10 @@
-# Hubitat Community release post (draft)
+# Hubitat Community release post
 
-Copy the title and body below into a new topic on the
-[Hubitat Community](https://community.hubitat.com/) (Apps category is a good fit).
-After publishing, set `COMMUNITY_LINK` in `build.mjs` to your thread URL and rebuild
-so HPM shows the link.
+**Published:** https://community.hubitat.com/t/release-modern-dashboard-mdash-minimal-setup-pwa-with-built-in-scheduler-runs-entirely-on-your-hub/165028
+
+`COMMUNITY_LINK` in `build.mjs` points at this thread (also set in HPM manifests on build).
+
+Original draft body kept below for reference.
 
 Screenshots help a lot — capture from your hub or from the local preview
 (`node preview/server.mjs` → http://localhost:4321/). Attach a few images of the
