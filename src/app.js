@@ -3229,6 +3229,19 @@
     }
   }
 
+  function cleanupNavDragState() {
+    const nav = document.querySelector(".quick-nav");
+    if (!nav) return;
+    nav.querySelectorAll(".nav-drag-placeholder").forEach((el) => el.remove());
+    for (const [, rec] of navEls) {
+      if (!rec?.wrap) continue;
+      rec.wrap.classList.remove("nav-dragging");
+      rec.wrap.style.width = "";
+      rec.wrap.style.left = "";
+      rec.wrap.style.top = "";
+    }
+  }
+
   async function saveNavOrder(order) {
     if (!order?.length) {
       flash("No icons to save", true);
@@ -3875,6 +3888,7 @@
     navReorderSnapshot = null;
     APP_EL?.classList.toggle("reorder-mode", false);
     restoreNavAfterReorder();
+    cleanupNavDragState();
     if (REORDER_DONE_BTN) REORDER_DONE_BTN.hidden = true;
     if (REORDER_CANCEL_BTN) REORDER_CANCEL_BTN.hidden = true;
     updateQuickNavVisibility();
@@ -4141,12 +4155,25 @@
 
     function onUp() {
       if (!active) return;
-      if (dragging) commitDrag();
-      active = false;
-      dragging = false;
-      reorderBusy = false;
-      cleanupListeners();
-      try { handle.releasePointerCapture(pointerId); } catch {}
+      try {
+        if (dragging) commitDrag();
+      } finally {
+        if (placeholder?.parentNode) {
+          placeholder.remove();
+          placeholder = null;
+        }
+        if (wrap.classList.contains("nav-dragging")) {
+          wrap.classList.remove("nav-dragging");
+          wrap.style.width = "";
+          wrap.style.left = "";
+          wrap.style.top = "";
+        }
+        active = false;
+        dragging = false;
+        reorderBusy = false;
+        cleanupListeners();
+        try { handle.releasePointerCapture(pointerId); } catch {}
+      }
     }
 
     handle.addEventListener("pointerdown", (e) => {
