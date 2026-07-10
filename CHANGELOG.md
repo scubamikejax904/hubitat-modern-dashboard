@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.35
+
+- Dashboard password unlock: avoid `Long.toHexString` and `JsonOutput.toJson` in the
+  unlock handler (Hubitat sandbox blocks them); use decimal djb2 sig and manual JSON.
+- Unlock errors now include a `detail` field surfaced in the password gate UI.
+
 ## 0.2.34
 
 - Dashboard password unlock: use stateless signed sessions (djb2 hash) instead of

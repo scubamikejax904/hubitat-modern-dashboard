@@ -23,6 +23,7 @@ const NAMES = ["Ceiling", "Recessed", "Pendant", "Lamp", "Sconce", "Strip", "Spo
 const MOCK_HSM_PIN = "1234";
 const MOCK_UNLOCK_PIN = "5678";
 const MOCK_DASH_PASSWORD = "dashpass";
+const MOCK_ACCESS_TOKEN = "preview-token";
 const DASH_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MOCK_TRACKS = [
   "Daft Punk — Get Lucky",
@@ -310,16 +311,16 @@ function dashboardPasswordRequired() {
 }
 
 function dashboardSessionSecret() {
-  return `${MOCK_DASH_PASSWORD}|preview`;
+  return `${MOCK_DASH_PASSWORD}|${MOCK_ACCESS_TOKEN}`;
 }
 
 function dashboardSessionSig(expiryMs) {
   const input = `${dashboardSessionSecret()}|${expiryMs}`;
   let hash = 5381;
   for (let i = 0; i < input.length; i++) {
-    hash = ((hash << 5) + hash + input.charCodeAt(i)) >>> 0;
+    hash = ((hash << 5) + hash + input.charCodeAt(i)) | 0;
   }
-  return hash.toString(16);
+  return hash.toString();
 }
 
 function issueDashboardSession() {

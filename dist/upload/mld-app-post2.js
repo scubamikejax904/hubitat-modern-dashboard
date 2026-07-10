@@ -1655,7 +1655,7 @@
         return { ok: false, error: "wrong password" };
       }
       if (!r.ok) {
-        const hubMsg = data?.message || data?.errorMessage || data?.msg;
+        const hubMsg = data?.detail || data?.message || data?.errorMessage || data?.msg;
         const err = data?.error;
         let msg = "Unlock failed";
         if (typeof hubMsg === "string" && hubMsg.trim()) msg = hubMsg.trim();

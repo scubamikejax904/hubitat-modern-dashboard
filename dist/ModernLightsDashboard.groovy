@@ -1,4 +1,4 @@
-// Modern Dashboard v0.2.34
+// Modern Dashboard v0.2.35
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
@@ -38,7 +38,7 @@ def mainPage() {
             paragraph "<small><b>PWA:</b> use the cloud link below to install on your phone's home screen (standalone app icon).</small>"
             paragraph "<small><b>Scheduler:</b> create and manage schedules from the dashboard — including remotely — without logging into the Hubitat admin UI.</small>"
             paragraph "<small><b>Hub-only:</b> UI, API, and scheduler run entirely on your hub — no Maker API or third-party cloud.</small>"
-            paragraph "<small>Version 0.2.34 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
+            paragraph "<small>Version 0.2.35 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         section("Devices") {
             paragraph "<small>Select the devices you want on the dashboard. Rooms and layout are automatic based on your Hubitat room assignments.</small>"
@@ -2296,7 +2296,7 @@ def dashboardPasswordRequired() {
     return dashboardPasswordEnabled == true && (dashboardPassword?.toString()?.trim() ?: "") != ""
 }
 
-// Stateless signed sessions (Hubitat sandbox blocks MessageDigest/HMAC/Random).
+// Stateless signed sessions (Hubitat sandbox blocks MessageDigest/HMAC/Random/Long.toHexString).
 def dashboardSessionSecret() {
     def pw = dashboardPassword?.toString()?.trim() ?: ""
     def tok = state.accessToken?.toString()?.trim() ?: ""
@@ -2305,15 +2305,19 @@ def dashboardSessionSecret() {
 
 def dashboardSessionSig(expiryMs) {
     def input = dashboardSessionSecret() + "|" + expiryMs.toString()
+    // djb2 — keep to plain arithmetic/strings; Hubitat blocks crypto helpers.
     long hash = 5381L
-    for (int i = 0; i < input.length(); i++) {
-        hash = ((hash << 5) + hash) + (long)((int)input.charAt(i))
+    int len = input.length()
+    for (int i = 0; i < len; i++) {
+        int ch = (int) input.charAt(i)
+        hash = ((hash << 5) + hash) + ch
     }
-    return Long.toHexString(hash)
+    // Decimal string avoids Long.toHexString (blocked in Hubitat sandbox).
+    return hash.toString()
 }
 
 def issueDashboardSession() {
-    long expiry = now() + DASH_SESSION_TTL_MS
+    long expiry = now() + 604800000L
     def sig = dashboardSessionSig(expiry)
     def session = expiry.toString() + "." + sig
     return [session: session, expiresAt: expiry]
@@ -2399,10 +2403,13 @@ def authUnlock() {
             return render(contentType: "application/json", data: '{"ok":false,"error":"wrong password"}', status: 403)
         }
         def issued = issueDashboardSession()
-        return render(contentType: "application/json", data: groovy.json.JsonOutput.toJson([ok: true, session: issued.session, expiresAt: issued.expiresAt]), status: 200)
+        def out = new StringBuilder()
+        out << '{"ok":true,"session":' << jsonStr(issued.session)
+        out << ',"expiresAt":' << issued.expiresAt << '}'
+        return render(contentType: "application/json", data: out.toString(), status: 200)
     } catch (e) {
         log.error "Modern Dashboard authUnlock: ${e.message}"
-        return render(contentType: "application/json", data: '{"ok":false,"error":"unlock failed"}', status: 500)
+        return render(contentType: "application/json", data: '{"ok":false,"error":"unlock failed","detail":' + jsonStr(e.message ?: e.toString()) + '}', status: 500)
     }
 }
 
