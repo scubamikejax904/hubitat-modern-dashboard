@@ -2823,6 +2823,7 @@
         localStorage.removeItem(DASH_SESSION_EXPIRES_KEY);
       }
     } catch {}
+    publishMld({ dashSession, dashSessionExpiresAt });
   }
 
   function clearDashSession() {
@@ -7976,8 +7977,9 @@
       if (result.ok) {
         error.hidden = true;
         error.textContent = "";
+        const resolve = gateState?.resolve;
         closeDashboardGate();
-        gateState?.resolve?.();
+        resolve?.();
         return;
       }
       error.textContent = result.error === "wrong password" ? "Wrong password" : (result.error || "Unlock failed");

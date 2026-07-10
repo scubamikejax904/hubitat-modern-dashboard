@@ -1708,8 +1708,9 @@
       if (result.ok) {
         error.hidden = true;
         error.textContent = "";
+        const resolve = M.gateState?.resolve;
         closeDashboardGate();
-        M.gateState?.resolve?.();
+        resolve?.();
         return;
       }
       error.textContent = result.error === "wrong password" ? "Wrong password" : (result.error || "Unlock failed");

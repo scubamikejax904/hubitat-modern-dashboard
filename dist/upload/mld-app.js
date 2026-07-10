@@ -2823,6 +2823,7 @@
         localStorage.removeItem(DASH_SESSION_EXPIRES_KEY);
       }
     } catch {}
+    publishMld({ dashSession, dashSessionExpiresAt });
   }
 
   function clearDashSession() {

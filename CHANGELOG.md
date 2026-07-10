@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.26
+
+- Fix password unlock hanging forever: `closeDashboardGate()` cleared `gateState`
+  before the unlock promise could resolve, so `/data` never loaded after Unlock.
+
 ## 0.2.25
 
 - Fix blank dashboard after password feature: move password-gate UI out of
