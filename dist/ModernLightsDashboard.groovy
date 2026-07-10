@@ -2302,7 +2302,7 @@ def dashboardSessionSig(expiryMs) {
 }
 
 def issueDashboardSession() {
-    long expiry = System.currentTimeMillis() + DASH_SESSION_TTL_MS
+    long expiry = now() + DASH_SESSION_TTL_MS
     def sig = dashboardSessionSig(expiry)
     def session = expiry.toString() + "." + sig
     return [session: session, expiresAt: expiry]
@@ -2314,7 +2314,7 @@ def validateAndRenewDashboardSession(token) {
     if (parts.length != 2) return null
     long expiry
     try { expiry = parts[0].toLong() } catch (e) { return null }
-    if (expiry <= System.currentTimeMillis()) return null
+    if (expiry <= now()) return null
     def expectedSig = dashboardSessionSig(expiry)
     if (!pinsMatch(expectedSig, parts[1])) return null
     return issueDashboardSession()

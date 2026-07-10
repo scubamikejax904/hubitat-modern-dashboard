@@ -6,6 +6,7 @@
   before the dashboard loads. Successful unlock keeps a server-signed session that
   slides forward for seven days while the dashboard is used; after a week of
   inactivity the password is required again.
+- Dashboard session expiry uses Hubitat `now()` instead of `System.currentTimeMillis()`.
 - Fix valve Open/Close UI not updating after visiting Sensors then Favorites:
   `updateSensorCard` preferred detached Sensors-tab cards over live Favorites cards.
 
