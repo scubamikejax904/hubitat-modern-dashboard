@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.36
+
+- Dashboard password: re-sync session from localStorage after unlock; derive expiry
+  from signed token prefix when missing; retry /data once on 401 before re-prompting.
+
 ## 0.2.35
 
 - Dashboard password unlock: avoid `Long.toHexString` and `JsonOutput.toJson` in the

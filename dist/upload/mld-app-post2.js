@@ -1809,6 +1809,8 @@
         return;
       }
       await promptDashboardPassword();
+      // Unlock writes localStorage via M.applyDashSessionFromResponse; re-sync before /data.
+      M.loadDashSession();
       M.setupDashSessionActivityRenewal();
     })();
     try {
@@ -1835,9 +1837,11 @@
       startWS();
     } catch (e) {
       console.error("Dashboard init failed:", e);
+      // M.getJson already prompts on 401; only recover here if that path threw auth_required.
       if (e?.code === "auth_required" || /auth required/i.test(String(e?.message || ""))) {
         try {
-          await ensureDashboardAccess();
+          M.loadDashSession();
+          if (!M.isDashSessionFresh()) await ensureDashboardAccess();
           const d = await M.fetchData();
           if (M.applyLocalModeStrategy()) return;
           M.render(d);

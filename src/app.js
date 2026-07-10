@@ -849,11 +849,22 @@
       dashSession = "";
       dashSessionExpiresAt = 0;
     }
+    // Signed tokens embed expiry as the prefix before "."; use it if storage expiry is missing.
+    if (dashSession && !(dashSessionExpiresAt > Date.now())) {
+      const prefix = Number(String(dashSession).split(".")[0]);
+      if (Number.isFinite(prefix) && prefix > Date.now()) dashSessionExpiresAt = prefix;
+    }
+    publishMld({ dashSession: dashSession, dashSessionExpiresAt: dashSessionExpiresAt });
   }
 
   function saveDashSession(session, expiresAt) {
     dashSession = String(session || "");
-    dashSessionExpiresAt = Number(expiresAt) || 0;
+    let exp = Number(expiresAt);
+    if (!Number.isFinite(exp) || exp <= 0) {
+      const prefix = Number(String(dashSession).split(".")[0]);
+      exp = Number.isFinite(prefix) && prefix > 0 ? prefix : 0;
+    }
+    dashSessionExpiresAt = exp;
     try {
       if (dashSession) {
         localStorage.setItem(DASH_SESSION_STORAGE_KEY, dashSession);
@@ -871,7 +882,15 @@
   }
 
   function isDashSessionFresh() {
-    return !!dashSession && dashSessionExpiresAt > Date.now();
+    if (!dashSession) return false;
+    if (dashSessionExpiresAt > Date.now()) return true;
+    const prefix = Number(String(dashSession).split(".")[0]);
+    if (Number.isFinite(prefix) && prefix > Date.now()) {
+      dashSessionExpiresAt = prefix;
+      publishMld({ dashSessionExpiresAt: dashSessionExpiresAt });
+      return true;
+    }
+    return false;
   }
 
   function slideDashSessionExpiry() {
@@ -884,13 +903,10 @@
 
   function applyDashSessionFromResponse(data) {
     if (!data) return;
-    if (data.session && data.expiresAt) {
-      saveDashSession(data.session, data.expiresAt);
-      return;
-    }
-    if (data.dashSession && data.dashSessionExpiresAt) {
-      saveDashSession(data.dashSession, data.dashSessionExpiresAt);
-    }
+    const session = data.session || data.dashSession;
+    if (!session) return;
+    const expiresAt = data.expiresAt ?? data.dashSessionExpiresAt;
+    saveDashSession(session, expiresAt);
   }
 
   function isDashboardGateOpen() {
@@ -919,6 +935,7 @@
   })();
 
   function withToken(path) {
+    if (!dashSession) loadDashSession();
     const parts = [];
     if (ACCESS_TOKEN) parts.push("access_token=" + encodeURIComponent(ACCESS_TOKEN));
     if (dashSession && isDashSessionFresh()) {
@@ -943,6 +960,12 @@
     const pass = authPass || 0;
     const r = await fetchWithTimeout(withToken(url), { cache: "no-store", headers: { "Accept": "application/json" } });
     if (r.status === 401) {
+      // First 401: reload any just-saved session and retry before prompting again.
+      // Clearing first caused a second password prompt when /data raced unlock.
+      if (pass === 0) {
+        loadDashSession();
+        if (isDashSessionFresh()) return getJson(url, 1);
+      }
       clearDashSession();
       await postCall("ensureDashboardAccess");
       if (pass < 2) return getJson(url, pass + 1);
@@ -8114,6 +8137,8 @@
         return;
       }
       await promptDashboardPassword();
+      // Unlock writes localStorage via applyDashSessionFromResponse; re-sync before /data.
+      loadDashSession();
       setupDashSessionActivityRenewal();
     })();
     try {
@@ -8140,9 +8165,11 @@
       startWS();
     } catch (e) {
       console.error("Dashboard init failed:", e);
+      // getJson already prompts on 401; only recover here if that path threw auth_required.
       if (e?.code === "auth_required" || /auth required/i.test(String(e?.message || ""))) {
         try {
-          await ensureDashboardAccess();
+          loadDashSession();
+          if (!isDashSessionFresh()) await ensureDashboardAccess();
           const d = await fetchData();
           if (applyLocalModeStrategy()) return;
           render(d);
