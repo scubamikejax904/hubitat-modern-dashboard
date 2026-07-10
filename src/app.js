@@ -97,7 +97,7 @@
     try { localStorage.setItem(DRAWER_STORAGE_KEY, on ? "1" : "0"); } catch {}
   }
 
-  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, showOfflineDevices: false, theme: loadThemePref(), dashboardName: "mDash", roomOrder: null, navOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), localUrl: "", cloudUrl: "" };
+  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", roomOrder: null, navOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), localUrl: "", cloudUrl: "" };
 
   let localModeBannerEl = null;
   let localBannerDismissed = false;
@@ -325,22 +325,6 @@
     }
   }
 
-  function deviceIsOffline(dev) {
-    return !!(cfg.showOfflineDevices && dev && dev.off);
-  }
-
-  function applyOfflineUi(el, dev) {
-    const offline = deviceIsOffline(dev);
-    if (el) el.classList.toggle("offline", offline);
-    return offline;
-  }
-
-  function mergeOfflineField(dev, payload) {
-    if (!dev) return;
-    if (payload?.off) dev.off = 1;
-    else delete dev.off;
-  }
-
   function effectiveLock(lock) {
     const opt = lockOptimistic.get(lock.i);
     if (opt && Date.now() < opt.until) return !!opt.lk;
@@ -348,7 +332,6 @@
   }
 
   function lockStatusLabel(lock) {
-    if (deviceIsOffline(lock)) return "Offline";
     const opt = lockOptimistic.get(lock.i);
     const st = (opt && Date.now() < opt.until) ? opt.st : lock.st;
     if (st === "jammed") return "Jammed";
@@ -425,7 +408,6 @@
   }
 
   function shadeStatusLabel(shade) {
-    if (deviceIsOffline(shade)) return "Offline";
     const st = effectiveShadeState(shade);
     const pos = effectiveShadePosition(shade);
     const posText = pos != null ? pos + "%" : null;
@@ -526,7 +508,6 @@
   }
 
   function musicStatusLabel(dev) {
-    if (deviceIsOffline(dev)) return "Offline";
     const st = effectiveMusicStatus(dev);
     if (st === "playing") return "Playing";
     if (st === "transitioning") return "Transitioning";
@@ -1003,7 +984,6 @@
     if (d && d.config) {
       if (d.config.pollIntervalMs) cfg.pollIntervalMs = d.config.pollIntervalMs;
       if (typeof d.config.useWebSocket === "boolean") cfg.useWebSocket = d.config.useWebSocket;
-      if (typeof d.config.showOfflineDevices === "boolean") cfg.showOfflineDevices = d.config.showOfflineDevices;
       if (d.config.dashboardName != null) postCall("applyDashboardName", d.config.dashboardName);
       if (!reorderMode && Array.isArray(d.config.roomOrder)) {
         cfg.roomOrder = d.config.roomOrder.length ? d.config.roomOrder : null;
@@ -2900,15 +2880,13 @@
     for (const [rid, rec] of climateEls) {
       const info = roomClimateInfo(rid);
       if (!info) continue;
-      const offline = applyOfflineUi(rec.el, info.device);
       rec.tempEl.textContent = formatRoomTemp(info.device);
       if (rec.iconEl) {
         rec.iconEl.classList.remove("state-off", "state-heat", "state-cool", "state-fan");
         if (info.controllable) {
           const cls = roomTstatState(rid);
           rec.iconEl.classList.add(cls);
-          const offlineNote = offline ? "offline, " : "";
-          rec.el.setAttribute("aria-label", "Thermostat — " + offlineNote + cls.replace("state-", "") + ", " + formatRoomTemp(info.device));
+          rec.el.setAttribute("aria-label", "Thermostat — " + cls.replace("state-", "") + ", " + formatRoomTemp(info.device));
         }
       }
     }
@@ -4941,11 +4919,10 @@
   function syncTileState(rec, dev) {
     if (!rec) return;
     rec.data = dev;
-    const offline = applyOfflineUi(rec.el, dev);
     const on = effectiveSwitch(dev);
     rec.el.classList.toggle("on", on);
     rec.el.classList.toggle("off", !on);
-    rec.stateEl.textContent = offline ? "Offline" : (on ? "On" : "Off");
+    rec.stateEl.textContent = on ? "On" : "Off";
     const bulb = qs(".tile-bulb", rec.el);
     if (bulb) bulb.setAttribute("aria-pressed", on ? "true" : "false");
     const socket = qs(".tile-socket", rec.el);
@@ -5300,7 +5277,6 @@
           if (rec.data.ct && d.k != null) dev.k = d.k;
           if (rec.data.rgb && d.h != null) dev.h = d.h;
           if (rec.data.rgb && d.sat != null) dev.sat = d.sat;
-          mergeOfflineField(dev, d);
         }
         const opt = switchOptimistic.get(Number(d.i));
         if (opt && !!dev?.s === !!opt.s) clearSwitchOptimistic(Number(d.i));
@@ -5319,7 +5295,6 @@
         if (d.fm != null) t.fm = d.fm;
         if (d.hasFs != null) t.hasFs = d.hasFs;
         if (d.fs != null) t.fs = d.fs;
-        mergeOfflineField(t, d);
         updateClimateWidgets();
         updateRoomMeta();
         refreshOpenTstatQuickPopups();
@@ -5328,7 +5303,6 @@
       const s = tempSensors.find(x => x.i === Number(d.i));
       if (s) {
         if (d.temp != null) s.temp = Number(d.temp);
-        mergeOfflineField(s, d);
         updateClimateWidgets();
         updateRoomMeta();
         if (currentCategory() === "sensors") refreshSensorsPopup();
@@ -5338,7 +5312,6 @@
       const sen = sensors.find(x => x.i === Number(d.i));
       if (sen) {
         applySensorPayload(sen, d);
-        mergeOfflineField(sen, d);
         if (currentCategory() === "sensors") refreshSensorsPopup();
         else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
         return;
@@ -5347,7 +5320,6 @@
       if (lock) {
         if (d.lk != null) lock.lk = d.lk ? 1 : 0;
         if (d.st != null) lock.st = d.st;
-        mergeOfflineField(lock, d);
         const opt = lockOptimistic.get(Number(d.i));
         if (opt && !!lock.lk === !!opt.lk) clearLockOptimistic(Number(d.i));
         if (currentCategory() === "locks") renderLocksPopup();
@@ -5358,7 +5330,6 @@
       if (shade) {
         if (d.st != null) shade.st = d.st;
         if (d.pos != null) shade.pos = d.pos;
-        mergeOfflineField(shade, d);
         const opt = shadeOptimistic.get(Number(d.i));
         if (opt) {
           let matched = true;
@@ -5373,7 +5344,6 @@
       const valve = valves.find(x => x.i === Number(d.i));
       if (valve) {
         if (d.st != null) valve.st = d.st;
-        mergeOfflineField(valve, d);
         const opt = valveOptimistic.get(Number(d.i));
         if (opt?.st != null && valve.st === opt.st) clearValveOptimistic(Number(d.i));
         if (currentCategory() === "sensors") refreshSensorsPopup();
@@ -5387,7 +5357,6 @@
         if (d.tr != null) mp.tr = d.tr;
         if (d.m != null) mp.m = d.m;
         if (d.f != null) mp.f = d.f;
-        mergeOfflineField(mp, d);
         const mopt = musicOptimistic.get(Number(d.i));
         if (mopt && (mopt.st == null || mp.st === mopt.st) && (mopt.v == null || mp.v === mopt.v)) {
           clearMusicOptimistic(Number(d.i));
@@ -5644,14 +5613,12 @@
     if (inFav) {
       favLockMap.set(lock.i, { el: row, meta, lockBtn, unlockBtn, favBtn: fav });
     }
-    applyOfflineUi(row, lock);
     return row;
   }
 
   function updateFavoriteLockRow(lock) {
     const rec = favLockMap.get(lock.i);
     if (!rec) return;
-    const offline = applyOfflineUi(rec.el, lock);
     rec.meta.textContent = roomLabel(lock.r) + " · " + lockStatusLabel(lock);
     const isLocked = effectiveLock(lock);
     rec.lockBtn.classList.toggle("active", isLocked);
@@ -5763,14 +5730,12 @@
     if (inFav) {
       favShadeMap.set(shade.i, { el: tile, meta, levelLabel, slider, openBtn, closeBtn, stopBtn, favBtn: fav });
     }
-    applyOfflineUi(tile, shade);
     return tile;
   }
 
   function updateFavoriteShadeTile(shade) {
     const rec = favShadeMap.get(shade.i);
     if (!rec) return;
-    const offline = applyOfflineUi(rec.el, shade);
     const moving = shadeIsMoving(shade);
     const pos = effectiveShadePosition(shade);
     rec.meta.textContent = roomLabel(shade.r) + " · " + shadeStatusLabel(shade);
@@ -5786,7 +5751,6 @@
     rec.closeBtn.classList.toggle("moving", moving);
     rec.openBtn.disabled = moving;
     rec.closeBtn.disabled = moving;
-    if (rec.stopBtn) rec.stopBtn.disabled = moving;
   }
 
   function renderBlindsPopup() {
@@ -5970,14 +5934,12 @@
         el: row, art, track, meta, playPauseBtn, stopBtn, volIcon, slider, muteBadge, favBtn, i: dev.i,
       });
     }
-    applyOfflineUi(row, dev);
     return row;
   }
 
   function updateFavoriteMusicRow(dev) {
     const rec = favMusicMap.get(dev.i);
     if (!rec) return;
-    applyOfflineUi(rec.el, dev);
     const ctrl = musicControls(dev);
     const playing = isMusicPlaying(effectiveMusicStatus(dev));
     const status = effectiveMusicStatus(dev);
@@ -6557,7 +6519,6 @@
   }
 
   function applySensorCardState(card, dev, rec) {
-    const offline = applyOfflineUi(card, dev);
     const meta = SENSOR_TYPE_META[dev.t] || SENSOR_TYPE_META.generic;
     card.style.setProperty("--sensor-accent", meta.accent);
     let hero, pill, alert;
@@ -6572,11 +6533,7 @@
       const d = sensorDisplay(dev);
       hero = d.hero; pill = d.pill; alert = d.alert;
     }
-    if (offline) {
-      pill = "Offline";
-      alert = false;
-    }
-    card.className = "sensor-card sensor-card--" + (dev.t || "generic") + (alert ? " is-alert" : "") + (offline ? " offline" : "");
+    card.className = "sensor-card sensor-card--" + (dev.t || "generic") + (alert ? " is-alert" : "");
     rec.heroEl.textContent = hero;
     if (pill) {
       rec.pillEl.hidden = false;
@@ -6841,22 +6798,20 @@
     card.appendChild(controls);
 
     map.set(t.i, { el: card, card, spEl, stateEl, stateTxt, modeLabel, modeBtn, minus, plus });
-    applyOfflineUi(card, t);
     return card;
   }
 
   function updateQuickTstatCard(t, map) {
     const rec = map.get(t.i);
     if (!rec) return;
-    const offline = applyOfflineUi(rec.card, t);
     const tm = String(t.tm || "").toLowerCase();
-    rec.card.className = "quick-fav-card quick-fav-tstat mode-" + (tm || "off") + (offline ? " offline" : "");
+    rec.card.className = "quick-fav-card quick-fav-tstat mode-" + (tm || "off");
     const temps = favoriteTstatTemps(t);
     const stateInfo = favoriteTstatState(t);
     rec.spEl.className = "quick-fav-tstat-sp " + temps.tone;
     rec.spEl.textContent = temps.setpoint;
     rec.stateEl.className = "quick-fav-tstat-state" + (stateInfo.active ? " is-active" : "");
-    rec.stateTxt.textContent = offline ? "Offline" : stateInfo.label;
+    rec.stateTxt.textContent = stateInfo.label;
     rec.modeLabel.textContent = tstatModeDisplayLabel(t.tm);
     const canAdjust = !!favoriteTstatTarget(t);
     rec.minus.disabled = !canAdjust;

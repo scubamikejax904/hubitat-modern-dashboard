@@ -1774,15 +1774,13 @@
     for (const [rid, rec] of M.climateEls) {
       const info = M.roomClimateInfo(rid);
       if (!info) continue;
-      const offline = M.applyOfflineUi(rec.el, info.device);
       rec.tempEl.textContent = M.formatRoomTemp(info.device);
       if (rec.iconEl) {
         rec.iconEl.classList.remove("state-off", "state-heat", "state-cool", "state-fan");
         if (info.controllable) {
           const cls = M.roomTstatState(rid);
           rec.iconEl.classList.add(cls);
-          const offlineNote = offline ? "offline, " : "";
-          rec.el.setAttribute("aria-label", "Thermostat — " + offlineNote + cls.replace("state-", "") + ", " + M.formatRoomTemp(info.device));
+          rec.el.setAttribute("aria-label", "Thermostat — " + cls.replace("state-", "") + ", " + M.formatRoomTemp(info.device));
         }
       }
     }

@@ -1,14 +1,17 @@
 # Changelog
 
+## 0.2.39
+
+- Remove optional offline device indicator (deferred; see
+  [docs/deferred/offline-device-status.md](docs/deferred/offline-device-status.md)).
+
 ## 0.2.38
 
 - Category quick-nav icons align left (scrollable row) instead of centered.
 
 ## 0.2.37
 
-- Optional **Show inactive devices as offline** companion setting: devices Hubitat reports
-  as INACTIVE are grayed out and labeled Offline across lights, outlets, thermostats,
-  locks, shades, valves, sensors, and music tiles.
+- Optional **Show inactive devices as offline** companion setting (removed in 0.2.39).
 
 ## 0.2.36
 
