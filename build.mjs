@@ -18,6 +18,7 @@ const upload = join(dist, "upload");
 const staging = join(dist, "bundle-staging");
 const hubitat = join(root, "hubitat");
 
+const MLD_SPLIT_CORE = "// __MLD_SPLIT_CORE__";
 const MLD_SPLIT = "// __MLD_SPLIT__";
 const MLD_SPLIT2 = "// __MLD_SPLIT2__";
 const MLD_SPLIT3 = "// __MLD_SPLIT3__";
@@ -60,6 +61,7 @@ const FILE_MANAGER_ASSETS = [
   { id: "c2b3d4e5-f6a7-8901-bcde-f12345678901", name: "mld-app.css" },
   { id: "d3c4e5f6-a7b8-9012-cdef-123456789012", name: "mld-app-pre.js" },
   { id: "e4d5f6a7-b8c9-0123-def0-234567890123", name: "mld-app.js" },
+  { id: "a1b2c3d4-e5f6-7890-abcd-ef1234567891", name: "mld-app-core.js" },
   { id: "f5e6a7b8-c9d0-1234-ef01-345678901234", name: "mld-app-post.js" },
   { id: "e7f8a9b0-c1d2-3456-7890-abcdef123456", name: "mld-app-post2.js" },
   { id: "f8a9b0c1-d2e3-4567-8901-bcdef1234567", name: "mld-app-post3.js" },
@@ -90,7 +92,7 @@ function rewriteCodeSegment(segment, replaceIds) {
   let out = segment;
   for (const id of replaceIds) {
     const re = new RegExp(
-      `(?<!(?:const|let|var) )(?<![.\\w])${id.replace(/\$/g, "\\$")}(?![\\w$])`,
+      `(?<!(?:const|let|var) )(?<![.\\w])${id.replace(/\$/g, "\\$")}(?!\\s*:)(?![\\w$])`,
       "g"
     );
     out = out.replace(re, `M.${id}`);
@@ -266,8 +268,12 @@ function wrapPostChunk(body, exportIds, priorMissingMsg) {
 
 function splitAppJs(srcPath) {
   const raw = readFileSync(srcPath, "utf8");
+  const splitCoreIdx = raw.indexOf(MLD_SPLIT_CORE);
+  if (splitCoreIdx < 0) throw new Error(`Missing ${MLD_SPLIT_CORE} in src/app.js`);
   const split1Idx = raw.indexOf(MLD_SPLIT);
-  if (split1Idx < 0) throw new Error(`Missing ${MLD_SPLIT} in src/app.js`);
+  if (split1Idx < 0 || split1Idx <= splitCoreIdx) {
+    throw new Error(`Missing ${MLD_SPLIT} after ${MLD_SPLIT_CORE} in src/app.js`);
+  }
   const split2Idx = raw.indexOf(MLD_SPLIT2);
   if (split2Idx < 0 || split2Idx <= split1Idx) {
     throw new Error(`Missing ${MLD_SPLIT2} after ${MLD_SPLIT} in src/app.js`);
@@ -277,10 +283,11 @@ function splitAppJs(srcPath) {
     throw new Error(`Missing ${MLD_SPLIT3} after ${MLD_SPLIT2} in src/app.js`);
   }
 
-  const part1Lines = raw.slice(0, split1Idx).trimEnd().split("\n");
-  // Keep leading indentation on the first declaration so parseTopLevelFunctions
-  // still sees "  function …" / "  async function …" after the split marker.
+  const part1Lines = raw.slice(0, splitCoreIdx).trimEnd().split("\n");
   const trimLeadingBlankLines = (s) => s.replace(/^(?:\s*\n)+/, "");
+  let partCoreLines = trimLeadingBlankLines(
+    raw.slice(splitCoreIdx + MLD_SPLIT_CORE.length, split1Idx)
+  ).split("\n");
   let part2Lines = trimLeadingBlankLines(raw.slice(split1Idx + MLD_SPLIT.length, split2Idx)).split("\n");
   let part3Lines = trimLeadingBlankLines(raw.slice(split2Idx + MLD_SPLIT2.length, split3Idx)).split("\n");
   let part4Lines = trimLeadingBlankLines(raw.slice(split3Idx + MLD_SPLIT3.length)).split("\n");
@@ -291,37 +298,57 @@ function splitAppJs(srcPath) {
     return lines;
   };
   trimTrailing(part1Lines);
+  trimTrailing(partCoreLines);
   trimTrailing(part2Lines);
   trimTrailing(part3Lines);
   trimTrailing(part4Lines);
 
-  assertNoPart1BarePart2Refs(part1Lines, [...part2Lines, ...part3Lines, ...part4Lines]);
+  assertNoPart1BarePart2Refs(part1Lines, [
+    ...partCoreLines,
+    ...part2Lines,
+    ...part3Lines,
+    ...part4Lines,
+  ]);
 
   const exportIds1 = parseTopLevelIds(part1Lines.slice(1));
   const exportBlock = `  globalThis.__MLD = { ${exportIds1.join(", ")} };`;
   const part1Out = `${part1Lines.join("\n")}\n${exportBlock}\n})();\n`;
 
+  const exportIdsCoreSet = new Set(parseTopLevelIds(partCoreLines));
   const exportIds2Set = new Set(parseTopLevelIds(part2Lines));
   const exportIds3Set = new Set(parseTopLevelIds(part3Lines));
   const exportIds4Set = new Set(parseTopLevelIds(part4Lines));
   const exportIds3Only = [...exportIds3Set].filter((id) => !exportIds2Set.has(id));
   const exportIds4Only = [...exportIds4Set].filter((id) => !exportIds2Set.has(id));
-  const exportIdsForPart2 = [...exportIds1, ...exportIds3Only, ...exportIds4Only];
+  const exportIdsForCore = [...exportIds1];
+  const exportIdsForPart2 = [
+    ...exportIds1,
+    ...[...exportIdsCoreSet].filter((id) => !exportIds1.includes(id)),
+    ...exportIds3Only,
+    ...exportIds4Only,
+  ];
   const exportIdsForPart3 = [
     ...exportIds1,
+    ...[...exportIdsCoreSet].filter((id) => !exportIds3Set.has(id)),
     ...[...exportIds2Set].filter((id) => !exportIds3Set.has(id)),
     ...[...exportIds4Set].filter((id) => !exportIds3Set.has(id)),
   ];
   const exportIdsForPart4 = [
     ...exportIds1,
+    ...[...exportIdsCoreSet].filter((id) => !exportIds4Set.has(id)),
     ...[...exportIds2Set].filter((id) => !exportIds4Set.has(id)),
     ...[...exportIds3Set].filter((id) => !exportIds4Set.has(id)),
   ];
 
+  const partCoreOut = wrapPostChunk(
+    partCoreLines.join("\n"),
+    exportIdsForCore,
+    "upload mld-app.js before mld-app-core.js"
+  );
   const part2Out = wrapPostChunk(
     part2Lines.join("\n"),
     exportIdsForPart2,
-    "upload mld-app.js before mld-app-post.js"
+    "upload mld-app-core.js before mld-app-post.js"
   );
   const part3Out = wrapPostChunk(
     part3Lines.join("\n"),
@@ -334,7 +361,7 @@ function splitAppJs(srcPath) {
     "upload mld-app-post2.js before mld-app-post3.js"
   );
 
-  return { part1Out, part2Out, part3Out, part4Out };
+  return { part1Out, partCoreOut, part2Out, part3Out, part4Out };
 }
 
 function assertUnderHubLimit(label, content) {
@@ -405,12 +432,14 @@ writeFileSync(join(upload, "mld-icon-512.b64"), iconBase64(512) + "\n");
 writeFileSync(join(upload, "mld-icon-192.png"), createIconPng(192));
 writeFileSync(join(upload, "mld-icon-512.png"), createIconPng(512));
 
-const { part1Out, part2Out, part3Out, part4Out } = splitAppJs(join(root, "src", "app.js"));
+const { part1Out, partCoreOut, part2Out, part3Out, part4Out } = splitAppJs(join(root, "src", "app.js"));
 assertUnderHubLimit("mld-app.js", part1Out);
+assertUnderHubLimit("mld-app-core.js", partCoreOut);
 assertUnderHubLimit("mld-app-post.js", part2Out);
 assertUnderHubLimit("mld-app-post2.js", part3Out);
 assertUnderHubLimit("mld-app-post3.js", part4Out);
 writeFileSync(join(upload, "mld-app.js"), part1Out);
+writeFileSync(join(upload, "mld-app-core.js"), partCoreOut);
 writeFileSync(join(upload, "mld-app-post.js"), part2Out);
 writeFileSync(join(upload, "mld-app-post2.js"), part3Out);
 writeFileSync(join(upload, "mld-app-post3.js"), part4Out);

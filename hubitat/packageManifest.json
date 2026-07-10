@@ -2,10 +2,10 @@
 	"packageName": "Modern Dashboard",
 	"minimumHEVersion": "2.3.0",
 	"author": "Ephrayim (evdev)",
-	"version": "0.2.27",
+	"version": "0.2.28",
 	"dateReleased": "2026-07-10",
 	"licenseFile": "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/master/LICENSE",
-	"releaseNotes": "0.2.27: Fix dashboard password flow on hub: validate session expiry from the token (not only;   client-side sliding expiry), retry auth after HTTP 401 instead of showing a generic;   connection error, and fall back to GET unlock when POST body parsing fails on Hubitat.; Bust browser cache after updates: script/CSS URLs in `mld-index.html` include the app;   version query string so hubs no longer keep serving stale JS after File Manager uploads.\nControl-first, minimal-effort Hubitat dashboard (mDash): pick devices and go — rooms and layout are automatic. Optimized for control (not just status): bulk room/house on/off, multi-thermostat control, drag-to-dim. Installable PWA from the cloud URL. Built-in scheduler (daily/weekly/once/sunrise/sunset/mode) managed from the dashboard without Hubitat admin login. Lights, shades, thermostats, locks, HSM, scenes, hub mode, music/media, and sensors. Snapshots, favorites, and reorderable rooms/nav. Fully hosted on your hub — no Maker API or third-party cloud.",
+	"releaseNotes": "0.2.28: Fix cloud dashboard blank after 0.2.27: Hubitat cloud gateway times out serving;   `mld-app.js` above ~120 KB (`HTTP 504`, `globalThis.__MLD` never loads). Split;   thermostat/core UI into new `mld-app-core.js` so `mld-app.js` is ~41 KB again.; Keep shared sensor state (`sensors[]`, `replaceList`, etc.) in bootstrap `mld-app.js`;   so `render()` can hydrate `/data` without crashing.; File Manager install is now 12 files (add `mld-app-core.js`).\nControl-first, minimal-effort Hubitat dashboard (mDash): pick devices and go — rooms and layout are automatic. Optimized for control (not just status): bulk room/house on/off, multi-thermostat control, drag-to-dim. Installable PWA from the cloud URL. Built-in scheduler (daily/weekly/once/sunrise/sunset/mode) managed from the dashboard without Hubitat admin login. Lights, shades, thermostats, locks, HSM, scenes, hub mode, music/media, and sensors. Snapshots, favorites, and reorderable rooms/nav. Fully hosted on your hub — no Maker API or third-party cloud.",
 	"documentationLink": "https://github.com/evdev/hubitat-modern-dashboard#readme",
 	"communityLink": "https://community.hubitat.com/t/release-modern-dashboard-mdash-minimal-setup-pwa-with-built-in-scheduler-runs-entirely-on-your-hub/165028",
 	"gitHubUrl": "https://github.com/evdev/hubitat-modern-dashboard",
@@ -40,6 +40,11 @@
 			"id": "e4d5f6a7-b8c9-0123-def0-234567890123",
 			"name": "mld-app.js",
 			"location": "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/beta/dist/upload/mld-app.js"
+		},
+		{
+			"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567891",
+			"name": "mld-app-core.js",
+			"location": "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/beta/dist/upload/mld-app-core.js"
 		},
 		{
 			"id": "f5e6a7b8-c9d0-1234-ef01-345678901234",

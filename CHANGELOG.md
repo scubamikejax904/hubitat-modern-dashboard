@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.28
+
+- Fix cloud dashboard blank after 0.2.27: Hubitat cloud gateway times out serving
+  `mld-app.js` above ~120 KB (`HTTP 504`, `globalThis.__MLD` never loads). Split
+  thermostat/core UI into new `mld-app-core.js` so `mld-app.js` is ~41 KB again.
+- Keep shared sensor state (`sensors[]`, `replaceList`, etc.) in bootstrap `mld-app.js`
+  so `render()` can hydrate `/data` without crashing.
+- File Manager install is now 12 files (add `mld-app-core.js`).
+
 ## 0.2.27
 
 - Fix dashboard password flow on hub: validate session expiry from the token (not only

@@ -770,7 +770,7 @@
   for (const { popup, title } of QUICK_NAV) POPUP_LABELS[popup] = title;
 
   function currentCategoryLabel() {
-    const cat = M.quickPopupOpenType || (M.tabMode && M.activeTab !== "lights" ? M.activeTab : null);
+    const cat = M.quickPopupOpenType || (M.tabMode && M.activeTab !== "lights" ? activeTab : null);
     if (!cat) return "Lights";
     return POPUP_LABELS[cat] || M.TAB_LABELS[cat] || cat;
   }
@@ -1613,7 +1613,7 @@
     M.QUICK_LIGHTS_BTN.hidden = !M.tabMode;
   }
   M.setupNavReorderItems();
-  M.applyNavOrder(M.getDisplayNavOrder());
+  M.postCall("applyNavOrder", M.postCall("getDisplayNavOrder"));
   if (M.CENTRAL_TSTAT_BTN) {
     M.CENTRAL_TSTAT_BTN.innerHTML = CENTRAL_TSTAT_SVG + '<span>All thermostats</span>';
     M.CENTRAL_TSTAT_BTN.addEventListener("click", () => {

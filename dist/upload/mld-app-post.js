@@ -2,7 +2,7 @@
   "use strict";
   const M = globalThis.__MLD;
   if (!M) {
-    console.error("Modern Dashboard: upload mld-app.js before mld-app-post.js");
+    console.error("Modern Dashboard: upload mld-app-core.js before mld-app-post.js");
     return;
   }
   async function saveRoomOrder(order) {
@@ -764,7 +764,7 @@
     M.cfg.navOrder = M.navReorderSnapshot ? M.navReorderSnapshot.slice() : null;
     M.lastDataSig = "";
     exitReorderMode(false);
-    M.applyNavOrder(M.getDisplayNavOrder());
+    M.postCall("applyNavOrder", M.postCall("getDisplayNavOrder"));
     buildDom();
   }
 
@@ -2174,7 +2174,7 @@
   }
 
   function syncQuickPopupWidthForOpen(popup) {
-    const type = M.inTabView() ? M.activeTab : M.quickPopupOpenType;
+    const type = M.inTabView() ? activeTab : M.quickPopupOpenType;
     if (type) syncQuickPopupWidth(popup, type);
   }
 

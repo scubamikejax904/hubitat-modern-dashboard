@@ -581,10 +581,10 @@
     entry.timer = setTimeout(() => {
       setpointOptimistic.delete(id);
       if (tstatSession?.ids?.includes(id)) {
-        renderTstatDial();
-        updateClimateWidgets();
+        postCall("renderTstatDial");
+        postCall("updateClimateWidgets");
       }
-      refreshOpenTstatQuickPopups();
+      postCall("refreshOpenTstatQuickPopups");
       postCall("refreshDevice", id);
     }, LEVEL_OPTIMISTIC_MS);
     setpointOptimistic.set(id, entry);
@@ -695,6 +695,403 @@
       });
     }
   }
+
+  function supportedModes(t) {
+    const list = parseList(t?.supM);
+    return list.length ? list : TSTAT_DEFAULT_MODES;
+  }
+
+  function supportedFanModes(t) {
+    const list = parseList(t?.supFM);
+    if (list.length) return list;
+    return t?.hasFm ? TSTAT_DEFAULT_FAN_MODES : [];
+  }
+
+  function deviceHasFanSpeed(t) {
+    return !!(t?.hasFs || parseList(t?.fsLev).length);
+  }
+
+  function supportedFanSpeeds(t) {
+    const list = parseList(t?.fsLev);
+    if (list.length) return list;
+    return deviceHasFanSpeed(t) ? FAN_SPEED_OPTS.map((o) => o.key) : [];
+  }
+
+  function showFanSpeedControls(t) {
+    return String(t?.fm || "").toLowerCase() === "on" && deviceHasFanSpeed(t);
+  }
+
+  function fanModeActive(fm) {
+    const m = String(fm || "").toLowerCase();
+    return m === "on" || m === "circulate";
+  }
+
+  function tstatSectionLabel(text) {
+    const el = ce("div", "tstat-section-label");
+    el.textContent = text;
+    return el;
+  }
+
+  // icon color: mode-driven (off=gray, heat=red, cool=blue, fan=white),
+  // with auto falling back to operating state, and fan-on overriding to white
+  function tstatStateClass(t) {
+    const os = String(t?.os || "").toLowerCase();
+    const tm = String(t?.tm || "").toLowerCase();
+    const fmOn = !!(t?.hasFm && fanModeActive(t.fm));
+    if (tm === "heat" || tm === "emergency heat") return "state-heat";
+    if (tm === "cool") return "state-cool";
+    if (tm === "auto") {
+      if (os === "heating" || os === "pending heat") return "state-heat";
+      if (os === "cooling" || os === "pending cool") return "state-cool";
+      if (fmOn || os === "fan" || os === "fan only") return "state-fan";
+      return "state-off";
+    }
+    if (fmOn) return "state-fan"; // fan-only while "off"
+    return "state-off";
+  }
+
+  function formatRoomTemp(device) {
+    if (device?.temp == null) return "—";
+    return Math.round(Number(device.temp)) + tstatTempSuffix(device.u);
+  }
+
+  function roomClimateInfo(rid) {
+    const key = normalizeRoomId(rid);
+    const thermos = thermoByRoom.get(key);
+    if (thermos?.length) return { device: thermos[0], controllable: true };
+    const sensors = sensorByRoom.get(key);
+    if (sensors?.length) return { device: sensors[0], controllable: false };
+    return null;
+  }
+
+  function roomHasClimate(rid) {
+    const key = normalizeRoomId(rid);
+    return thermoByRoom.has(key) || sensorByRoom.has(key);
+  }
+
+  // pick the most "active" thermostat in a room for the icon color
+  function roomTstatState(rid) {
+    const list = thermoByRoom.get(normalizeRoomId(rid)) || [];
+    const rank = { "state-heat": 3, "state-cool": 2, "state-fan": 1, "state-off": 0 };
+    let best = "state-off";
+    for (const t of list) {
+      const cls = tstatStateClass(t);
+      if (rank[cls] > rank[best]) best = cls;
+    }
+    return best;
+  }
+
+  function isFavorite(id) {
+    return favorites.includes(Number(id));
+  }
+
+  function syncFavButton(btn, id) {
+    if (!btn) return;
+    const on = isFavorite(id);
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.setAttribute("aria-label", on ? "Remove from favorites" : "Add to favorites");
+  }
+
+  function isFavoriteableDeviceId(id) {
+    const numId = Number(id);
+    if (!Number.isFinite(numId) || numId < 0) return false;
+    return devices.some((d) => d.i === numId)
+      || outlets.some((o) => o.i === numId)
+      || thermostats.some((t) => t.i === numId)
+      || tempSensors.some((t) => t.i === numId)
+      || sensors.some((s) => s.i === numId)
+      || music.some((m) => m.i === numId)
+      || locks.some((l) => l.i === numId)
+      || windowShades.some((s) => s.i === numId)
+      || valves.some((v) => v.i === numId);
+  }
+
+  function centralThermostatsSorted() {
+    return thermostats.slice().sort((a, b) => {
+      const labelA = postCall("roomLabel", a.r) || String(a.r ?? "");
+      const labelB = postCall("roomLabel", b.r) || String(b.r ?? "");
+      const ra = labelA.localeCompare(labelB);
+      if (ra !== 0) return ra;
+      return String(a.n || "").localeCompare(String(b.n || ""));
+    });
+  }
+
+  function buildCentralTstat(selectedThermostats, unitHint) {
+    const first = selectedThermostats[0];
+    const union = (arr) => [...new Set(arr.flat())];
+    return {
+      i: -1, n: "All Thermostats", r: null,
+      tm: "", os: "", hsp: null, csp: null, temp: null, u: first?.u ?? unitHint,
+      hasFm: selectedThermostats.some((t) => t.hasFm), fm: "",
+      hasFs: selectedThermostats.some(deviceHasFanSpeed), fs: "",
+      fsLev: union(selectedThermostats.map(supportedFanSpeeds)).join(","),
+      supM: union(selectedThermostats.map(supportedModes)).join(","),
+      supFM: union(selectedThermostats.map(supportedFanModes)).join(","),
+      _central: true,
+    };
+  }
+
+  function postCall(name, ...args) {
+    const fn = globalThis.__MLD?.[name];
+    if (typeof fn === "function") return fn(...args);
+  }
+
+
+  // ---------- Dashboard session + API (bootstrap) ----------
+
+  function loadDashSession() {
+    try {
+      dashSession = localStorage.getItem(DASH_SESSION_STORAGE_KEY) || "";
+      dashSessionExpiresAt = Number(localStorage.getItem(DASH_SESSION_EXPIRES_KEY)) || 0;
+    } catch {
+      dashSession = "";
+      dashSessionExpiresAt = 0;
+    }
+  }
+
+  function saveDashSession(session, expiresAt) {
+    dashSession = String(session || "");
+    dashSessionExpiresAt = Number(expiresAt) || 0;
+    try {
+      if (dashSession) {
+        localStorage.setItem(DASH_SESSION_STORAGE_KEY, dashSession);
+        localStorage.setItem(DASH_SESSION_EXPIRES_KEY, String(dashSessionExpiresAt));
+      } else {
+        localStorage.removeItem(DASH_SESSION_STORAGE_KEY);
+        localStorage.removeItem(DASH_SESSION_EXPIRES_KEY);
+      }
+    } catch {}
+    publishMld({ dashSession: dashSession, dashSessionExpiresAt: dashSessionExpiresAt });
+  }
+
+  function clearDashSession() {
+    saveDashSession("", 0);
+  }
+
+  function dashSessionExpiryMs(token) {
+    const raw = String(token || "").split(".")[0];
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
+  function isDashSessionFresh() {
+    if (!dashSession) return false;
+    const tokenExp = dashSessionExpiryMs(dashSession);
+    const exp = tokenExp || dashSessionExpiresAt;
+    return exp > Date.now();
+  }
+
+  function slideDashSessionExpiry() {
+    if (!dashSession) return;
+    const tokenExp = dashSessionExpiryMs(dashSession);
+    const slid = Date.now() + DASH_SESSION_MAX_AGE_MS;
+    dashSessionExpiresAt = tokenExp ? Math.min(slid, tokenExp) : slid;
+    try { localStorage.setItem(DASH_SESSION_EXPIRES_KEY, String(dashSessionExpiresAt)); } catch {}
+    publishMld({ dashSessionExpiresAt: dashSessionExpiresAt });
+  }
+
+  function applyDashSessionFromResponse(data) {
+    if (!data) return;
+    if (data.session && data.expiresAt) {
+      saveDashSession(data.session, data.expiresAt);
+      return;
+    }
+    if (data.dashSession && data.dashSessionExpiresAt) {
+      saveDashSession(data.dashSession, data.dashSessionExpiresAt);
+    }
+  }
+
+  function setupDashSessionActivityRenewal() {
+    if (dashSessionActivityBound) return;
+    dashSessionActivityBound = true;
+    const renew = () => {
+      if (!isDashSessionFresh()) return;
+      slideDashSessionExpiry();
+    };
+    document.addEventListener("pointerdown", renew, { passive: true });
+    document.addEventListener("keydown", renew);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") renew();
+    });
+  }
+
+
+  // ---------- API (OAuth: access_token required on every request, especially cloud) ----------
+  const ACCESS_TOKEN = (() => {
+    try { return new URLSearchParams(location.search).get("access_token") || ""; }
+    catch { return ""; }
+  })();
+
+  function withToken(path) {
+    const parts = [];
+    if (ACCESS_TOKEN) parts.push("access_token=" + encodeURIComponent(ACCESS_TOKEN));
+    if (dashSession && isDashSessionFresh()) {
+      parts.push("dash_session=" + encodeURIComponent(dashSession));
+    }
+    if (!parts.length) return path;
+    const sep = path.indexOf("?") >= 0 ? "&" : "?";
+    return path + sep + parts.join("&");
+  }
+
+  async function fetchWithTimeout(url, opts = {}, ms = 15000) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try {
+      return await fetch(url, { ...opts, signal: ctrl.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function getJson(url, authPass) {
+    const pass = authPass || 0;
+    const r = await fetchWithTimeout(withToken(url), { cache: "no-store", headers: { "Accept": "application/json" } });
+    if (r.status === 401) {
+      clearDashSession();
+      await postCall("ensureDashboardAccess");
+      if (pass < 2) return getJson(url, pass + 1);
+      const err = new Error("auth required");
+      err.code = "auth_required";
+      throw err;
+    }
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    applyDashSessionFromResponse(data);
+    return data;
+  }
+
+  async function fetchData() {
+    const d = await getJson("data");
+    if (d && d.config) {
+      if (d.config.pollIntervalMs) cfg.pollIntervalMs = d.config.pollIntervalMs;
+      if (typeof d.config.useWebSocket === "boolean") cfg.useWebSocket = d.config.useWebSocket;
+      if (d.config.dashboardName != null) postCall("applyDashboardName", d.config.dashboardName);
+      if (!reorderMode && Array.isArray(d.config.roomOrder)) {
+        cfg.roomOrder = d.config.roomOrder.length ? d.config.roomOrder : null;
+      }
+      if (!reorderMode && Array.isArray(d.config.navOrder)) {
+        cfg.navOrder = d.config.navOrder.length ? d.config.navOrder : null;
+        postCall("applyNavOrder", postCall("getDisplayNavOrder"));
+      }
+      if (d.config.localUrl != null) cfg.localUrl = String(d.config.localUrl || "");
+      if (d.config.cloudUrl != null) cfg.cloudUrl = String(d.config.cloudUrl || "");
+    }
+    if (globalThis.__MLD) {
+      const schedHook = globalThis.__MLD["applySchedules" + "FromData"];
+      if (typeof schedHook === "function") schedHook(d);
+    }
+    return d;
+  }
+
+  async function sendCmd(id, cmd, val, pin) {
+    let url = "cmd?id=" + id + "&c=" + encodeURIComponent(cmd);
+    if (val != null) url += "&v=" + encodeURIComponent(val);
+    if (pin != null && pin !== "") url += "&pin=" + encodeURIComponent(pin);
+    try {
+      const r = await fetch(withToken(url), { cache: "no-store" });
+      if (!r.ok) {
+        let msg = "Command failed";
+        try {
+          const body = await r.json();
+          if (body?.error) msg = String(body.error);
+        } catch {}
+        if (r.status !== 403 && msg !== "wrong pin") postCall("flash", msg, true);
+        return { ok: false, status: r.status, error: msg };
+      }
+      return { ok: true };
+    } catch (e) { postCall("flash", "Command failed", true); return { ok: false }; }
+  }
+
+  async function sendCmdBatch(commands) {
+    if (!commands.length) return { ok: true, failed: 0 };
+    if (commands.length === 1) {
+      const c = commands[0];
+      const result = await sendCmd(c.id, c.cmd, c.val);
+      return { ok: result.ok, failed: result.ok ? 0 : 1, total: 1 };
+    }
+    try {
+      const body = {
+        commands: commands.map((c) => ({
+          id: c.id,
+          c: c.cmd,
+          v: c.val == null ? null : c.val,
+        })),
+      };
+      const r = await fetch(withToken("cmd/batch"), {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify(body),
+      });
+      let data = null;
+      try { data = await r.json(); } catch {}
+      if (!r.ok || !data) {
+        postCall("flash", "Command failed", true);
+        return { ok: false, failed: commands.length, total: commands.length };
+      }
+      if (data.failed > 0) {
+        postCall("flash", data.failed + " of " + data.total + " command(s) failed", true);
+      }
+      return data;
+    } catch (e) {
+      postCall("flash", "Command failed", true);
+      return { ok: false, failed: commands.length, total: commands.length };
+    }
+  }
+
+  function publishMld(patch) {
+    const m = globalThis.__MLD;
+    if (m) Object.assign(m, patch);
+  }
+
+
+  // Sensors (other-sensor pickers): [{i,n,r,t,v,a,ex:[{k,v,u?}]}]
+  let sensors = [];
+  const sensorCardMap = new Map(); // id -> { el, heroEl, pillEl, pillTxt, dot, footEl, batteryEl, favBtn, t, i }
+  const favSensorMap = new Map(); // id -> sensor card rec (favorites popup)
+  const favMusicMap = new Map(); // id -> music row rec (favorites popup)
+  const favLockMap = new Map(); // id -> lock row rec (favorites popup)
+  const favShadeMap = new Map(); // id -> shade tile rec (favorites popup)
+  let sensorsPopupSig = "";
+  const sensorTypeFilter = new Set(); // empty = show all types
+  let sensorFilterOpen = false;
+  let sensorFilterChipsEl = null;
+  let sensorFilterBtnEl = null;
+  let sensorFilterEmptyEl = null;
+
+  // Mutate exported arrays/maps in place so part1 closures stay in sync after the JS split.
+  function replaceList(list, next) {
+    list.length = 0;
+    const items = Array.isArray(next) ? next : [];
+    if (items.length) list.push(...items);
+  }
+
+  function repopulateThermoByRoom() {
+    thermoByRoom.clear();
+    for (const t of thermostats) {
+      const rid = normalizeRoomId(t.r);
+      if (!thermoByRoom.has(rid)) thermoByRoom.set(rid, []);
+      thermoByRoom.get(rid).push(t);
+    }
+  }
+
+  function repopulateSensorByRoom() {
+    sensorByRoom.clear();
+    for (const s of tempSensors) {
+      const rid = normalizeRoomId(s.r);
+      if (!sensorByRoom.has(rid)) sensorByRoom.set(rid, []);
+      sensorByRoom.get(rid).push(s);
+    }
+  }
+
+  function syncRoomMap() {
+    roomMap.clear();
+    for (const r of rooms) roomMap.set(r.id, r.name);
+  }
+
+  // ---------- render ----------
+  // __MLD_SPLIT_CORE__
 
   function ensureColorPopup() {
     if (colorPopup) return colorPopup;
@@ -1266,7 +1663,7 @@
     const popup = ensureColorPopup();
     popup.removeAttribute("hidden");
     popup.classList.add("open");
-    publishMld({ colorSession, colorPopup: popup });
+    publishMld({ colorSession: colorSession, colorPopup: popup });
     updateColorPopupUI();
     if (tab !== "level") ensureLightOn(id);
   }
@@ -1298,147 +1695,12 @@
       colorPopup.classList.remove("open");
     }
     colorSession = null;
-    publishMld({ colorSession: null, colorPopup });
+    publishMld({ colorSession: null, colorPopup: colorPopup });
   }
 
   function closeCtPopup(commit) { closeColorPopup(commit); }
 
   // =================== thermostat ===================
-  function supportedModes(t) {
-    const list = parseList(t?.supM);
-    return list.length ? list : TSTAT_DEFAULT_MODES;
-  }
-
-  function supportedFanModes(t) {
-    const list = parseList(t?.supFM);
-    if (list.length) return list;
-    return t?.hasFm ? TSTAT_DEFAULT_FAN_MODES : [];
-  }
-
-  function deviceHasFanSpeed(t) {
-    return !!(t?.hasFs || parseList(t?.fsLev).length);
-  }
-
-  function supportedFanSpeeds(t) {
-    const list = parseList(t?.fsLev);
-    if (list.length) return list;
-    return deviceHasFanSpeed(t) ? FAN_SPEED_OPTS.map((o) => o.key) : [];
-  }
-
-  function showFanSpeedControls(t) {
-    return String(t?.fm || "").toLowerCase() === "on" && deviceHasFanSpeed(t);
-  }
-
-  function fanModeActive(fm) {
-    const m = String(fm || "").toLowerCase();
-    return m === "on" || m === "circulate";
-  }
-
-  function tstatSectionLabel(text) {
-    const el = ce("div", "tstat-section-label");
-    el.textContent = text;
-    return el;
-  }
-
-  // icon color: mode-driven (off=gray, heat=red, cool=blue, fan=white),
-  // with auto falling back to operating state, and fan-on overriding to white
-  function tstatStateClass(t) {
-    const os = String(t?.os || "").toLowerCase();
-    const tm = String(t?.tm || "").toLowerCase();
-    const fmOn = !!(t?.hasFm && fanModeActive(t.fm));
-    if (tm === "heat" || tm === "emergency heat") return "state-heat";
-    if (tm === "cool") return "state-cool";
-    if (tm === "auto") {
-      if (os === "heating" || os === "pending heat") return "state-heat";
-      if (os === "cooling" || os === "pending cool") return "state-cool";
-      if (fmOn || os === "fan" || os === "fan only") return "state-fan";
-      return "state-off";
-    }
-    if (fmOn) return "state-fan"; // fan-only while "off"
-    return "state-off";
-  }
-
-  function formatRoomTemp(device) {
-    if (device?.temp == null) return "—";
-    return Math.round(Number(device.temp)) + tstatTempSuffix(device.u);
-  }
-
-  function roomClimateInfo(rid) {
-    const key = normalizeRoomId(rid);
-    const thermos = thermoByRoom.get(key);
-    if (thermos?.length) return { device: thermos[0], controllable: true };
-    const sensors = sensorByRoom.get(key);
-    if (sensors?.length) return { device: sensors[0], controllable: false };
-    return null;
-  }
-
-  function roomHasClimate(rid) {
-    const key = normalizeRoomId(rid);
-    return thermoByRoom.has(key) || sensorByRoom.has(key);
-  }
-
-  // pick the most "active" thermostat in a room for the icon color
-  function roomTstatState(rid) {
-    const list = thermoByRoom.get(normalizeRoomId(rid)) || [];
-    const rank = { "state-heat": 3, "state-cool": 2, "state-fan": 1, "state-off": 0 };
-    let best = "state-off";
-    for (const t of list) {
-      const cls = tstatStateClass(t);
-      if (rank[cls] > rank[best]) best = cls;
-    }
-    return best;
-  }
-
-  function isFavorite(id) {
-    return favorites.includes(Number(id));
-  }
-
-  function syncFavButton(btn, id) {
-    if (!btn) return;
-    const on = isFavorite(id);
-    btn.classList.toggle("active", on);
-    btn.setAttribute("aria-pressed", on ? "true" : "false");
-    btn.setAttribute("aria-label", on ? "Remove from favorites" : "Add to favorites");
-  }
-
-  function isFavoriteableDeviceId(id) {
-    const numId = Number(id);
-    if (!Number.isFinite(numId) || numId < 0) return false;
-    return devices.some((d) => d.i === numId)
-      || outlets.some((o) => o.i === numId)
-      || thermostats.some((t) => t.i === numId)
-      || tempSensors.some((t) => t.i === numId)
-      || sensors.some((s) => s.i === numId)
-      || music.some((m) => m.i === numId)
-      || locks.some((l) => l.i === numId)
-      || windowShades.some((s) => s.i === numId)
-      || valves.some((v) => v.i === numId);
-  }
-
-  function centralThermostatsSorted() {
-    return thermostats.slice().sort((a, b) => {
-      const labelA = postCall("roomLabel", a.r) || String(a.r ?? "");
-      const labelB = postCall("roomLabel", b.r) || String(b.r ?? "");
-      const ra = labelA.localeCompare(labelB);
-      if (ra !== 0) return ra;
-      return String(a.n || "").localeCompare(String(b.n || ""));
-    });
-  }
-
-  function buildCentralTstat(selectedThermostats, unitHint) {
-    const first = selectedThermostats[0];
-    const union = (arr) => [...new Set(arr.flat())];
-    return {
-      i: -1, n: "All Thermostats", r: null,
-      tm: "", os: "", hsp: null, csp: null, temp: null, u: first?.u ?? unitHint,
-      hasFm: selectedThermostats.some((t) => t.hasFm), fm: "",
-      hasFs: selectedThermostats.some(deviceHasFanSpeed), fs: "",
-      fsLev: union(selectedThermostats.map(supportedFanSpeeds)).join(","),
-      supM: union(selectedThermostats.map(supportedModes)).join(","),
-      supFM: union(selectedThermostats.map(supportedFanModes)).join(","),
-      _central: true,
-    };
-  }
 
   function applyCentralTstatSelection(selectedIds) {
     if (!tstatSession?.central) return;
@@ -1489,11 +1751,6 @@
 
   function updateTstatFavButton() {
     updateTstatHeadExtras();
-  }
-
-  function postCall(name, ...args) {
-    const fn = globalThis.__MLD?.[name];
-    if (typeof fn === "function") return fn(...args);
   }
 
   function ensureTstatPopup() {
@@ -1745,7 +2002,7 @@
     tstatPopup._fanSpeedSection = fanSpeedSection;
     tstatPopup._fanSpeeds = fanSpeeds;
     tstatPopup._fanSpeedBtns = fanSpeedBtns;
-    publishMld({ tstatPopup });
+    publishMld({ tstatPopup: tstatPopup });
     return tstatPopup;
   }
 
@@ -2453,7 +2710,7 @@
     positionTstatPopup(CENTRAL_TSTAT_BTN);
     popup.removeAttribute("hidden");
     popup.classList.add("open");
-    publishMld({ tstatSession, tstatPopup: popup });
+    publishMld({ tstatSession: tstatSession, tstatPopup: popup });
   }
 
   function openTstatPopup(rid, anchorEl) {
@@ -2473,7 +2730,7 @@
     positionTstatPopup(anchorEl);
     popup.removeAttribute("hidden");
     popup.classList.add("open");
-    publishMld({ tstatSession, tstatPopup: popup });
+    publishMld({ tstatSession: tstatSession, tstatPopup: popup });
   }
 
   function closeTstatPopup() {
@@ -2483,7 +2740,7 @@
       tstatPopup.classList.remove("open");
     }
     tstatSession = null;
-    publishMld({ tstatSession: null, tstatPopup });
+    publishMld({ tstatSession: null, tstatPopup: tstatPopup });
   }
 
   function ensureMusicMasterPopup() {
@@ -2801,82 +3058,6 @@
     return ts > 0 && (Date.now() - ts) < LOCAL_OK_MAX_AGE_MS;
   }
 
-  function loadDashSession() {
-    try {
-      dashSession = localStorage.getItem(DASH_SESSION_STORAGE_KEY) || "";
-      dashSessionExpiresAt = Number(localStorage.getItem(DASH_SESSION_EXPIRES_KEY)) || 0;
-    } catch {
-      dashSession = "";
-      dashSessionExpiresAt = 0;
-    }
-  }
-
-  function saveDashSession(session, expiresAt) {
-    dashSession = String(session || "");
-    dashSessionExpiresAt = Number(expiresAt) || 0;
-    try {
-      if (dashSession) {
-        localStorage.setItem(DASH_SESSION_STORAGE_KEY, dashSession);
-        localStorage.setItem(DASH_SESSION_EXPIRES_KEY, String(dashSessionExpiresAt));
-      } else {
-        localStorage.removeItem(DASH_SESSION_STORAGE_KEY);
-        localStorage.removeItem(DASH_SESSION_EXPIRES_KEY);
-      }
-    } catch {}
-    publishMld({ dashSession, dashSessionExpiresAt });
-  }
-
-  function clearDashSession() {
-    saveDashSession("", 0);
-  }
-
-  function dashSessionExpiryMs(token) {
-    const raw = String(token || "").split(".")[0];
-    const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-  }
-
-  function isDashSessionFresh() {
-    if (!dashSession) return false;
-    const tokenExp = dashSessionExpiryMs(dashSession);
-    const exp = tokenExp || dashSessionExpiresAt;
-    return exp > Date.now();
-  }
-
-  function slideDashSessionExpiry() {
-    if (!dashSession) return;
-    const tokenExp = dashSessionExpiryMs(dashSession);
-    const slid = Date.now() + DASH_SESSION_MAX_AGE_MS;
-    dashSessionExpiresAt = tokenExp ? Math.min(slid, tokenExp) : slid;
-    try { localStorage.setItem(DASH_SESSION_EXPIRES_KEY, String(dashSessionExpiresAt)); } catch {}
-    publishMld({ dashSessionExpiresAt });
-  }
-
-  function applyDashSessionFromResponse(data) {
-    if (!data) return;
-    if (data.session && data.expiresAt) {
-      saveDashSession(data.session, data.expiresAt);
-      return;
-    }
-    if (data.dashSession && data.dashSessionExpiresAt) {
-      saveDashSession(data.dashSession, data.dashSessionExpiresAt);
-    }
-  }
-
-  function setupDashSessionActivityRenewal() {
-    if (dashSessionActivityBound) return;
-    dashSessionActivityBound = true;
-    const renew = () => {
-      if (!isDashSessionFresh()) return;
-      slideDashSessionExpiry();
-    };
-    document.addEventListener("pointerdown", renew, { passive: true });
-    document.addEventListener("keydown", renew);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") renew();
-    });
-  }
-
   function refreshLocalUrlFromConfig() {
     if (cfg.localUrl) {
       saveStoredLocalUrl(cfg.localUrl);
@@ -3017,134 +3198,6 @@
     return false;
   }
 
-  // ---------- API (OAuth: access_token required on every request, especially cloud) ----------
-  const ACCESS_TOKEN = (() => {
-    try { return new URLSearchParams(location.search).get("access_token") || ""; }
-    catch { return ""; }
-  })();
-
-  function withToken(path) {
-    const parts = [];
-    if (ACCESS_TOKEN) parts.push("access_token=" + encodeURIComponent(ACCESS_TOKEN));
-    if (dashSession && isDashSessionFresh()) {
-      parts.push("dash_session=" + encodeURIComponent(dashSession));
-    }
-    if (!parts.length) return path;
-    const sep = path.indexOf("?") >= 0 ? "&" : "?";
-    return path + sep + parts.join("&");
-  }
-
-  async function fetchWithTimeout(url, opts = {}, ms = 15000) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), ms);
-    try {
-      return await fetch(url, { ...opts, signal: ctrl.signal });
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  async function getJson(url, authPass) {
-    const pass = authPass || 0;
-    const r = await fetchWithTimeout(withToken(url), { cache: "no-store", headers: { "Accept": "application/json" } });
-    if (r.status === 401) {
-      clearDashSession();
-      await postCall("ensureDashboardAccess");
-      if (pass < 2) return getJson(url, pass + 1);
-      const err = new Error("auth required");
-      err.code = "auth_required";
-      throw err;
-    }
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const data = await r.json();
-    applyDashSessionFromResponse(data);
-    return data;
-  }
-
-  async function fetchData() {
-    const d = await getJson("data");
-    if (d && d.config) {
-      if (d.config.pollIntervalMs) cfg.pollIntervalMs = d.config.pollIntervalMs;
-      if (typeof d.config.useWebSocket === "boolean") cfg.useWebSocket = d.config.useWebSocket;
-      if (d.config.dashboardName != null) applyDashboardName(d.config.dashboardName);
-      if (!reorderMode && Array.isArray(d.config.roomOrder)) {
-        cfg.roomOrder = d.config.roomOrder.length ? d.config.roomOrder : null;
-      }
-      if (!reorderMode && Array.isArray(d.config.navOrder)) {
-        cfg.navOrder = d.config.navOrder.length ? d.config.navOrder : null;
-        applyNavOrder(getDisplayNavOrder());
-      }
-      if (d.config.localUrl != null) cfg.localUrl = String(d.config.localUrl || "");
-      if (d.config.cloudUrl != null) cfg.cloudUrl = String(d.config.cloudUrl || "");
-    }
-    if (globalThis.__MLD) {
-      const schedHook = globalThis.__MLD["applySchedules" + "FromData"];
-      if (typeof schedHook === "function") schedHook(d);
-    }
-    return d;
-  }
-
-  async function sendCmd(id, cmd, val, pin) {
-    let url = "cmd?id=" + id + "&c=" + encodeURIComponent(cmd);
-    if (val != null) url += "&v=" + encodeURIComponent(val);
-    if (pin != null && pin !== "") url += "&pin=" + encodeURIComponent(pin);
-    try {
-      const r = await fetch(withToken(url), { cache: "no-store" });
-      if (!r.ok) {
-        let msg = "Command failed";
-        try {
-          const body = await r.json();
-          if (body?.error) msg = String(body.error);
-        } catch {}
-        if (r.status !== 403 && msg !== "wrong pin") flash(msg, true);
-        return { ok: false, status: r.status, error: msg };
-      }
-      return { ok: true };
-    } catch (e) { flash("Command failed", true); return { ok: false }; }
-  }
-
-  async function sendCmdBatch(commands) {
-    if (!commands.length) return { ok: true, failed: 0 };
-    if (commands.length === 1) {
-      const c = commands[0];
-      const result = await sendCmd(c.id, c.cmd, c.val);
-      return { ok: result.ok, failed: result.ok ? 0 : 1, total: 1 };
-    }
-    try {
-      const body = {
-        commands: commands.map((c) => ({
-          id: c.id,
-          c: c.cmd,
-          v: c.val == null ? null : c.val,
-        })),
-      };
-      const r = await fetch(withToken("cmd/batch"), {
-        method: "POST",
-        cache: "no-store",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify(body),
-      });
-      let data = null;
-      try { data = await r.json(); } catch {}
-      if (!r.ok || !data) {
-        flash("Command failed", true);
-        return { ok: false, failed: commands.length, total: commands.length };
-      }
-      if (data.failed > 0) {
-        flash(data.failed + " of " + data.total + " command(s) failed", true);
-      }
-      return data;
-    } catch (e) {
-      flash("Command failed", true);
-      return { ok: false, failed: commands.length, total: commands.length };
-    }
-  }
-
-  function publishMld(patch) {
-    const m = globalThis.__MLD;
-    if (m) Object.assign(m, patch);
-  }
-
   function rebuildDevicesByRoom() {
     devicesByRoom.clear();
     for (const dev of devices) {
@@ -3172,51 +3225,6 @@
     }
   }
 
-  // Sensors (other-sensor pickers): [{i,n,r,t,v,a,ex:[{k,v,u?}]}]
-  let sensors = [];
-  const sensorCardMap = new Map(); // id -> { el, heroEl, pillEl, pillTxt, dot, footEl, batteryEl, favBtn, t, i }
-  const favSensorMap = new Map(); // id -> sensor card rec (favorites popup)
-  const favMusicMap = new Map(); // id -> music row rec (favorites popup)
-  const favLockMap = new Map(); // id -> lock row rec (favorites popup)
-  const favShadeMap = new Map(); // id -> shade tile rec (favorites popup)
-  let sensorsPopupSig = "";
-  const sensorTypeFilter = new Set(); // empty = show all types
-  let sensorFilterOpen = false;
-  let sensorFilterChipsEl = null;
-  let sensorFilterBtnEl = null;
-  let sensorFilterEmptyEl = null;
-
-  // Mutate exported arrays/maps in place so part1 closures stay in sync after the JS split.
-  function replaceList(list, next) {
-    list.length = 0;
-    const items = Array.isArray(next) ? next : [];
-    if (items.length) list.push(...items);
-  }
-
-  function repopulateThermoByRoom() {
-    thermoByRoom.clear();
-    for (const t of thermostats) {
-      const rid = normalizeRoomId(t.r);
-      if (!thermoByRoom.has(rid)) thermoByRoom.set(rid, []);
-      thermoByRoom.get(rid).push(t);
-    }
-  }
-
-  function repopulateSensorByRoom() {
-    sensorByRoom.clear();
-    for (const s of tempSensors) {
-      const rid = normalizeRoomId(s.r);
-      if (!sensorByRoom.has(rid)) sensorByRoom.set(rid, []);
-      sensorByRoom.get(rid).push(s);
-    }
-  }
-
-  function syncRoomMap() {
-    roomMap.clear();
-    for (const r of rooms) roomMap.set(r.id, r.name);
-  }
-
-  // ---------- render ----------
   function emptyState(html) {
     ROOMS_EL.innerHTML = html;
     roomEls.clear(); devMap.clear();
@@ -4112,7 +4120,7 @@
     cfg.navOrder = navReorderSnapshot ? navReorderSnapshot.slice() : null;
     lastDataSig = "";
     exitReorderMode(false);
-    applyNavOrder(getDisplayNavOrder());
+    postCall("applyNavOrder", postCall("getDisplayNavOrder"));
     buildDom();
   }
 
@@ -7898,7 +7906,7 @@
     QUICK_LIGHTS_BTN.hidden = !tabMode;
   }
   setupNavReorderItems();
-  applyNavOrder(getDisplayNavOrder());
+  postCall("applyNavOrder", postCall("getDisplayNavOrder"));
   if (CENTRAL_TSTAT_BTN) {
     CENTRAL_TSTAT_BTN.innerHTML = CENTRAL_TSTAT_SVG + '<span>All thermostats</span>';
     CENTRAL_TSTAT_BTN.addEventListener("click", () => {

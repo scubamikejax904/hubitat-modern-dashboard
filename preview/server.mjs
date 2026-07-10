@@ -382,7 +382,8 @@ const server = createServer(async (req, res) => {
 
   if (p === "/" ) {
     res.writeHead(200, { "Content-Type": "text/html" });
-    return res.end(read("src/index.html"));
+  const indexPath = join(distUpload, "mld-index.html");
+    return res.end(existsSync(indexPath) ? readFileSync(indexPath, "utf8") : read("src/index.html"));
   }
   if (p === "/app.css") {
     res.writeHead(200, { "Content-Type": "text/css" });
@@ -395,6 +396,10 @@ const server = createServer(async (req, res) => {
   if (p === "/app.js") {
     res.writeHead(200, { "Content-Type": "application/javascript" });
     return res.end(existsSync(join(distUpload, "mld-app.js")) ? readDist("mld-app.js") : read("src/app.js"));
+  }
+  if (p === "/app-core.js") {
+    res.writeHead(200, { "Content-Type": "application/javascript" });
+    return res.end(readDist("mld-app-core.js"));
   }
   if (p === "/app-post.js") {
     res.writeHead(200, { "Content-Type": "application/javascript" });
