@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.56
+
+- Thermostat dial mode/fan controls always follow a single device’s own supported
+  modes (never a merge of roommates). Rooms with several thermostats open one
+  unit at a time with a target picker; mode/fan controls hide if more than one
+  unit is selected.
+- Favorites / Thermostats card tap opens that device’s dial.
+
 ## 0.2.55
 
 - Thermostat dial mode/fan controls always follow the open device’s own
@@ -8,8 +16,6 @@
 
 ## 0.2.54
 
-- Multi-thermostat popup: mode and fan controls use only capabilities shared by
-  every selected unit (avoids offering Cool on heat-only HVAC).
 - Thermostat fan modes: empty `supFM` from the driver means no fan controls (not
   “unknown”).
 - Favorites thermostat tap opens that device’s dial, not the room’s first

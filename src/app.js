@@ -1808,22 +1808,28 @@
   // =================== thermostat ===================
 
   function applyCentralTstatSelection(selectedIds) {
-    if (!tstatSession?.central) return;
+    if (!tstatSession?.central && !tstatSession?.roomGroup) return;
     const allIds = tstatSession.allIds || thermostats.map((t) => t.i);
     const ids = selectedIds.filter((id) => allIds.includes(id));
     tstatSession.ids = ids;
-    const selected = ids.map((id) => thermostats.find((t) => t.i === id)).filter(Boolean);
-    tstatSession.centralTstat = buildCentralTstat(selected, tstatSession.unit);
+    if (tstatSession.central) {
+      const selected = ids.map((id) => thermostats.find((t) => t.i === id)).filter(Boolean);
+      tstatSession.centralTstat = buildCentralTstat(selected, tstatSession.unit);
+    }
     updateTstatHeadExtras();
     renderTstatDial();
     renderTstatControls();
     syncCentralTstatTargetMenu();
   }
 
+  function tstatTargetPickerEnabled() {
+    return !!(tstatSession?.central || tstatSession?.roomGroup);
+  }
+
   function updateCentralTstatTargetButton() {
     const btn = tstatPopup?._targetBtn;
     if (!btn) return;
-    if (!tstatSession?.central) {
+    if (!tstatTargetPickerEnabled()) {
       btn.hidden = true;
       return;
     }
@@ -1833,8 +1839,11 @@
     const selCount = tstatSession.ids.length;
     let label;
     if (selCount === 0) label = "No thermostats selected";
-    else if (selCount === allCount) label = "All thermostats (" + allCount + ")";
-    else if (selCount === 1) {
+    else if (selCount === allCount) {
+      label = tstatSession.roomGroup
+        ? ("All in room (" + allCount + ")")
+        : ("All thermostats (" + allCount + ")");
+    } else if (selCount === 1) {
       const t = thermostats.find((x) => x.i === tstatSession.ids[0]);
       label = t?.n || "1 thermostat";
     } else label = selCount + " of " + allCount + " thermostats";
@@ -1846,7 +1855,7 @@
     updateCentralTstatTargetButton();
     const favBtn = tstatPopup?._favBtn;
     if (!favBtn || !tstatSession?.ids?.length) return;
-    if (tstatSession.central || !isFavoriteableDeviceId(tstatSession.ids[0])) {
+    if (tstatSession.ids.length !== 1 || !isFavoriteableDeviceId(tstatSession.ids[0])) {
       favBtn.hidden = true;
       return;
     }
@@ -1892,8 +1901,8 @@
     favBtn.innerHTML = FAVORITES_SVG;
     favBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (tstatSession?.central) return;
-      const id = tstatSession?.ids?.[0];
+      if (tstatSession?.ids?.length !== 1) return;
+      const id = tstatSession.ids[0];
       if (id == null || !isFavoriteableDeviceId(id)) return;
       hapticTap();
       postCall("toggleFavorite", id);
@@ -2094,6 +2103,10 @@
 
   function activeTstat() {
     if (!tstatSession) return null;
+    // Mode/fan caps always come from one real device when exactly one is selected.
+    if (tstatSession.ids?.length === 1) {
+      return thermostats.find((x) => x.i === tstatSession.ids[0]) || null;
+    }
     if (tstatSession.central) return tstatSession.centralTstat;
     if (!tstatSession.ids?.length) return null;
     return thermostats.find((x) => x.i === tstatSession.ids[0]) || null;
@@ -2154,7 +2167,11 @@
     const tempVal = t.temp != null ? Math.round(Number(t.temp)) : null;
 
     popup._tempEl.textContent = tempVal != null ? (tempVal + deg) : "—";
-    popup._title.textContent = t.n || "Thermostat";
+    if (tstatTargetPickerEnabled() && tstatSession.ids?.length !== 1) {
+      popup._title.textContent = (tstatSession.ids?.length || 0) + " thermostats";
+    } else {
+      popup._title.textContent = t.n || "Thermostat";
+    }
 
     const showHeat = (tm === "heat" || tm === "auto" || tm === "emergency heat");
     const showCool = (tm === "cool" || tm === "auto");
@@ -2201,9 +2218,9 @@
     popup._coolChip.classList.toggle("active", !editHeat);
 
     // disabled look when off or none selected for bulk
-    const noneSelected = !!(tstatSession?.central && !tstatSession.ids?.length);
+    const noneSelected = !!(tstatTargetPickerEnabled() && !tstatSession.ids?.length);
     popup._svg.classList.toggle("disabled", tm === "off" || noneSelected);
-    const noMode = !!(tstatSession?.central && !tm);
+    const noMode = !!(tstatTargetPickerEnabled() && tstatSession.ids?.length !== 1);
     const canAdjust = tm !== "off" && !noMode && !noneSelected;
     if (popup._minusBtn) popup._minusBtn.disabled = !canAdjust;
     if (popup._plusBtn) popup._plusBtn.disabled = !canAdjust;
@@ -2242,7 +2259,16 @@
     const popup = ensureTstatPopup();
     const t = activeTstat();
     if (!t) return;
-    const noneSelected = !!(tstatSession?.central && !tstatSession.ids?.length);
+    const noneSelected = !!(tstatTargetPickerEnabled() && !tstatSession.ids?.length);
+    // Multi-select bulk sessions must not invent a combined mode list — only show
+    // mode/fan controls when a single thermostat is the target.
+    const singleTarget = tstatSession.ids?.length === 1;
+    if (tstatTargetPickerEnabled() && !singleTarget) {
+      popup._modeSection.style.display = "none";
+      popup._fanModeSection.style.display = "none";
+      popup._fanSpeedSection.style.display = "none";
+      return;
+    }
     const supM = supportedModes(t);
     const tm = String(t.tm || "").toLowerCase();
     renderTstatModeButtons(popup, supM, tm, noneSelected);
@@ -2617,7 +2643,7 @@
   }
 
   function syncCentralTstatTargetMenu() {
-    if (!centralTstatTargetMenu || !tstatSession?.central) return;
+    if (!centralTstatTargetMenu || !tstatTargetPickerEnabled()) return;
     const allIds = tstatSession.allIds || [];
     const selectedSet = new Set(tstatSession.ids);
     const allSelected = allIds.length > 0 && allIds.every((id) => selectedSet.has(id));
@@ -2637,7 +2663,7 @@
 
   function openCentralTstatTargetMenu(anchorBtn) {
     closeCentralTstatTargetMenu();
-    if (!tstatSession?.central) return;
+    if (!tstatTargetPickerEnabled()) return;
 
     const menu = ce("div", "tstat-target-menu");
     menu.setAttribute("role", "listbox");
@@ -2670,7 +2696,10 @@
     });
     menu.appendChild(selectAllBtn);
 
-    for (const t of centralThermostatsSorted()) {
+    const pool = tstatSession.roomGroup
+      ? allIds.map((id) => thermostats.find((t) => t.i === id)).filter(Boolean)
+      : centralThermostatsSorted();
+    for (const t of pool) {
       const b = ce("button", "tstat-target-opt");
       b.type = "button";
       b.setAttribute("role", "option");
@@ -2829,12 +2858,26 @@
     const roomKey = normalizeRoomId(rid);
     const list = thermoByRoom.get(roomKey) || [];
     if (!list.length) return;
-    const t = list[0];
-    tstatSession = { rid: roomKey, anchorEl, ids: list.map(x => x.i), unit: normalizeTstatUnit(t.u), edit: "heat" };
+    if (list.length === 1) {
+      openTstatPopupForDevice(list[0].i, anchorEl);
+      return;
+    }
+    const ids = list.map((x) => x.i);
+    // Start on one device so mode/fan caps are always that unit's own list.
+    // Target picker can switch among roommates (or select several for setpoints).
+    tstatSession = {
+      rid: roomKey,
+      anchorEl,
+      ids: [list[0].i],
+      allIds: ids.slice(),
+      unit: normalizeTstatUnit(list[0].u),
+      edit: "heat",
+      roomGroup: true,
+    };
     const popup = ensureTstatPopup();
     renderTstatDial();
     renderTstatControls();
-    updateTstatFavButton();
+    updateTstatHeadExtras();
     positionTstatPopup(anchorEl);
     popup.removeAttribute("hidden");
     popup.classList.add("open");
