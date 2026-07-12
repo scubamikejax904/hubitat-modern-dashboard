@@ -802,7 +802,10 @@ def renderData() {
             def hasFanSpeed = d.hasAttribute("fanSpeed") || d.hasCommand("setFanSpeed") || d.hasAttribute("fanSpeedLevels")
             def fspeed = hasFanSpeed ? safeCurrent(d, "fanSpeed") : null
             def supModes = safeCurrent(d, "supportedThermostatModes")
-            def supFanModes = hasFanMode ? safeCurrent(d, "supportedFanModes") : null
+            def supFanModes = null
+            if (hasFanMode) {
+                supFanModes = safeCurrent(d, "supportedThermostatFanModes") ?: safeCurrent(d, "supportedFanModes")
+            }
             def fsLevels = hasFanSpeed ? safeCurrent(d, "fanSpeedLevels") : null
             out << "{\"i\":" << d.id
             out << ",\"n\":" << jsonStr(d.displayName)

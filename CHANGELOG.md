@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.49
+
+- Thermostat fan modes: read `supportedThermostatFanModes` when drivers expose it
+  (fallback to `supportedFanModes`).
+- Thermostat mode buttons: enforce `display: none` when hidden so unsupported modes
+  do not leave empty gaps in the dial popup.
+
 ## 0.2.48
 
 - Sensors tab: room headers collapse/expand on tap, expand/collapse-all works in

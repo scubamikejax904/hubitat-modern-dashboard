@@ -1,4 +1,4 @@
-// Modern Dashboard v0.2.48
+// Modern Dashboard v0.2.49
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
@@ -38,7 +38,7 @@ def mainPage() {
             paragraph "<small><b>PWA:</b> use the cloud link below to install on your phone's home screen (standalone app icon).</small>"
             paragraph "<small><b>Scheduler:</b> create and manage schedules from the dashboard — including remotely — without logging into the Hubitat admin UI.</small>"
             paragraph "<small><b>Hub-only:</b> UI, API, and scheduler run entirely on your hub — no Maker API or third-party cloud.</small>"
-            paragraph "<small>Version 0.2.48 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
+            paragraph "<small>Version 0.2.49 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         section("Devices") {
             paragraph "<small>Select the devices you want on the dashboard. Rooms and layout are automatic based on your Hubitat room assignments.</small>"
@@ -802,7 +802,10 @@ def renderData() {
             def hasFanSpeed = d.hasAttribute("fanSpeed") || d.hasCommand("setFanSpeed") || d.hasAttribute("fanSpeedLevels")
             def fspeed = hasFanSpeed ? safeCurrent(d, "fanSpeed") : null
             def supModes = safeCurrent(d, "supportedThermostatModes")
-            def supFanModes = hasFanMode ? safeCurrent(d, "supportedFanModes") : null
+            def supFanModes = null
+            if (hasFanMode) {
+                supFanModes = safeCurrent(d, "supportedThermostatFanModes") ?: safeCurrent(d, "supportedFanModes")
+            }
             def fsLevels = hasFanSpeed ? safeCurrent(d, "fanSpeedLevels") : null
             out << "{\"i\":" << d.id
             out << ",\"n\":" << jsonStr(d.displayName)

@@ -2540,6 +2540,7 @@ body {
   transition: all .15s var(--ease);
   touch-action: manipulation; -webkit-touch-callout: none;
 }
+.tstat-mode[hidden] { display: none !important; }
 .tstat-mode svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .tstat-mode.active { background: var(--accent); color: #fff; border-color: transparent; box-shadow: 0 4px 14px var(--accent-glow); }
 .tstat-mode.quick-hsm-mode.hsm-active-disarm.active {
