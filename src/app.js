@@ -849,22 +849,13 @@
       dashSession = "";
       dashSessionExpiresAt = 0;
     }
-    // Signed tokens embed expiry as the prefix before "."; use it if storage expiry is missing.
-    if (dashSession && !(dashSessionExpiresAt > Date.now())) {
-      const prefix = Number(String(dashSession).split(".")[0]);
-      if (Number.isFinite(prefix) && prefix > Date.now()) dashSessionExpiresAt = prefix;
-    }
     publishMld({ dashSession: dashSession, dashSessionExpiresAt: dashSessionExpiresAt });
   }
 
   function saveDashSession(session, expiresAt) {
     dashSession = String(session || "");
-    let exp = Number(expiresAt);
-    if (!Number.isFinite(exp) || exp <= 0) {
-      const prefix = Number(String(dashSession).split(".")[0]);
-      exp = Number.isFinite(prefix) && prefix > 0 ? prefix : 0;
-    }
-    dashSessionExpiresAt = exp;
+    const exp = Number(expiresAt);
+    dashSessionExpiresAt = Number.isFinite(exp) && exp > 0 ? exp : 0;
     try {
       if (dashSession) {
         localStorage.setItem(DASH_SESSION_STORAGE_KEY, dashSession);
@@ -882,23 +873,46 @@
   }
 
   function isDashSessionFresh() {
-    if (!dashSession) return false;
-    if (dashSessionExpiresAt > Date.now()) return true;
-    const prefix = Number(String(dashSession).split(".")[0]);
-    if (Number.isFinite(prefix) && prefix > Date.now()) {
-      dashSessionExpiresAt = prefix;
-      publishMld({ dashSessionExpiresAt: dashSessionExpiresAt });
-      return true;
-    }
-    return false;
+    return !!dashSession && dashSessionExpiresAt > Date.now();
+  }
+
+  let dashSessionRenewInFlight = null;
+  let dashSessionLastRenewAt = 0;
+  const DASH_SESSION_RENEW_MIN_INTERVAL_MS = 60 * 60 * 1000; // at most hourly
+
+  async function renewDashSessionFromServer(force) {
+    if (!dashSession || !isDashSessionFresh()) return false;
+    const now = Date.now();
+    if (!force && now - dashSessionLastRenewAt < DASH_SESSION_RENEW_MIN_INTERVAL_MS) return true;
+    if (dashSessionRenewInFlight) return dashSessionRenewInFlight;
+    dashSessionRenewInFlight = (async () => {
+      try {
+        const r = await fetchWithTimeout(withToken("auth/renew"), {
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        if (r.status === 401) {
+          clearDashSession();
+          return false;
+        }
+        if (!r.ok) return false;
+        const data = await r.json();
+        applyDashSessionFromResponse(data);
+        dashSessionLastRenewAt = Date.now();
+        return isDashSessionFresh();
+      } catch {
+        return false;
+      } finally {
+        dashSessionRenewInFlight = null;
+      }
+    })();
+    return dashSessionRenewInFlight;
   }
 
   function slideDashSessionExpiry() {
     if (!dashSession) return;
-    // Local UX extension only; server expiry is authoritative and renewed on API calls.
-    dashSessionExpiresAt = Date.now() + DASH_SESSION_MAX_AGE_MS;
-    try { localStorage.setItem(DASH_SESSION_EXPIRES_KEY, String(dashSessionExpiresAt)); } catch {}
-    publishMld({ dashSessionExpiresAt: dashSessionExpiresAt });
+    // Server is authoritative — ask it to slide the 7-day window (throttled).
+    renewDashSessionFromServer(false);
   }
 
   function applyDashSessionFromResponse(data) {
@@ -923,7 +937,7 @@
     document.addEventListener("pointerdown", renew, { passive: true });
     document.addEventListener("keydown", renew);
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") renew();
+      if (document.visibilityState === "visible") renewDashSessionFromServer(true);
     });
   }
 

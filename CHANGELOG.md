@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.41
+
+- Dashboard password sessions: store opaque tokens in hub state with sliding 7-day
+  renewal via new `/auth/renew` endpoint (replaces signed tokens that broke on hub
+  password changes and sandbox limits). Client renews server-side on activity.
+
 ## 0.2.40
 
 - Fix multi-sensors disappearing from the Sensors view when they are also

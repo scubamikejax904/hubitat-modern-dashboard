@@ -547,6 +547,7 @@ mappings {
     path("/icons/icon-512.png") { action: [GET: "renderIcon512"] }
     path("/auth/status") { action: [GET: "authStatus"] }
     path("/auth/unlock") { action: [GET: "authUnlock", POST: "authUnlock"] }
+    path("/auth/renew") { action: [GET: "authRenew", POST: "authRenew"] }
     path("/data")      { action: [GET: "renderData"] }
     path("/device")    { action: [GET: "renderDevice"] }
     path("/cmd")       { action: [GET: "doCmd"] }
@@ -2286,7 +2287,7 @@ def pinsMatch(expected, provided) {
     return diff == 0
 }
 
-def DASH_SESSION_TTL_MS = 604800000L
+def DASH_SESSION_TTL_MS = 604800000L // 7 days
 
 def authRenewed = null
 
@@ -2294,43 +2295,90 @@ def dashboardPasswordRequired() {
     return dashboardPasswordEnabled == true && (dashboardPassword?.toString()?.trim() ?: "") != ""
 }
 
-// Stateless signed sessions (Hubitat sandbox blocks MessageDigest/HMAC/Random/Long.toHexString).
-def dashboardSessionSecret() {
-    def pw = dashboardPassword?.toString()?.trim() ?: ""
-    def tok = state.accessToken?.toString()?.trim() ?: ""
-    return pw + "|" + tok
+// Opaque sessions in app state. Sliding expiry: each validated request extends to now+7d.
+// (Signed/HMAC tokens were unreliable in Hubitat sandbox and tied to access_token.)
+def parseDashSessionsMap() {
+    if (!state.dashSessionsJson) return [:]
+    try {
+        return new groovy.json.JsonSlurper().parseText(state.dashSessionsJson.toString()) ?: [:]
+    } catch (e) {
+        return [:]
+    }
 }
 
-def dashboardSessionSig(expiryMs) {
-    def input = dashboardSessionSecret() + "|" + expiryMs.toString()
-    // djb2 — keep to plain arithmetic/strings; Hubitat blocks crypto helpers.
-    long hash = 5381L
-    int len = input.length()
-    for (int i = 0; i < len; i++) {
-        int ch = (int) input.charAt(i)
-        hash = ((hash << 5) + hash) + ch
+def saveDashSessionsMap(map) {
+    state.dashSessionsJson = groovy.json.JsonOutput.toJson(map ?: [:])
+}
+
+def syncDashPasswordEpoch() {
+    def fp = dashboardPassword?.toString()?.trim() ?: ""
+    if (state.dashPwFp != fp) {
+        state.dashPwFp = fp
+        state.dashSessionsJson = "{}"
     }
-    // Decimal string avoids Long.toHexString (blocked in Hubitat sandbox).
-    return hash.toString()
+}
+
+def pruneDashSessionsMap(map, long nowMs) {
+    def out = [:]
+    map?.each { k, v ->
+        try {
+            long exp = (v instanceof Number) ? v.longValue() : v.toString().toLong()
+            if (k && exp > nowMs) out[k.toString()] = exp
+        } catch (e) {}
+    }
+    return out
+}
+
+def newDashSessionToken() {
+    long seq = 0
+    try { seq = (state.dashSessionSeq ?: 0) as long } catch (e) { seq = 0 }
+    seq = seq + 1
+    if (seq > 2000000000L) seq = 1
+    state.dashSessionSeq = seq
+    return "ds-" + now() + "-" + seq
 }
 
 def issueDashboardSession() {
-    long expiry = now() + 604800000L
-    def sig = dashboardSessionSig(expiry)
-    def session = expiry.toString() + "." + sig
-    return [session: session, expiresAt: expiry]
+    syncDashPasswordEpoch()
+    long nowMs = now()
+    long expiry = nowMs + DASH_SESSION_TTL_MS
+    def token = newDashSessionToken()
+    def map = pruneDashSessionsMap(parseDashSessionsMap(), nowMs)
+    map[token] = expiry
+    saveDashSessionsMap(map)
+    return [session: token, expiresAt: expiry]
 }
 
 def validateAndRenewDashboardSession(token) {
     if (!token || !dashboardPasswordRequired()) return null
-    def parts = token.toString().split("\\.", 2)
-    if (parts.length != 2) return null
+    syncDashPasswordEpoch()
+    def key = token.toString().trim()
+    if (!key) return null
+    long nowMs = now()
+    def map = pruneDashSessionsMap(parseDashSessionsMap(), nowMs)
+    def expVal = map[key]
+    if (expVal == null) {
+        saveDashSessionsMap(map)
+        return null
+    }
     long expiry
-    try { expiry = parts[0].toLong() } catch (e) { return null }
-    if (expiry <= now()) return null
-    def expectedSig = dashboardSessionSig(expiry)
-    if (!pinsMatch(expectedSig, parts[1])) return null
-    return issueDashboardSession()
+    try {
+        expiry = (expVal instanceof Number) ? expVal.longValue() : expVal.toString().toLong()
+    } catch (e) {
+        map.remove(key)
+        saveDashSessionsMap(map)
+        return null
+    }
+    if (expiry <= nowMs) {
+        map.remove(key)
+        saveDashSessionsMap(map)
+        return null
+    }
+    // Slide window: activity extends expiry another 7 days from now.
+    long renewedExpiry = nowMs + DASH_SESSION_TTL_MS
+    map[key] = renewedExpiry
+    saveDashSessionsMap(map)
+    return [session: key, expiresAt: renewedExpiry]
 }
 
 def extractDashSession() {
@@ -2409,6 +2457,17 @@ def authUnlock() {
         log.error "Modern Dashboard authUnlock: ${e.message}"
         return render(contentType: "application/json", data: '{"ok":false,"error":"unlock failed","detail":' + jsonStr(e.message ?: e.toString()) + '}', status: 500)
     }
+}
+
+def authRenew() {
+    if (!dashboardPasswordRequired()) {
+        return render(contentType: "application/json", data: '{"ok":true,"required":false}', status: 200)
+    }
+    if (!guardDashboardAccess()) return renderAuthRequired()
+    def out = new StringBuilder()
+    out << '{"ok":true,"session":' << jsonStr(authRenewed.session)
+    out << ',"expiresAt":' << authRenewed.expiresAt << '}'
+    return render(contentType: "application/json", data: out.toString(), status: 200)
 }
 
 def initializeHsm() {
