@@ -1258,6 +1258,32 @@ body {
 .hub-mode-btn:active { transform: scale(.95); }
 .quick-body-scenes, .quick-body-favorites, .quick-body-locks { text-align: left; padding: 0; }
 .quick-body-sensors { text-align: left; padding: 0; }
+.sensor-rooms {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 2px 0 4px;
+}
+.tab-view .sensor-rooms { padding-bottom: 4px; }
+.sensor-room .room-head { cursor: default; }
+.sensor-room-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 12px 14px;
+  grid-template-columns: unset;
+}
+.sensor-type-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 4px 2px 0;
+}
+.sensor-room-body .sensor-grid {
+  padding: 0;
+}
 .quick-body-thermostats { text-align: left; padding: 0; }
 .quick-body-scheduler { text-align: left; padding: 0; font-size: 16px; }
 .tab-view .quick-body-scheduler { padding-bottom: calc(4px + env(safe-area-inset-bottom)); }

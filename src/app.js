@@ -1151,6 +1151,7 @@
   // Sensors (other-sensor pickers): [{i,n,r,t,v,a,ex:[{k,v,u?}]}]
   let sensors = [];
   const sensorCardMap = new Map(); // id -> { el, heroEl, pillEl, pillTxt, dot, footEl, batteryEl, favBtn, t, i }
+  const sensorRoomEls = new Map(); // roomId -> { card, body, meta }
   const favSensorMap = new Map(); // id -> sensor card rec (favorites popup)
   const favMusicMap = new Map(); // id -> music row rec (favorites popup)
   const favLockMap = new Map(); // id -> lock row rec (favorites popup)
@@ -6570,6 +6571,44 @@
   }
 
   // ---------- sensors popup ----------
+  const SENSOR_TYPE_ORDER = Object.keys(SENSOR_TYPE_META);
+
+  function sensorTypeOrder(t) {
+    const idx = SENSOR_TYPE_ORDER.indexOf(t);
+    return idx >= 0 ? idx : SENSOR_TYPE_ORDER.length;
+  }
+
+  function sortSensorsInRoom(devs) {
+    return devs.slice().sort((a, b) => {
+      const ta = sensorTypeOrder(a.t) - sensorTypeOrder(b.t);
+      if (ta !== 0) return ta;
+      return String(a.n || "").localeCompare(String(b.n || ""));
+    });
+  }
+
+  function groupSensorsByRoom(merged) {
+    const groups = new Map();
+    for (const dev of merged) {
+      const rid = normalizeRoomId(dev.r);
+      if (!groups.has(rid)) groups.set(rid, []);
+      groups.get(rid).push(dev);
+    }
+    return groups;
+  }
+
+  function groupRoomSensorsByType(devs) {
+    const types = [];
+    let lastType = null;
+    for (const dev of devs) {
+      if (dev.t !== lastType) {
+        types.push({ type: dev.t, devs: [] });
+        lastType = dev.t;
+      }
+      types[types.length - 1].devs.push(dev);
+    }
+    return types;
+  }
+
   function mergedSensorList() {
     const byId = new Map();
     for (const s of tempSensors) {
@@ -6584,15 +6623,15 @@
     for (const v of valves) byId.set(String(v.i), normalizeValveForCard(v));
     const out = [...byId.values()];
     out.sort((a, b) => {
-      const ra = roomLabel(a.r).localeCompare(roomLabel(b.r));
-      if (ra !== 0) return ra;
+      const ta = sensorTypeOrder(a.t) - sensorTypeOrder(b.t);
+      if (ta !== 0) return ta;
       return String(a.n || "").localeCompare(String(b.n || ""));
     });
     return out;
   }
 
   function sensorsPopupSignature() {
-    return mergedSensorList().map((d) => `${d.i}:${d.t}:${d.v}:${d.a}:${sensorBatteryPct(d)}:${(d.ex || []).map((e) => e.k + e.v).join(".")}`).join("|");
+    return mergedSensorList().map((d) => `${d.i}:${d.r}:${d.t}:${d.v}:${d.a}:${sensorBatteryPct(d)}:${(d.ex || []).map((e) => e.k + e.v).join(".")}`).join("|");
   }
 
   function sensorTypesWithCounts() {
@@ -6637,7 +6676,11 @@
       if (!rec) continue;
       const show = sensorMatchesFilter(dev);
       rec.el.hidden = !show;
-      if (show) visible++;
+      if (show && !rec.el.classList.contains("search-hidden")) visible++;
+    }
+    for (const [, rec] of sensorRoomEls) {
+      const visibleCards = rec.body.querySelectorAll(".sensor-card:not([hidden]):not(.search-hidden)");
+      rec.card.classList.toggle("hidden", visibleCards.length === 0);
     }
     if (sensorFilterEmptyEl) sensorFilterEmptyEl.hidden = visible > 0;
     syncSensorFilterBtn();
@@ -6797,7 +6840,9 @@
     const name = ce("div", "sensor-card-name");
     name.textContent = dev.n || ("Sensor " + dev.i);
     const metaRow = ce("div", "sensor-card-meta");
-    metaRow.textContent = roomLabel(dev.r) + " · " + sensorTypeLabel(dev.t);
+    metaRow.textContent = context === "sensors"
+      ? sensorTypeLabel(dev.t)
+      : roomLabel(dev.r) + " · " + sensorTypeLabel(dev.t);
     const foot = ce("div", "sensor-card-foot");
     const actions = ce("div", "sensor-card-actions");
     const battery = ce("div", "sensor-card-battery");
@@ -6855,6 +6900,54 @@
     if (fav && fav !== sen) applySensorCardState(fav.el, dev, fav);
   }
 
+  function buildSensorRoomSection(roomKey, devs) {
+    const name = roomKey === -1 ? "Unassigned" : (roomMap.get(roomKey) || "Room");
+    const card = ce("section", "room sensor-room");
+    card.dataset.roomId = roomKey;
+    card.dataset.roomName = String(name).toLowerCase();
+
+    const head = ce("div", "room-head");
+    const title = ce("div", "room-title");
+    const nameEl = ce("div", "room-name");
+    nameEl.textContent = name;
+    const meta = ce("div", "room-meta");
+    meta.textContent = devs.length + (devs.length === 1 ? " sensor" : " sensors");
+    title.appendChild(nameEl);
+    title.appendChild(meta);
+    head.appendChild(title);
+
+    const col = ce("button", "room-collapse");
+    col.type = "button";
+    col.setAttribute("aria-label", "Collapse room");
+    col.innerHTML = '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>';
+    col.addEventListener("click", (e) => {
+      e.stopPropagation();
+      card.classList.toggle("collapsed");
+      persistSensorsCollapsed();
+    });
+    head.appendChild(col);
+
+    const body = ce("div", "room-body sensor-room-body");
+    card.appendChild(head);
+    card.appendChild(body);
+
+    const sorted = sortSensorsInRoom(devs);
+    const typeGroups = groupRoomSensorsByType(sorted);
+    for (const tg of typeGroups) {
+      if (typeGroups.length > 1) {
+        const label = ce("div", "sensor-type-label");
+        label.textContent = sensorTypeLabel(tg.type);
+        body.appendChild(label);
+      }
+      const grid = ce("div", "sensor-grid");
+      for (const dev of tg.devs) grid.appendChild(makeSensorCard(dev, "sensors"));
+      body.appendChild(grid);
+    }
+
+    sensorRoomEls.set(roomKey, { card, body, meta });
+    return card;
+  }
+
   function renderSensorsPopup() {
     const popup = ensureQuickPopup();
     syncQuickPopupWidthForOpen(popup);
@@ -6862,6 +6955,8 @@
     body.className = "quick-body quick-body-sensors" + (inTabView() ? " tab-body" : "");
     body.innerHTML = "";
     sensorCardMap.clear();
+    sensorRoomEls.clear();
+    sensorCollapsedBeforeSearch = null;
     favSensorMap.clear();
     sensorFilterChipsEl = null;
     sensorFilterBtnEl = null;
@@ -6874,17 +6969,26 @@
     }
     const wrap = ce("div", "sensor-popup-wrap");
     const { toolbar, chips } = buildSensorFilterBar();
-    const grid = ce("div", "sensor-grid");
-    for (const dev of merged) grid.appendChild(makeSensorCard(dev));
+    const roomsEl = ce("div", "sensor-rooms");
+    const sensorGroups = groupSensorsByRoom(merged);
+    const hasSensors = (rid) => (sensorGroups.get(normalizeRoomId(rid))?.length || 0) > 0;
+    const orderedIds = getDisplayRoomIds(sensorGroups, hasSensors);
+    for (const rid of orderedIds) {
+      const roomKey = normalizeRoomId(rid);
+      const devs = sensorGroups.get(roomKey) || [];
+      if (!devs.length) continue;
+      roomsEl.appendChild(buildSensorRoomSection(roomKey, devs));
+    }
     const empty = ce("div", "sensor-filter-empty");
     empty.textContent = "No sensors match this filter";
     empty.hidden = true;
     sensorFilterEmptyEl = empty;
     wrap.appendChild(toolbar);
     wrap.appendChild(chips);
-    wrap.appendChild(grid);
+    wrap.appendChild(roomsEl);
     wrap.appendChild(empty);
     body.appendChild(wrap);
+    restoreSensorsCollapsed();
     applySensorTypeFilter();
   }
 
@@ -6892,7 +6996,7 @@
     if (currentCategory() !== "sensors") return;
     const sig = sensorsPopupSignature();
     const body = currentBody();
-    if (!body.querySelector(".sensor-grid") || sig !== sensorsPopupSig) {
+    if (!body.querySelector(".sensor-rooms") || sig !== sensorsPopupSig) {
       renderSensorsPopup();
       return;
     }
@@ -7349,6 +7453,12 @@
     if (tstatSession) closeTstatPopup();
     if (musicMasterPopup && musicMasterPopup.classList.contains("open")) closeMusicMasterPopup();
     if (quickPopup && quickPopup.classList.contains("open")) closeQuickPopup();
+    const tabChanged = id !== activeTab;
+    if (tabChanged && SEARCH_EL) {
+      SEARCH_EL.value = "";
+      collapsedBeforeSearch = null;
+      sensorCollapsedBeforeSearch = null;
+    }
     activeTab = id;
     ensureTabView();
     const nonLights = id !== "lights";
@@ -7624,6 +7734,7 @@
 
   // ---------- filter ----------
   let collapsedBeforeSearch = null;
+  let sensorCollapsedBeforeSearch = null;
 
   function collapsedIdSet() {
     const set = new Set();
@@ -7671,6 +7782,35 @@
 
   function applyTabSearch(q) {
     if (!tabViewEl) return;
+    if (activeTab === "sensors" && sensorRoomEls.size) {
+      if (!q) {
+        for (const [, rec] of sensorRoomEls) {
+          for (const card of rec.body.querySelectorAll(".sensor-card")) card.classList.remove("search-hidden");
+        }
+        if (sensorCollapsedBeforeSearch) {
+          for (const [rid, rec] of sensorRoomEls) {
+            rec.card.classList.toggle("collapsed", sensorCollapsedBeforeSearch.has(rid));
+          }
+          sensorCollapsedBeforeSearch = null;
+        }
+        applySensorTypeFilter();
+        return;
+      }
+      if (!sensorCollapsedBeforeSearch) sensorCollapsedBeforeSearch = sensorsCollapsedIdSet();
+      for (const [, rec] of sensorRoomEls) {
+        const roomMatch = rec.card.dataset.roomName.includes(q);
+        let anyVisible = roomMatch;
+        for (const card of rec.body.querySelectorAll(".sensor-card")) {
+          const nameMatch = card.dataset.name.includes(q);
+          const show = roomMatch || nameMatch;
+          card.classList.toggle("search-hidden", !show);
+          if (show) anyVisible = true;
+        }
+        if (anyVisible) rec.card.classList.remove("collapsed");
+        rec.card.classList.toggle("hidden", !anyVisible);
+      }
+      return;
+    }
     const items = tabViewEl.querySelectorAll("[data-name]");
     for (const el of items) {
       el.classList.toggle("search-hidden", !!q && !el.dataset.name.includes(q));
@@ -7688,6 +7828,32 @@
   if (SEARCH_EL) SEARCH_EL.addEventListener("input", applySearch);
 
   // ---------- collapse persistence ----------
+  function sensorsCollapsedIdSet() {
+    const set = new Set();
+    for (const [rid, rec] of sensorRoomEls) if (rec.card.classList.contains("collapsed")) set.add(rid);
+    return set;
+  }
+
+  function sensorsCollapsedSet() {
+    const set = [];
+    for (const [rid, rec] of sensorRoomEls) if (rec.card.classList.contains("collapsed")) set.push(rid);
+    return set;
+  }
+
+  function persistSensorsCollapsed() {
+    try { localStorage.setItem("mld_sensors_collapsed", sensorsCollapsedSet().join(",")); } catch {}
+  }
+
+  function restoreSensorsCollapsed() {
+    let raw = null;
+    try { raw = localStorage.getItem("mld_sensors_collapsed"); } catch {}
+    if (raw === null) return;
+    const set = new Set(raw.split(",").filter(Boolean).map(Number));
+    for (const [rid, rec] of sensorRoomEls) {
+      rec.card.classList.toggle("collapsed", set.has(rid));
+    }
+  }
+
   function collapsedSet() {
     const set = [];
     for (const [rid, rec] of roomEls) if (rec.card.classList.contains("collapsed")) set.push(rid);

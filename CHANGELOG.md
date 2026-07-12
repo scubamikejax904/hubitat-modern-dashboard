@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.47
+
+- Sensors view grouped by Hubitat room with collapsible room sections, type
+  sub-labels within each room, and search/filter support across the room layout.
+
 ## 0.2.46
 
 - Companion app preferences cleanup: unlock PIN lives under **Locks / garage
