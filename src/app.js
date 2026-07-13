@@ -1009,7 +1009,7 @@
       const labelB = postCall("roomLabel", b.r) || String(b.r ?? "");
       const ra = labelA.localeCompare(labelB);
       if (ra !== 0) return ra;
-      return String(a.n || "").localeCompare(String(b.n || ""));
+      return String(a.n || "").localeCompare(String(b.n || ""), undefined, { sensitivity: "base" });
     });
   }
 
@@ -3995,6 +3995,16 @@
     return roomMap.get(rid) || "Room";
   }
 
+  function compareByRoomThenFullName(a, b) {
+    const ra = roomLabel(a.r).localeCompare(roomLabel(b.r), undefined, { sensitivity: "base" });
+    if (ra !== 0) return ra;
+    return String(a.n || "").localeCompare(String(b.n || ""), undefined, { sensitivity: "base" });
+  }
+
+  function sortByRoomThenFullName(devs) {
+    return devs.slice().sort(compareByRoomThenFullName);
+  }
+
   function snapshotRoomKey(roomKey) {
     return "room:" + roomKey;
   }
@@ -5048,21 +5058,21 @@
 
     const fullName = dev.n || ("Device " + dev.i);
     const roomName = dev.r != null && dev.r !== -1 ? roomMap.get(dev.r) : null;
-    const shortName = (dev.n ? stripRoomPrefix(dev.n, roomName) : null) || fullName;
+    const displayName = inFavorites ? fullName : ((dev.n ? stripRoomPrefix(dev.n, roomName) : null) || fullName);
 
     const head = ce("div", "tile-head");
     const name = ce("div", "tile-name");
-    name.textContent = shortName;
-    if (dev.n) name.title = dev.n;
+    name.textContent = displayName;
+    if (dev.n && displayName !== dev.n) name.title = dev.n;
     const bulb = ce("button", "tile-bulb");
     bulb.type = "button";
-    bulb.setAttribute("aria-label", "Toggle " + shortName);
+    bulb.setAttribute("aria-label", "Toggle " + displayName);
     bulb.setAttribute("aria-pressed", dev.s ? "true" : "false");
     head.appendChild(name); head.appendChild(bulb);
     tile.appendChild(head);
 
     attachBulbTap(bulb, dev);
-    if (isDim) attachColorNameClick(name, dev, shortName);
+    if (isDim) attachColorNameClick(name, dev, displayName);
 
     if (isDim) {
       const slider = ce("div", "slider");
@@ -5109,11 +5119,14 @@
 
     const fullName = outlet.n || ("Outlet " + outlet.i);
     const roomName = outlet.r != null && outlet.r !== -1 ? roomMap.get(outlet.r) : null;
-    const shortName = (outlet.n ? stripRoomPrefix(outlet.n, roomName) : null) || fullName;
+    const truncate = !inFavorites && !inOutletsTab;
+    const displayName = truncate
+      ? ((outlet.n ? stripRoomPrefix(outlet.n, roomName) : null) || fullName)
+      : fullName;
 
     const socket = ce("button", "tile-socket" + (inOutletsTab ? " outlet-tab-socket" : ""));
     socket.type = "button";
-    socket.setAttribute("aria-label", "Toggle " + shortName);
+    socket.setAttribute("aria-label", "Toggle " + displayName);
     socket.setAttribute("aria-pressed", outlet.s ? "true" : "false");
     const face = ce("span", "tile-socket-face");
     face.appendChild(ce("span", "tile-socket-slot tile-socket-slot-l"));
@@ -5131,8 +5144,8 @@
     const level = ce("span", "tile-level");
     level.textContent = "Outlet";
     const name = ce("div", "tile-name" + (inOutletsTab ? " outlet-tab-name" : ""));
-    name.textContent = shortName;
-    if (outlet.n) name.title = outlet.n;
+    name.textContent = displayName;
+    if (outlet.n && displayName !== outlet.n) name.title = outlet.n;
 
     if (inOutletsTab) {
       const visual = ce("div", "outlet-tab-visual");
@@ -6120,11 +6133,7 @@
     const entries = [];
     for (const lock of locks) entries.push({ kind: "lock", dev: lock });
     for (const door of garageDoors) entries.push({ kind: "garage", dev: door });
-    entries.sort((a, b) => {
-      const ra = roomLabel(a.dev.r).localeCompare(roomLabel(b.dev.r));
-      if (ra !== 0) return ra;
-      return String(a.dev.n || "").localeCompare(String(b.dev.n || ""));
-    });
+    entries.sort((a, b) => compareByRoomThenFullName(a.dev, b.dev));
     const list = ce("div", "quick-list");
     for (const entry of entries) {
       if (entry.kind === "lock") list.appendChild(makeLockRow(entry.dev, "popup"));
@@ -6269,11 +6278,7 @@
       body.textContent = "No shades selected — add shades in the Hubitat app settings";
       return;
     }
-    const sorted = windowShades.slice().sort((a, b) => {
-      const ra = roomLabel(a.r).localeCompare(roomLabel(b.r));
-      if (ra !== 0) return ra;
-      return String(a.n || "").localeCompare(String(b.n || ""));
-    });
+    const sorted = sortByRoomThenFullName(windowShades);
     const list = ce("div", "quick-list");
     for (const shade of sorted) list.appendChild(makeShadeTile(shade, "popup"));
     body.appendChild(list);
@@ -6421,11 +6426,7 @@
       body.textContent = "No fans selected — add ceiling fans in the Hubitat app settings";
       return;
     }
-    const sorted = ceilingFans.slice().sort((a, b) => {
-      const ra = roomLabel(a.r).localeCompare(roomLabel(b.r));
-      if (ra !== 0) return ra;
-      return String(a.n || "").localeCompare(String(b.n || ""));
-    });
+    const sorted = sortByRoomThenFullName(ceilingFans);
     const list = ce("div", "quick-list");
     for (const fan of sorted) list.appendChild(makeFanTile(fan, "popup"));
     body.appendChild(list);
@@ -6442,11 +6443,7 @@
       body.textContent = "No outlets configured — add outlets in the Hubitat app settings";
       return;
     }
-    const sorted = outlets.slice().sort((a, b) => {
-      const ra = roomLabel(a.r).localeCompare(roomLabel(b.r));
-      if (ra !== 0) return ra;
-      return String(a.n || "").localeCompare(String(b.n || ""));
-    });
+    const sorted = sortByRoomThenFullName(outlets);
     const grid = ce("div", "quick-fav-grid");
     for (const out of sorted) grid.appendChild(makeOutletTile(out, "outlets"));
     body.appendChild(grid);
@@ -6642,11 +6639,7 @@
       body.textContent = "No speakers selected — add music players or additional speakers in the Hubitat app settings";
       return;
     }
-    const sorted = music.slice().sort((a, b) => {
-      const ra = roomLabel(a.r).localeCompare(roomLabel(b.r));
-      if (ra !== 0) return ra;
-      return String(a.n || "").localeCompare(String(b.n || ""));
-    });
+    const sorted = sortByRoomThenFullName(music);
     const list = ce("div", "quick-list music-list");
     for (const dev of sorted) list.appendChild(makeMusicRow(dev, "popup"));
     body.appendChild(list);
@@ -7048,7 +7041,7 @@
     return devs.slice().sort((a, b) => {
       const ta = sensorTypeOrder(a.t) - sensorTypeOrder(b.t);
       if (ta !== 0) return ta;
-      return String(a.n || "").localeCompare(String(b.n || ""));
+      return String(a.n || "").localeCompare(String(b.n || ""), undefined, { sensitivity: "base" });
     });
   }
 
@@ -7091,7 +7084,7 @@
     out.sort((a, b) => {
       const ta = sensorTypeOrder(a.t) - sensorTypeOrder(b.t);
       if (ta !== 0) return ta;
-      return String(a.n || "").localeCompare(String(b.n || ""));
+      return String(a.n || "").localeCompare(String(b.n || ""), undefined, { sensitivity: "base" });
     });
     return out;
   }
@@ -7724,11 +7717,7 @@
       body.textContent = "No thermostats selected — add thermostats in the Hubitat app settings";
       return;
     }
-    const sorted = thermostats.slice().sort((a, b) => {
-      const ra = roomLabel(a.r).localeCompare(roomLabel(b.r));
-      if (ra !== 0) return ra;
-      return String(a.n || "").localeCompare(String(b.n || ""));
-    });
+    const sorted = sortByRoomThenFullName(thermostats);
     const grid = ce("div", "quick-fav-grid");
     for (const t of sorted) grid.appendChild(makeQuickTstatCard(t, tstatsPopupMap));
     body.appendChild(grid);

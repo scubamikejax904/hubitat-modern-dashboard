@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.61
+
+- **Sorting:** case-insensitive alphabetical order for devices within rooms and
+  across category lists (Fans, Blinds, Outlets, Music, Thermostats, Locks).
+- **Favorites:** light and outlet tiles show the full device name (room prefix
+  no longer stripped). Outlets tab also shows full names.
+
 ## 0.2.60
 
 - **Lights:** devices within each room are sorted alphabetically by their displayed

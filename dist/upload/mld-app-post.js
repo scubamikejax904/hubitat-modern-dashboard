@@ -335,6 +335,16 @@
     return M.roomMap.get(rid) || "Room";
   }
 
+  function compareByRoomThenFullName(a, b) {
+    const ra = roomLabel(a.r).localeCompare(roomLabel(b.r), undefined, { sensitivity: "base" });
+    if (ra !== 0) return ra;
+    return String(a.n || "").localeCompare(String(b.n || ""), undefined, { sensitivity: "base" });
+  }
+
+  function sortByRoomThenFullName(devs) {
+    return devs.slice().sort(compareByRoomThenFullName);
+  }
+
   function snapshotRoomKey(roomKey) {
     return "room:" + roomKey;
   }
@@ -1388,21 +1398,21 @@
 
     const fullName = dev.n || ("Device " + dev.i);
     const roomName = dev.r != null && dev.r !== -1 ? M.roomMap.get(dev.r) : null;
-    const shortName = (dev.n ? stripRoomPrefix(dev.n, roomName) : null) || fullName;
+    const displayName = inFavorites ? fullName : ((dev.n ? stripRoomPrefix(dev.n, roomName) : null) || fullName);
 
     const head = ce("div", "tile-head");
     const name = ce("div", "tile-name");
-    name.textContent = shortName;
-    if (dev.n) name.title = dev.n;
+    name.textContent = displayName;
+    if (dev.n && displayName !== dev.n) name.title = dev.n;
     const bulb = ce("button", "tile-bulb");
     bulb.type = "button";
-    bulb.setAttribute("aria-label", "Toggle " + shortName);
+    bulb.setAttribute("aria-label", "Toggle " + displayName);
     bulb.setAttribute("aria-pressed", dev.s ? "true" : "false");
     head.appendChild(name); head.appendChild(bulb);
     tile.appendChild(head);
 
     attachBulbTap(bulb, dev);
-    if (isDim) attachColorNameClick(name, dev, shortName);
+    if (isDim) attachColorNameClick(name, dev, displayName);
 
     if (isDim) {
       const slider = ce("div", "slider");
@@ -1449,11 +1459,14 @@
 
     const fullName = outlet.n || ("Outlet " + outlet.i);
     const roomName = outlet.r != null && outlet.r !== -1 ? M.roomMap.get(outlet.r) : null;
-    const shortName = (outlet.n ? stripRoomPrefix(outlet.n, roomName) : null) || fullName;
+    const truncate = !inFavorites && !inOutletsTab;
+    const displayName = truncate
+      ? ((outlet.n ? stripRoomPrefix(outlet.n, roomName) : null) || fullName)
+      : fullName;
 
     const socket = ce("button", "tile-socket" + (inOutletsTab ? " outlet-tab-socket" : ""));
     socket.type = "button";
-    socket.setAttribute("aria-label", "Toggle " + shortName);
+    socket.setAttribute("aria-label", "Toggle " + displayName);
     socket.setAttribute("aria-pressed", outlet.s ? "true" : "false");
     const face = ce("span", "tile-socket-face");
     face.appendChild(ce("span", "tile-socket-slot tile-socket-slot-l"));
@@ -1471,8 +1484,8 @@
     const level = ce("span", "tile-level");
     level.textContent = "Outlet";
     const name = ce("div", "tile-name" + (inOutletsTab ? " outlet-tab-name" : ""));
-    name.textContent = shortName;
-    if (outlet.n) name.title = outlet.n;
+    name.textContent = displayName;
+    if (outlet.n && displayName !== outlet.n) name.title = outlet.n;
 
     if (inOutletsTab) {
       const visual = ce("div", "outlet-tab-visual");
@@ -2460,11 +2473,7 @@
     const entries = [];
     for (const lock of M.locks) entries.push({ kind: "lock", dev: lock });
     for (const door of M.garageDoors) entries.push({ kind: "garage", dev: door });
-    entries.sort((a, b) => {
-      const ra = roomLabel(a.dev.r).localeCompare(roomLabel(b.dev.r));
-      if (ra !== 0) return ra;
-      return String(a.dev.n || "").localeCompare(String(b.dev.n || ""));
-    });
+    entries.sort((a, b) => compareByRoomThenFullName(a.dev, b.dev));
     const list = ce("div", "quick-list");
     for (const entry of entries) {
       if (entry.kind === "lock") list.appendChild(makeLockRow(entry.dev, "popup"));
@@ -2472,5 +2481,5 @@
     }
     body.appendChild(list);
   }
-  Object.assign(M, { saveRoomOrder, currentNavOrderFromDom, updateNavDraftOrderFromDom, showAllNavForReorder, cleanupNavDragState, saveNavOrder, postJson, postJsonSilent, setHsmApi, setHubModeApi, activateSceneApi, bulkLightsApi, snapshotSaveApi, snapshotRestoreApi, saveFavorites, hubModeLocked, hsmLocked, roomLabel, snapshotRoomKey, snapshotHouseKey, setRoomGestureLock, attachRoomSlideAction, updateRoomSnapshotUi, getFavoriteEntries, updateAllFavButtons, attachFavButton, toggleFavorite, currentRoomOrderFromDom, updateDraftOrderFromDom, updateMoveButtons, moveRoom, enterReorderMode, exitReorderMode, finishReorderMode, cancelReorderMode, closeTopbarOverflowMenu, openTopbarOverflowMenu, toggleTopbarOverflowMenu, attachRoomReorder, attachNavReorder, setupNavReorderItems, relocateNavForReorder, restoreNavAfterReorder, captureUiScroll, restoreUiScroll, render, buildDom, makeTile, makeOutletTile, attachOutletSocketTap, attachSwitchTap, attachBulbTap, attachColorNameClick, clampLevel, setSliderLevel, syncTileState, updateStates, updateRoomMeta, attachDrag, attachShadeDrag, testHaptics, toggleSwitch, toggleOutlet, toggleDimmer, reconcileDevice, refreshDevice, reconcileLock, reconcileShade, reconcileFan, reconcileMusic, sendMusicCmd, broadcastMusic, broadcastMusicVolume, reconcileGarage, sendGarageCmd, sendLockCmd, sendShadeCmd, sendFanCmd, applySwitchCmdOptimistic, roomAll, allLights, ensureQuickPopup, syncQuickPopupWidth, syncQuickPopupWidthForOpen, updateFavoriteGarageRow, makeGarageRow, makeLockRow, updateFavoriteLockRow, renderLocksPopup });
+  Object.assign(M, { saveRoomOrder, currentNavOrderFromDom, updateNavDraftOrderFromDom, showAllNavForReorder, cleanupNavDragState, saveNavOrder, postJson, postJsonSilent, setHsmApi, setHubModeApi, activateSceneApi, bulkLightsApi, snapshotSaveApi, snapshotRestoreApi, saveFavorites, hubModeLocked, hsmLocked, roomLabel, compareByRoomThenFullName, sortByRoomThenFullName, snapshotRoomKey, snapshotHouseKey, setRoomGestureLock, attachRoomSlideAction, updateRoomSnapshotUi, getFavoriteEntries, updateAllFavButtons, attachFavButton, toggleFavorite, currentRoomOrderFromDom, updateDraftOrderFromDom, updateMoveButtons, moveRoom, enterReorderMode, exitReorderMode, finishReorderMode, cancelReorderMode, closeTopbarOverflowMenu, openTopbarOverflowMenu, toggleTopbarOverflowMenu, attachRoomReorder, attachNavReorder, setupNavReorderItems, relocateNavForReorder, restoreNavAfterReorder, captureUiScroll, restoreUiScroll, render, buildDom, makeTile, makeOutletTile, attachOutletSocketTap, attachSwitchTap, attachBulbTap, attachColorNameClick, clampLevel, setSliderLevel, syncTileState, updateStates, updateRoomMeta, attachDrag, attachShadeDrag, testHaptics, toggleSwitch, toggleOutlet, toggleDimmer, reconcileDevice, refreshDevice, reconcileLock, reconcileShade, reconcileFan, reconcileMusic, sendMusicCmd, broadcastMusic, broadcastMusicVolume, reconcileGarage, sendGarageCmd, sendLockCmd, sendShadeCmd, sendFanCmd, applySwitchCmdOptimistic, roomAll, allLights, ensureQuickPopup, syncQuickPopupWidth, syncQuickPopupWidthForOpen, updateFavoriteGarageRow, makeGarageRow, makeLockRow, updateFavoriteLockRow, renderLocksPopup });
 })();

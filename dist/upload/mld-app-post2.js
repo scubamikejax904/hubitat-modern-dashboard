@@ -139,11 +139,7 @@
       body.textContent = "No shades selected — add shades in the Hubitat app settings";
       return;
     }
-    const sorted = M.windowShades.slice().sort((a, b) => {
-      const ra = M.roomLabel(a.r).localeCompare(M.roomLabel(b.r));
-      if (ra !== 0) return ra;
-      return String(a.n || "").localeCompare(String(b.n || ""));
-    });
+    const sorted = M.sortByRoomThenFullName(M.windowShades);
     const list = ce("div", "quick-list");
     for (const shade of sorted) list.appendChild(makeShadeTile(shade, "popup"));
     body.appendChild(list);
@@ -291,11 +287,7 @@
       body.textContent = "No fans selected — add ceiling fans in the Hubitat app settings";
       return;
     }
-    const sorted = M.ceilingFans.slice().sort((a, b) => {
-      const ra = M.roomLabel(a.r).localeCompare(M.roomLabel(b.r));
-      if (ra !== 0) return ra;
-      return String(a.n || "").localeCompare(String(b.n || ""));
-    });
+    const sorted = M.sortByRoomThenFullName(M.ceilingFans);
     const list = ce("div", "quick-list");
     for (const fan of sorted) list.appendChild(makeFanTile(fan, "popup"));
     body.appendChild(list);
@@ -312,11 +304,7 @@
       body.textContent = "No outlets configured — add outlets in the Hubitat app settings";
       return;
     }
-    const sorted = M.outlets.slice().sort((a, b) => {
-      const ra = M.roomLabel(a.r).localeCompare(M.roomLabel(b.r));
-      if (ra !== 0) return ra;
-      return String(a.n || "").localeCompare(String(b.n || ""));
-    });
+    const sorted = M.sortByRoomThenFullName(M.outlets);
     const grid = ce("div", "quick-fav-grid");
     for (const out of sorted) grid.appendChild(M.makeOutletTile(out, "outlets"));
     body.appendChild(grid);
@@ -512,11 +500,7 @@
       body.textContent = "No speakers selected — add music players or additional speakers in the Hubitat app settings";
       return;
     }
-    const sorted = M.music.slice().sort((a, b) => {
-      const ra = M.roomLabel(a.r).localeCompare(M.roomLabel(b.r));
-      if (ra !== 0) return ra;
-      return String(a.n || "").localeCompare(String(b.n || ""));
-    });
+    const sorted = M.sortByRoomThenFullName(M.music);
     const list = ce("div", "quick-list music-list");
     for (const dev of sorted) list.appendChild(makeMusicRow(dev, "popup"));
     body.appendChild(list);
@@ -918,7 +902,7 @@
     return devs.slice().sort((a, b) => {
       const ta = sensorTypeOrder(a.t) - sensorTypeOrder(b.t);
       if (ta !== 0) return ta;
-      return String(a.n || "").localeCompare(String(b.n || ""));
+      return String(a.n || "").localeCompare(String(b.n || ""), undefined, { sensitivity: "base" });
     });
   }
 
@@ -961,7 +945,7 @@
     out.sort((a, b) => {
       const ta = sensorTypeOrder(a.t) - sensorTypeOrder(b.t);
       if (ta !== 0) return ta;
-      return String(a.n || "").localeCompare(String(b.n || ""));
+      return String(a.n || "").localeCompare(String(b.n || ""), undefined, { sensitivity: "base" });
     });
     return out;
   }
@@ -1594,11 +1578,7 @@
       body.textContent = "No thermostats selected — add thermostats in the Hubitat app settings";
       return;
     }
-    const sorted = M.thermostats.slice().sort((a, b) => {
-      const ra = M.roomLabel(a.r).localeCompare(M.roomLabel(b.r));
-      if (ra !== 0) return ra;
-      return String(a.n || "").localeCompare(String(b.n || ""));
-    });
+    const sorted = M.sortByRoomThenFullName(M.thermostats);
     const grid = ce("div", "quick-fav-grid");
     for (const t of sorted) grid.appendChild(makeQuickTstatCard(t, M.tstatsPopupMap));
     body.appendChild(grid);

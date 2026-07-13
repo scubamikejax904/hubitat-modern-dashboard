@@ -1009,7 +1009,7 @@
       const labelB = postCall("roomLabel", b.r) || String(b.r ?? "");
       const ra = labelA.localeCompare(labelB);
       if (ra !== 0) return ra;
-      return String(a.n || "").localeCompare(String(b.n || ""));
+      return String(a.n || "").localeCompare(String(b.n || ""), undefined, { sensitivity: "base" });
     });
   }
 
