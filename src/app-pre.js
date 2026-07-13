@@ -69,6 +69,27 @@ const SENSOR_TYPE_META = {
 
 const SENSOR_ALERT_WORDS = { wet: 1, open: 1, active: 1, detected: 1, present: 1 };
 
+const SECONDARY_ATTR_ORDER = ["temperature", "humidity", "illuminance", "pressure", "co2", "carbonmonoxide"];
+const SENSOR_EX_MAX = 6;
+
+function secondaryAttrRank(k) {
+  const n = String(k || "").toLowerCase();
+  const idx = SECONDARY_ATTR_ORDER.indexOf(n);
+  return idx >= 0 ? idx : SECONDARY_ATTR_ORDER.length;
+}
+
+function sortSensorExForDisplay(ex, excludeKeys) {
+  const skip = new Set([...(excludeKeys || []), "battery"]);
+  return (ex || [])
+    .filter((e) => e && !skip.has(String(e.k || "").toLowerCase()))
+    .slice()
+    .sort((a, b) => {
+      const ra = secondaryAttrRank(a.k) - secondaryAttrRank(b.k);
+      if (ra !== 0) return ra;
+      return String(a.k || "").localeCompare(String(b.k || ""));
+    });
+}
+
 function sensorTypeLabel(t) {
   return (SENSOR_TYPE_META[t] || SENSOR_TYPE_META.generic).label;
 }
@@ -143,23 +164,56 @@ function applySensorPayload(sen, d) {
   if (Array.isArray(d.ex)) sen.ex = d.ex.map((e) => ({ k: e.k, v: e.v, u: e.u ?? null }));
 }
 
+function applyTempSensorPayload(s, d) {
+  if (d.temp != null) s.temp = d.temp;
+  if (d.bat != null) s.bat = d.bat;
+  if (Array.isArray(d.ex)) s.ex = d.ex.map((e) => ({ k: e.k, v: e.v, u: e.u ?? null }));
+}
+
+function applyTempSensorWsAttr(s, attrName, val, unit) {
+  const nm = String(attrName || "").toLowerCase();
+  if (nm === "temperature") {
+    const n = Number(val);
+    if (!isNaN(n)) s.temp = Math.round(n);
+    return true;
+  }
+  const key = nm === "relativehumidity" ? "humidity" : nm;
+  if (key === "battery") {
+    const n = Number(val);
+    if (!isNaN(n)) s.bat = Math.round(n);
+  }
+  const ex = s.ex || (s.ex = []);
+  let entry = ex.find((e) => e.k === key);
+  const stored = key === "battery" && !isNaN(Number(val)) ? Math.round(Number(val)) : val;
+  if (entry) {
+    entry.v = stored;
+    if (unit) entry.u = unit;
+    return true;
+  }
+  if (ex.length >= SENSOR_EX_MAX) return false;
+  ex.push({ k: key, v: stored, u: unit || null });
+  return true;
+}
+
 function applySensorWsAttr(sen, attrName, val, unit) {
   const nm = String(attrName || "").toLowerCase();
+  const key = nm === "relativehumidity" ? "humidity" : nm;
   const t = sen.t || "generic";
-  const secondary = nm === "battery" || nm === "temperature" || nm === "humidity" || nm === "illuminance";
-  if (secondary && (t === "generic" || !sensorIsPrimaryAttr(t, nm))) {
+  const secondary = key === "battery" || key === "temperature" || key === "humidity" || key === "illuminance"
+    || key === "pressure" || key === "co2" || key === "carbonmonoxide";
+  if (secondary && (t === "generic" || !sensorIsPrimaryAttr(t, key))) {
     const ex = sen.ex || (sen.ex = []);
-    let entry = ex.find((e) => e.k === nm);
+    let entry = ex.find((e) => e.k === key);
     if (entry) {
       entry.v = val;
       if (unit) entry.u = unit;
-    } else if (ex.length < 3) {
-      ex.push({ k: nm, v: val, u: unit || null });
+    } else if (ex.length < SENSOR_EX_MAX) {
+      ex.push({ k: key, v: val, u: unit || null });
     }
     return true;
   }
-  if (sensorIsPrimaryAttr(t, nm) || t === "generic") {
-    sen.v = t === "generic" ? val : normalizeSensorWsValue(t, nm, val);
+  if (sensorIsPrimaryAttr(t, key) || t === "generic") {
+    sen.v = t === "generic" ? val : normalizeSensorWsValue(t, key, val);
     sen.a = sensorAlertFlag(t, sen.v);
     return true;
   }

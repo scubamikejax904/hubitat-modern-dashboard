@@ -90,7 +90,14 @@ async function main() {
 
     for (const s of data.tempSensors) {
       assert(s.temp != null && !Number.isNaN(Number(s.temp)), `temp sensor ${s.i} has numeric temp`);
+      assert(Array.isArray(s.ex), `temp sensor ${s.i} has ex[] array`);
     }
+    const motionMulti = data.sensors.find((s) => s.i === 2103);
+    assert(motionMulti && motionMulti.ex.filter((e) => e.k !== "battery").length >= 3, "motion multisensor carries multiple secondary readings");
+    const tempOnlyMulti = data.tempSensors.find((s) => s.i === 2010);
+    assert(tempOnlyMulti?.ex?.some((e) => e.k === "humidity"), "temp-only multisensor exposes humidity in ex[]");
+    const genericMulti = data.sensors.find((s) => s.i === 2199);
+    assert(genericMulti && genericMulti.ex.length >= 4, "generic multisensor exposes expanded ex[]");
     for (const s of data.sensors) {
       assert(s.v != null && s.v !== "", `sensor ${s.i} (${s.t}) has primary value`);
       assert(Array.isArray(s.ex), `sensor ${s.i} has ex[] array`);
@@ -98,6 +105,14 @@ async function main() {
     for (const v of data.valves) {
       assert(v.st != null && v.st !== "", `valve ${v.i} has st`);
     }
+
+    const dualTemp = data.tempSensors.find((t) => t.i === 2105);
+    const dualHum = data.sensors.find((s) => s.i === 2105 && s.t === "humidity");
+    assert(dualTemp && dualHum, "dual temp+humidity device in both arrays");
+    const mergedEx = [{ k: "humidity", v: dualHum.v, u: dualHum.u ?? null }];
+    const merged = { t: "temp", v: dualTemp.temp, ex: mergedEx };
+    assert(merged.t === "temp", "merged temp+humidity card is temperature-primary");
+    assert(merged.ex.some((e) => e.k === "humidity" && e.v === dualHum.v), "merged card carries humidity as secondary");
 
     const motion = data.sensors.find((s) => s.t === "motion");
     const motionDev = await getJson(`/device?id=${motion.i}`);

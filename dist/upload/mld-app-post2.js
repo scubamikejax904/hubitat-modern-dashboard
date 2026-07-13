@@ -312,7 +312,41 @@
   }
 
   function normalizeTempSensorForCard(s) {
-    return { i: s.i, n: s.n, r: s.r, t: "temp", v: s.temp, u: s.u, a: 0, ex: [], bat: s.bat ?? null, _ref: s };
+    return { i: s.i, n: s.n, r: s.r, t: "temp", v: s.temp, u: s.u, a: 0, ex: s.ex || [], bat: s.bat ?? null, _ref: s };
+  }
+
+  function sensorExEntry(ex, k) {
+    return (ex || []).find((e) => e.k === k);
+  }
+
+  function mergeTempHumidityForCard(tempRec, sensorRec) {
+    const ex = [];
+    const humVal = sensorRec.v;
+    if (humVal != null && humVal !== "") ex.push({ k: "humidity", v: humVal, u: sensorRec.u ?? null });
+    const batEx = sensorExEntry(sensorRec.ex, "battery");
+    if (batEx && batEx.v != null && batEx.v !== "") ex.push({ k: batEx.k, v: batEx.v, u: batEx.u ?? null });
+    const bat = tempRec.bat ?? sensorRec.bat ?? (batEx ? batEx.v : null);
+    return {
+      i: tempRec.i,
+      n: tempRec.n || sensorRec.n,
+      r: tempRec.r ?? sensorRec.r,
+      t: "temp",
+      v: tempRec.temp,
+      u: tempRec.u,
+      a: 0,
+      ex,
+      bat: bat != null && bat !== "" ? bat : null,
+      _ref: tempRec,
+    };
+  }
+
+  function buildSensorCardDev(tempRec, sensorRec) {
+    if (tempRec && sensorRec && sensorRec.t === "humidity") return mergeTempHumidityForCard(tempRec, sensorRec);
+    if (sensorRec) {
+      return { i: sensorRec.i, n: sensorRec.n, r: sensorRec.r, t: sensorRec.t, v: sensorRec.v, a: sensorRec.a, ex: sensorRec.ex || [], _ref: sensorRec };
+    }
+    if (tempRec) return normalizeTempSensorForCard(tempRec);
+    return null;
   }
 
 
@@ -932,12 +966,15 @@
   function mergedSensorList() {
     const byId = new Map();
     for (const s of M.tempSensors) {
-      byId.set(String(s.i), { i: s.i, n: s.n, r: s.r, t: "temp", v: s.temp, u: s.u, a: 0, ex: [], bat: s.bat ?? null, _ref: s });
+      byId.set(String(s.i), normalizeTempSensorForCard(s));
     }
     // A multi-sensor may also be in M.tempSensors. Prefer its explicitly selected
     // sensor type so motion/contact/etc. is not reduced to a temperature card.
+    // Temp + humidity dual selection merges into one temperature-primary tile.
     for (const s of M.sensors) {
-      byId.set(String(s.i), { i: s.i, n: s.n, r: s.r, t: s.t, v: s.v, a: s.a, ex: s.ex || [], _ref: s });
+      const tempRec = M.tempSensors.find((x) => x.i === s.i);
+      if (tempRec && s.t === "humidity") byId.set(String(s.i), mergeTempHumidityForCard(tempRec, s));
+      else byId.set(String(s.i), { i: s.i, n: s.n, r: s.r, t: s.t, v: s.v, a: s.a, ex: s.ex || [], _ref: s });
     }
     // Valve controls take priority if a valve also exposes a sensor capability.
     for (const v of M.valves) byId.set(String(v.i), M.normalizeValveForCard(v));
@@ -1081,10 +1118,11 @@
   }
 
   function sensorExFooter(dev) {
-    const ex = (dev.ex || []).filter((e) => e.k !== "battery");
+    const exclude = dev.t === "temp" ? ["temperature"] : [];
+    const ex = sortSensorExForDisplay(dev.ex, exclude);
     if (!ex.length) return "";
     const parts = [];
-    for (const e of ex.slice(0, 2)) {
+    for (const e of ex.slice(0, 4)) {
       let txt = humanizeAttr(e.k);
       const v = e.v;
       if (v != null && v !== "") {
@@ -2626,6 +2664,7 @@
           return;
         }
         const s = M.tempSensors.find(x => x.i === Number(m.deviceId));
+        const sen = M.sensors.find(x => x.i === Number(m.deviceId));
         if (s) {
           const nm = String(m.name || "");
           if (nm === "temperature") {
@@ -2638,11 +2677,14 @@
           } else if (nm === "battery") {
             const n = Number(m.value);
             if (!isNaN(n)) s.bat = Math.round(n);
-          } else return;
+            if (sen) applySensorWsAttr(sen, m.name, m.value, m.unit);
+          } else if (sen) {
+            if (!applySensorWsAttr(sen, m.name, m.value, m.unit)) return;
+          } else if (!applyTempSensorWsAttr(s, m.name, m.value, m.unit)) return;
           if (currentCategory() === "sensors") refreshSensorsPopup();
+          else if (currentCategory() === "favorites") M.postCall("refreshFavoritesPopup");
           return;
         }
-        const sen = M.sensors.find(x => x.i === Number(m.deviceId));
         if (sen) {
           if (applySensorWsAttr(sen, m.name, m.value, m.unit)) {
             if (currentCategory() === "sensors") refreshSensorsPopup();
@@ -2989,5 +3031,5 @@
   })();
 
   if (globalThis.__MLD) globalThis.__MLD.updateQuickNavVisibility = updateQuickNavVisibility;
-  Object.assign(M, { makeShadeTile, updateShadeTile, updateFavoriteShadeTile, shadesListSignature, refreshBlindsPopup, renderBlindsPopup, toggleCeilingFan, stepCeilingFanSpeed, makeFanTile, updateFanTile, fansListSignature, refreshFansPopup, renderFansPopup, renderOutletsPopup, normalizeTempSensorForCard, makeMusicRow, updateFavoriteMusicRow, renderMusicPopup, renderHubModePopup, ensurePinPadPopup, showPinPadError, clearPinPadError, renderPinPadDots, appendPinDigit, backspacePinDigit, closePinPad, openPinPad, promptGarageOpenPin, promptUnlockPin, runHsmAction, appendHsmModeButtons, renderSecurityPopup, sendValveCmd, reconcileValve, sensorTypeOrder, sortSensorsInRoom, groupSensorsByRoom, groupRoomSensorsByType, mergedSensorList, sensorsPopupSignature, sensorTypesWithCounts, sensorMatchesFilter, syncSensorFilterBtn, syncSensorFilterChips, applySensorTypeFilter, buildSensorFilterBar, sensorBatteryPct, sensorBatteryLabel, sensorExFooter, applySensorCardState, makeSensorCard, makeFavoriteSensorCard, updateSensorCard, buildSensorRoomSection, renderSensorsPopup, refreshSensorsPopup, renderScenesPopup, favoritesPopupSignature, makeQuickTstatCard, updateQuickTstatCard, refreshFavoritesPopup, renderFavoritesPopup, thermostatsListSignature, refreshThermostatsPopup, renderThermostatsPopup, quickNavPopupHasContent, updateQuickNavVisibility, refreshQuickPopupIfOpen, openQuickPopup, closeQuickPopup, ensureTabView, setQuickBodyClass, currentBody, currentCategory, currentCategoryLabel, updateCurrentCategoryTitle, inTabView, updateTabActiveStates, showTab, closeCurrentView, setTabMode, resolveDrawerDom, setDrawerLabels, openDrawer, closeDrawer, toggleDrawer, setDrawerMode, closeConfirm, ensureConfirmPopup, confirmAction, tapAllOn, tapAllOff, collapsedIdSet, applyFilter, applyTabSearch, applySearch, sensorsCollapsedIdSet, sensorsCollapsedSet, persistSensorsCollapsed, allSensorRoomsCollapsed, expandAllSensorRooms, collapseAllSensorRooms, restoreSensorsCollapsed, collapsedSet, persistCollapsed, allRoomsCollapsed, updateExpandAllBtn, collapseAllRooms, expandAllRooms, restoreCollapsed, refresh, effectivePollInterval, startPolling, restartPolling, stopPolling, clearWsReconnectTimer, stopWS, pauseApp, resetUiOnResume, syncApp, resumeApp, startWS, scheduleReconnect, fetchAuthStatus, unlockDashboard, ensureDashboardGatePopup, openDashboardGate, closeDashboardGate, promptDashboardPassword, ensureDashboardAccess });
+  Object.assign(M, { makeShadeTile, updateShadeTile, updateFavoriteShadeTile, shadesListSignature, refreshBlindsPopup, renderBlindsPopup, toggleCeilingFan, stepCeilingFanSpeed, makeFanTile, updateFanTile, fansListSignature, refreshFansPopup, renderFansPopup, renderOutletsPopup, normalizeTempSensorForCard, sensorExEntry, mergeTempHumidityForCard, buildSensorCardDev, makeMusicRow, updateFavoriteMusicRow, renderMusicPopup, renderHubModePopup, ensurePinPadPopup, showPinPadError, clearPinPadError, renderPinPadDots, appendPinDigit, backspacePinDigit, closePinPad, openPinPad, promptGarageOpenPin, promptUnlockPin, runHsmAction, appendHsmModeButtons, renderSecurityPopup, sendValveCmd, reconcileValve, sensorTypeOrder, sortSensorsInRoom, groupSensorsByRoom, groupRoomSensorsByType, mergedSensorList, sensorsPopupSignature, sensorTypesWithCounts, sensorMatchesFilter, syncSensorFilterBtn, syncSensorFilterChips, applySensorTypeFilter, buildSensorFilterBar, sensorBatteryPct, sensorBatteryLabel, sensorExFooter, applySensorCardState, makeSensorCard, makeFavoriteSensorCard, updateSensorCard, buildSensorRoomSection, renderSensorsPopup, refreshSensorsPopup, renderScenesPopup, favoritesPopupSignature, makeQuickTstatCard, updateQuickTstatCard, refreshFavoritesPopup, renderFavoritesPopup, thermostatsListSignature, refreshThermostatsPopup, renderThermostatsPopup, quickNavPopupHasContent, updateQuickNavVisibility, refreshQuickPopupIfOpen, openQuickPopup, closeQuickPopup, ensureTabView, setQuickBodyClass, currentBody, currentCategory, currentCategoryLabel, updateCurrentCategoryTitle, inTabView, updateTabActiveStates, showTab, closeCurrentView, setTabMode, resolveDrawerDom, setDrawerLabels, openDrawer, closeDrawer, toggleDrawer, setDrawerMode, closeConfirm, ensureConfirmPopup, confirmAction, tapAllOn, tapAllOff, collapsedIdSet, applyFilter, applyTabSearch, applySearch, sensorsCollapsedIdSet, sensorsCollapsedSet, persistSensorsCollapsed, allSensorRoomsCollapsed, expandAllSensorRooms, collapseAllSensorRooms, restoreSensorsCollapsed, collapsedSet, persistCollapsed, allRoomsCollapsed, updateExpandAllBtn, collapseAllRooms, expandAllRooms, restoreCollapsed, refresh, effectivePollInterval, startPolling, restartPolling, stopPolling, clearWsReconnectTimer, stopWS, pauseApp, resetUiOnResume, syncApp, resumeApp, startWS, scheduleReconnect, fetchAuthStatus, unlockDashboard, ensureDashboardGatePopup, openDashboardGate, closeDashboardGate, promptDashboardPassword, ensureDashboardAccess });
 })();

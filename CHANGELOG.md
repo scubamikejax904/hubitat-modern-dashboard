@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.63
+
+- **Sensors:** multi-capability devices show one tile with the primary reading large
+  and up to four secondary readings (humidity, light level, pressure, CO₂, and more).
+- **Sensors:** devices in both Temperature and Humidity pickers merge into one
+  temperature-primary tile with humidity secondary.
+- **Sensors:** temperature-only selections surface other environmental readings when
+  the hardware reports them; live WebSocket updates cover secondary attributes.
+
 ## 0.2.62
 
 - **Ceiling fans:** better compatibility with more fan drivers — correct speed

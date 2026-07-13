@@ -1,4 +1,4 @@
-// Modern Dashboard v0.2.62
+// Modern Dashboard v0.2.63
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
@@ -38,7 +38,7 @@ def mainPage() {
             paragraph "<small><b>PWA:</b> use the cloud link below to install on your phone's home screen (standalone app icon).</small>"
             paragraph "<small><b>Scheduler:</b> create and manage schedules from the dashboard — including remotely — without logging into the Hubitat admin UI.</small>"
             paragraph "<small><b>Hub-only:</b> UI, API, and scheduler run entirely on your hub — no Maker API or third-party cloud.</small>"
-            paragraph "<small>Version 0.2.62 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
+            paragraph "<small>Version 0.2.63 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         section("Devices") {
             paragraph "<small>Select the devices you want on the dashboard. Rooms and layout are automatic based on your Hubitat room assignments.</small>"
@@ -77,7 +77,7 @@ def mainPage() {
             }
         }
         section("Other sensors") {
-            paragraph "<small>Select sensors to show in the Sensors popup. Multi-sensors may also be selected as temperature sensors or other dashboard devices; the richer sensor type is shown once in the Sensors view.</small>"
+            paragraph "<small>Select sensors to show in the Sensors popup. Multi-sensors may also be selected as temperature sensors or other dashboard devices. Devices selected as both temperature and humidity sensors appear once as a Temperature tile with humidity secondary; other overlaps use the richer sensor type once in the Sensors view.</small>"
             input "motionSensors", "capability.motionSensor", title: "Motion sensors",
                 multiple: true, required: false, showFilter: true, submitOnChange: true
             input "contactSensors", "capability.contactSensor", title: "Contact / door / window sensors",
@@ -239,9 +239,35 @@ def sensorTypeInputs() {
     ]
 }
 
-// Noisy / internal attributes to skip when building the generic fallback's ex list.
+// Noisy / internal attributes to skip when building ex[].
 def sensorSkipAttrs() {
-    return ["lastupdate","lastevent","epevent","devicewatch-devicestatus","checkinterval","status","name"] as Set
+    return [
+        "lastupdate", "lastevent", "epevent", "devicewatch-devicestatus", "checkinterval", "status", "name",
+        "switch", "power", "energy", "rssi", "lqi", "lastactivity", "datatype", "level", "healthstatus",
+        "tamper", "enrollment", "encap", "destinationendpoint", "cluster", "fccdeviceclass", "firmware",
+        "hardware", "software", "supportedthermostatmodes", "supportedfanmodes"
+    ] as Set
+}
+
+def sensorExtraAttrKey(nm) {
+    def n = nm?.toString()?.toLowerCase()
+    if (n == "relativehumidity") return "humidity"
+    return n
+}
+
+def sensorExtraStateEntry(d, nm) {
+    if (!nm) return null
+    def raw = null
+    def unit = null
+    try {
+        def st = d.currentState(nm)
+        raw = st?.value
+        unit = st?.unit
+    } catch (e) {}
+    if (raw == null) return null
+    def v = raw.toString()
+    if (v.isEmpty()) return null
+    return [k: sensorExtraAttrKey(nm), v: v, u: unit != null ? unit.toString() : null]
 }
 
 // Normalize a device input to a List (Hubitat may return a single DeviceWrapper).
@@ -277,46 +303,68 @@ def sensorRoomId(d, roomsList) {
     return null
 }
 
-// Build the ordered ex[] array of secondary attributes for a sensor.
-// alwaysEx forces inclusion of these keys first (battery), then up to `max` more.
-def sensorExtraAttrs(d, primaryAttr, int max) {
+// Build ex[]: battery when present (not counted toward maxNonBattery), then up to maxNonBattery other attrs.
+def sensorExtraAttrs(d, primaryAttr, int maxNonBattery) {
     def out = []
-    def states = null
-    try { states = d.currentStates } catch (e) { states = null }
-    if (states == null) return out
+    def primary = primaryAttr?.toString()?.toLowerCase()
+    def primaryKey = sensorExtraAttrKey(primary)
+    def skip = sensorSkipAttrs()
     def ordered = []
-    ordered << "battery"
-    ordered << "temperature"
-    ordered << "humidity"
-    // then any others present, sorted
+    for (nm in ["battery", "temperature", "humidity", "relativehumidity", "illuminance", "pressure", "co2", "carbonmonoxide"]) {
+        if (!ordered.contains(nm)) ordered << nm
+    }
     def present = []
     try {
-        for (st in states) {
+        for (st in d.currentStates) {
             def nm = st?.name?.toString()?.toLowerCase()
-            if (nm && nm != primaryAttr && !sensorSkipAttrs().contains(nm)) present << nm
+            if (!nm || skip.contains(nm)) continue
+            def key = sensorExtraAttrKey(nm)
+            if (key == primaryKey) continue
+            if (!ordered.contains(nm)) present << nm
         }
     } catch (e) {}
     for (nm in ((present as Set).sort())) {
         if (!ordered.contains(nm)) ordered << nm
     }
-    int added = 0
+    int addedNonBattery = 0
+    def seenKeys = [] as Set
     for (nm in ordered) {
-        if (added >= max) break
-        if (nm == primaryAttr) continue
-        def raw = null
-        def unit = null
-        try {
-            def st = d.currentState(nm)
-            raw = st?.value
-            unit = st?.unit
-        } catch (e) {}
-        if (raw == null) continue
-        def v = raw.toString()
-        if (v.isEmpty()) continue
-        out << [k: nm, v: v, u: unit != null ? unit.toString() : null]
-        added++
+        def key = sensorExtraAttrKey(nm)
+        if (key == primaryKey || seenKeys.contains(key)) continue
+        def entry = sensorExtraStateEntry(d, nm)
+        if (!entry) continue
+        if (key == "battery") {
+            out << entry
+            seenKeys << key
+            continue
+        }
+        if (addedNonBattery >= maxNonBattery) continue
+        out << entry
+        seenKeys << key
+        addedNonBattery++
     }
     return out
+}
+
+def sensorExMaxForType(t) {
+    return (t == "generic") ? 5 : 4
+}
+
+def appendExJsonArray(out, extras) {
+    out << ",\"ex\":["
+    boolean exFirst = true
+    for (ex in extras) {
+        if (!exFirst) out << ","; exFirst = false
+        out << "{\"k\":" << jsonStr(ex.k)
+        if (isNumberLike(ex.v)) {
+            out << ",\"v\":" << numOrNull(ex.v)
+        } else {
+            out << ",\"v\":" << jsonStr(ex.v)
+        }
+        out << ",\"u\":" << jsonStr(ex.u)
+        out << "}"
+    }
+    out << "]"
 }
 
 def audioControlFlags(d) {
@@ -851,12 +899,14 @@ def renderData() {
                 if (st?.unit) tempUnit = st.unit
             } catch (e) {}
             def bat = safeCurrent(d, "battery")
+            def extras = sensorExtraAttrs(d, "temperature", sensorExMaxForType("temp"))
             out << "{\"i\":" << d.id
             out << ",\"n\":" << jsonStr(d.displayName)
             out << ",\"r\":" << (rid == null ? "null" : rid.toString())
             out << ",\"temp\":" << numOrNull(temp)
             out << ",\"u\":" << jsonStr(tempUnit)
             out << ",\"bat\":" << numOrNull(bat)
+            appendExJsonArray(out, extras)
             out << "}"
         }
     }
@@ -1213,22 +1263,9 @@ def appendSensorJson(out, d, entry, roomsList) {
         out << ",\"v\":" << jsonStr(rawVal)
     }
     out << ",\"a\":" << aFlag
-    int exMax = (t == "generic") ? 3 : 2
-    def extras = sensorExtraAttrs(d, primaryAttr, exMax)
-    out << ",\"ex\":["
-    boolean exFirst = true
-    for (ex in extras) {
-        if (!exFirst) out << ","; exFirst = false
-        out << "{\"k\":" << jsonStr(ex.k)
-        if (isNumberLike(ex.v)) {
-            out << ",\"v\":" << numOrNull(ex.v)
-        } else {
-            out << ",\"v\":" << jsonStr(ex.v)
-        }
-        out << ",\"u\":" << jsonStr(ex.u)
-        out << "}"
-    }
-    out << "]}"
+    def extras = sensorExtraAttrs(d, primaryAttr, sensorExMaxForType(t))
+    appendExJsonArray(out, extras)
+    out << "}"
 }
 
 def resolvedDashboardName() {
@@ -1416,8 +1453,11 @@ def renderDevice() {
     if (s != null && senEntry == null && !hasControlRole) {
         try { s.refresh() } catch (e) {}
         def out = new StringBuilder()
+        def extras = sensorExtraAttrs(s, "temperature", sensorExMaxForType("temp"))
         out << "{\"i\":" << s.id
         out << ",\"temp\":" << numOrNull(safeCurrent(s, "temperature"))
+        out << ",\"bat\":" << numOrNull(safeCurrent(s, "battery"))
+        appendExJsonArray(out, extras)
         out << "}"
         return render(contentType: "application/json", data: withAuthJson(out.toString()), status: 200)
     }
