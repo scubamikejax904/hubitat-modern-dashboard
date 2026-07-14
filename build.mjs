@@ -96,12 +96,14 @@ function rewriteCodeSegment(segment, replaceIds) {
       "g"
     );
     // Rewrite bare ids to M.id, but leave object-literal keys alone
-    // (`{ foo: … }` / `, foo: …`). Ternaries (`? foo : bar`) must still rewrite.
+    // (`{ foo: … }` / `, foo: …`) and shorthand properties (`{ foo }`).
+    // Ternaries (`? foo : bar`) must still rewrite.
     out = out.replace(re, (match, offset, str) => {
       const after = str.slice(offset + match.length);
-      if (/^\s*:/.test(after)) {
-        const before = str.slice(0, offset);
-        if (/(?:\{|,)\s*$/.test(before)) return match;
+      const before = str.slice(0, offset);
+      if (/(?:\{|,)\s*$/.test(before)) {
+        if (/^\s*:/.test(after)) return match;
+        if (/^\s*[,}]/.test(after)) return match;
       }
       return `M.${match}`;
     });
@@ -390,6 +392,15 @@ function assertUploadBlobLimits() {
   }
 }
 
+function assertJsSyntax(label, path) {
+  try {
+    execSync(`node --check "${path}"`, { stdio: "pipe" });
+  } catch (e) {
+    const detail = e?.stderr?.toString().trim() || e?.message || "syntax error";
+    throw new Error(`${label} has invalid JavaScript:\n${detail}`);
+  }
+}
+
 function fileManagerAssetList() {
   return FILE_MANAGER_ASSETS.map((a) => `   - ${a.name}`).join("\n");
 }
@@ -454,6 +465,9 @@ writeFileSync(join(upload, "mld-app-post.js"), part2Out);
 writeFileSync(join(upload, "mld-app-post2.js"), part3Out);
 writeFileSync(join(upload, "mld-app-post3.js"), part4Out);
 
+for (const name of ["mld-app-pre.js", "mld-app.js", "mld-app-core.js", "mld-app-post.js", "mld-app-post2.js", "mld-app-post3.js"]) {
+  assertJsSyntax(name, join(upload, name));
+}
 for (const name of ["mld-app-pre.js", "mld-sw.js"]) {
   const content = readFileSync(join(upload, name), "utf8");
   assertUnderHubLimit(name, content);

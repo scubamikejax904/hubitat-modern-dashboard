@@ -1222,7 +1222,7 @@
       }
     }
 
-    // a room is shown if it has lights, M.outlets (when in M.rooms), M.thermostats, or temp M.sensors
+    // a room is shown if it has lights, M.outlets (when in M.rooms), thermostats, or temp M.sensors
     const hasContent = (rid) => {
       const key = normalizeRoomId(rid);
       const hasOutlets = M.outletsInLightsRooms() && (outletGroups.get(key)?.length || 0) > 0;

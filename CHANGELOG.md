@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.67
+
+- **Deploy fix:** build splitter no longer rewrites object shorthand properties
+  (`{ foo }`), which broke **All fans** / **All blinds** bulk controls and other
+  chunk code; build now runs `node --check` on every JS chunk.
+
 ## 0.2.66
 
 - **Fans:** **All fans** top-bar control on the Fans tab — multi-select target menu,
