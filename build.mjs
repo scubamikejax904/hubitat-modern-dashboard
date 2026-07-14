@@ -88,7 +88,7 @@ function parseTopLevelIds(lines) {
   return [...new Set(ids)];
 }
 
-function objectLiteralOpenerAt(str, offset) {
+function listContextOpener(str, offset) {
   let depth = 0;
   for (let i = offset - 1; i >= 0; i--) {
     const ch = str[i];
@@ -107,6 +107,35 @@ function inObjectValuePosition(before) {
   return propPrefix.includes(":");
 }
 
+function assertNoBareExportRefs(label, code, replaceIds) {
+  const localDecl = new Set();
+  for (const m of code.matchAll(/(?:const|let|var|function|async function)\s+([A-Za-z_$][\w$]*)/g)) {
+    localDecl.add(m[1]);
+  }
+  const offenders = [];
+  for (const id of replaceIds) {
+    if (localDecl.has(id)) continue;
+    const re = new RegExp(`(?<!(?:const|let|var) )(?<![.\\w])${id.replace(/\$/g, "\\$")}(?![\\w$])`, "g");
+    for (const m of code.matchAll(re)) {
+      const offset = m.index;
+      const after = code.slice(offset + id.length);
+      const before = code.slice(0, offset);
+      const inObjectLiteral =
+        listContextOpener(code, offset) === "{" && /(?:\{|,)\s*$/.test(before);
+      if (inObjectLiteral && /^\s*:/.test(after)) continue;
+      if (inObjectLiteral && /^\s*[,}]/.test(after) && !inObjectValuePosition(before)) continue;
+      offenders.push(id);
+      break;
+    }
+  }
+  if (offenders.length) {
+    throw new Error(
+      `${label} still has bare export refs (need M. prefix): ${offenders.sort().slice(0, 12).join(", ")}` +
+        (offenders.length > 12 ? ` (+${offenders.length - 12} more)` : "")
+    );
+  }
+}
+
 function rewriteCodeSegment(segment, replaceIds) {
   let out = segment;
   for (const id of replaceIds) {
@@ -120,8 +149,9 @@ function rewriteCodeSegment(segment, replaceIds) {
     out = out.replace(re, (match, offset, str) => {
       const after = str.slice(offset + match.length);
       const before = str.slice(0, offset);
-      const opener = objectLiteralOpenerAt(str, offset);
-      if (opener === "{") {
+      const inObjectLiteral =
+        listContextOpener(str, offset) === "{" && /(?:\{|,)\s*$/.test(before);
+      if (inObjectLiteral) {
         if (/^\s*:/.test(after)) return match;
         if (/^\s*[,}]/.test(after) && !inObjectValuePosition(before)) {
           return `${match}: M.${match}`;
@@ -393,6 +423,8 @@ function splitAppJs(srcPath) {
     exportIdsForPart4,
     "upload mld-app-post2.js before mld-app-post3.js"
   );
+
+  assertNoBareExportRefs("mld-app-post.js", part2Out, ["activeTab", "tabMode", "tabViewEl", "quickPopupOpenType"]);
 
   return { part1Out, partCoreOut, part2Out, part3Out, part4Out };
 }

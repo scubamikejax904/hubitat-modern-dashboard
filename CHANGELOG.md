@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.69
+
+- **Deploy fix:** build now asserts split JS chunks have no bare cross-chunk
+  references; fixes `activeTab` in quick-popup width sync (`M.activeTab`).
+
 ## 0.2.68
 
 - **Deploy fix:** JS chunk rewriter now expands object shorthand (`{ foo }`) to
