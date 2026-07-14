@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.71
+
+- **Blinds:** support Hubitat's built-in **Virtual Shade** driver — separate picker,
+  position from `level` when `position` is absent, and open/close/set/stop commands
+  fall back to switch/level drivers when Window Shade commands aren't available.
+
 ## 0.2.70
 
 - **Thermostats tab:** fix +/- on quick thermostat cards — setpoint changes no longer
