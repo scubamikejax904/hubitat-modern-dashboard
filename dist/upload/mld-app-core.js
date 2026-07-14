@@ -2022,20 +2022,20 @@
     if (!M.fanMasterSession) return;
     const allIds = M.fanMasterSession.allIds || M.ceilingFans.map((f) => f.i);
     M.fanMasterSession.ids = selectedIds.filter((id) => allIds.includes(id));
-    M.publishMld({ fanMasterSession });
+    M.publishMld({ fanMasterSession: M.fanMasterSession });
     updateFanMasterHead();
     renderFanMasterBody();
-    syncMasterTargetMenu(M.fanMasterTargetState, fanMasterSession, "fanId");
+    syncMasterTargetMenu(M.fanMasterTargetState, M.fanMasterSession, "fanId");
   }
 
   function applyShadeMasterSelection(selectedIds) {
     if (!M.shadeMasterSession) return;
     const allIds = M.shadeMasterSession.allIds || M.windowShades.map((s) => s.i);
     M.shadeMasterSession.ids = selectedIds.filter((id) => allIds.includes(id));
-    M.publishMld({ shadeMasterSession });
+    M.publishMld({ shadeMasterSession: M.shadeMasterSession });
     updateShadeMasterHead();
     renderShadeMasterBody();
-    syncMasterTargetMenu(M.shadeMasterTargetState, shadeMasterSession, "shadeId");
+    syncMasterTargetMenu(M.shadeMasterTargetState, M.shadeMasterSession, "shadeId");
   }
 
   function updateFanMasterHead() {
@@ -2043,7 +2043,7 @@
     if (!popup) return;
     updateMasterTargetButton(
       popup._targetBtn,
-      fanMasterSession,
+      M.fanMasterSession,
       { all: "All fans", unit: "fans", one: "fan" },
       (id) => M.ceilingFans.find((f) => f.i === id)?.n
     );
@@ -2062,7 +2062,7 @@
     if (!popup) return;
     updateMasterTargetButton(
       popup._targetBtn,
-      shadeMasterSession,
+      M.shadeMasterSession,
       { all: "All blinds", unit: "blinds", one: "blind" },
       (id) => M.windowShades.find((s) => s.i === id)?.n
     );
@@ -2230,7 +2230,7 @@
     if (!M.ceilingFans.length) return;
     const ids = M.ceilingFans.map((f) => f.i);
     M.fanMasterSession = { ids: ids.slice(), allIds: ids.slice() };
-    M.publishMld({ fanMasterSession });
+    M.publishMld({ fanMasterSession: M.fanMasterSession });
     renderFanMasterBody();
     updateFanMasterHead();
     const popup = ensureFanMasterPopup();
@@ -2375,7 +2375,7 @@
     if (!M.windowShades.length) return;
     const ids = M.windowShades.map((s) => s.i);
     M.shadeMasterSession = { ids: ids.slice(), allIds: ids.slice() };
-    M.publishMld({ shadeMasterSession });
+    M.publishMld({ shadeMasterSession: M.shadeMasterSession });
     renderShadeMasterBody();
     updateShadeMasterHead();
     const popup = ensureShadeMasterPopup();

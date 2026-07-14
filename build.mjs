@@ -88,6 +88,25 @@ function parseTopLevelIds(lines) {
   return [...new Set(ids)];
 }
 
+function objectLiteralOpenerAt(str, offset) {
+  let depth = 0;
+  for (let i = offset - 1; i >= 0; i--) {
+    const ch = str[i];
+    if (ch === "}" || ch === ")") depth++;
+    else if (ch === "{" || ch === "(") {
+      if (depth === 0) return ch;
+      depth--;
+    }
+  }
+  return null;
+}
+
+function inObjectValuePosition(before) {
+  const propStart = Math.max(before.lastIndexOf("{"), before.lastIndexOf(","));
+  const propPrefix = before.slice(propStart + 1);
+  return propPrefix.includes(":");
+}
+
 function rewriteCodeSegment(segment, replaceIds) {
   let out = segment;
   for (const id of replaceIds) {
@@ -96,14 +115,17 @@ function rewriteCodeSegment(segment, replaceIds) {
       "g"
     );
     // Rewrite bare ids to M.id, but leave object-literal keys alone
-    // (`{ foo: … }` / `, foo: …`) and shorthand properties (`{ foo }`).
+    // (`{ foo: … }` / `, foo: …`). Expand shorthand (`{ foo }`) to `{ foo: M.foo }`.
     // Ternaries (`? foo : bar`) must still rewrite.
     out = out.replace(re, (match, offset, str) => {
       const after = str.slice(offset + match.length);
       const before = str.slice(0, offset);
-      if (/(?:\{|,)\s*$/.test(before)) {
+      const opener = objectLiteralOpenerAt(str, offset);
+      if (opener === "{") {
         if (/^\s*:/.test(after)) return match;
-        if (/^\s*[,}]/.test(after)) return match;
+        if (/^\s*[,}]/.test(after) && !inObjectValuePosition(before)) {
+          return `${match}: M.${match}`;
+        }
       }
       return `M.${match}`;
     });

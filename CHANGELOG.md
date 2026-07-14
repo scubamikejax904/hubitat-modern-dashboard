@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.68
+
+- **Deploy fix:** JS chunk rewriter now expands object shorthand (`{ foo }`) to
+  `{ foo: M.foo }` so cross-chunk references resolve correctly in **All fans** /
+  **All blinds** and other split code.
+
 ## 0.2.67
 
 - **Deploy fix:** build splitter no longer rewrites object shorthand properties

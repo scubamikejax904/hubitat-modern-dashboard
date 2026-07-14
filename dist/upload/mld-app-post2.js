@@ -2116,7 +2116,7 @@
   }
 
   if (M.ALL_ON_BTN && M.ALL_ON_TRACK && M.ALL_ON_RESTORE_BTN) {
-    M.attachRoomSlideAction(M.ALL_ON_TRACK, ALL_ON_BTN, ALL_ON_RESTORE_BTN, {
+    M.attachRoomSlideAction(M.ALL_ON_TRACK, M.ALL_ON_BTN, M.ALL_ON_RESTORE_BTN, {
       direction: "right",
       clickFallback: true,
       onTap: () => { void tapAllOn(); },
@@ -2131,7 +2131,7 @@
     M.ALL_ON_BTN.addEventListener("click", () => { void tapAllOn(); });
   }
   if (M.ALL_OFF_BTN && M.ALL_OFF_TRACK && M.ALL_OFF_SAVE_BTN) {
-    M.attachRoomSlideAction(M.ALL_OFF_TRACK, ALL_OFF_BTN, ALL_OFF_SAVE_BTN, {
+    M.attachRoomSlideAction(M.ALL_OFF_TRACK, M.ALL_OFF_BTN, M.ALL_OFF_SAVE_BTN, {
       direction: "left",
       clickFallback: true,
       onTap: () => { void tapAllOff(); },
