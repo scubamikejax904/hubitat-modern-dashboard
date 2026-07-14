@@ -949,11 +949,11 @@
     return idx >= 0 ? idx : SENSOR_TYPE_ORDER.length;
   }
 
-  function sortSensorsInRoom(devs) {
+  function sortSensorsInRoom(devs, roomName) {
     return devs.slice().sort((a, b) => {
       const ta = sensorTypeOrder(a.t) - sensorTypeOrder(b.t);
       if (ta !== 0) return ta;
-      return String(a.n || "").localeCompare(String(b.n || ""), undefined, { sensitivity: "base" });
+      return compareDevicesInRoom(a, b, roomName);
     });
   }
 
@@ -1218,7 +1218,13 @@
     top.appendChild(pill);
     const hero = ce("div", "sensor-card-value");
     const name = ce("div", "sensor-card-name");
-    name.textContent = dev.n || ("Sensor " + dev.i);
+    const fullName = dev.n || ("Sensor " + dev.i);
+    const roomName = dev.r != null && dev.r !== -1 ? M.roomMap.get(dev.r) : null;
+    const displayName = context === "sensors"
+      ? ((dev.n ? stripRoomPrefix(dev.n, roomName) : null) || fullName)
+      : fullName;
+    name.textContent = displayName;
+    if (dev.n && displayName !== dev.n) name.title = dev.n;
     const metaRow = ce("div", "sensor-card-meta");
     metaRow.textContent = context === "sensors"
       ? sensorTypeLabel(dev.t)
@@ -1317,7 +1323,7 @@
     card.appendChild(head);
     card.appendChild(body);
 
-    const sorted = sortSensorsInRoom(devs);
+    const sorted = sortSensorsInRoom(devs, name);
     const typeGroups = groupRoomSensorsByType(sorted);
     for (const tg of typeGroups) {
       if (typeGroups.length > 1) {
@@ -1728,6 +1734,8 @@
     if (M.colorSession) M.closeColorPopup(true);
     if (M.tstatSession) M.closeTstatPopup();
     M.closeMusicMasterPopup();
+    M.closeFanMasterPopup();
+    M.closeShadeMasterPopup();
     const popup = M.ensureQuickPopup();
     M.syncQuickPopupRef(popup);
     M.syncQuickPopupWidth(popup, id);
@@ -1853,6 +1861,8 @@
     if (M.colorSession) M.closeColorPopup(true);
     if (M.tstatSession) M.closeTstatPopup();
     if (M.musicMasterPopup && M.musicMasterPopup.classList.contains("open")) M.closeMusicMasterPopup();
+    if (M.fanMasterPopup && M.fanMasterPopup.classList.contains("open")) M.closeFanMasterPopup();
+    if (M.shadeMasterPopup && M.shadeMasterPopup.classList.contains("open")) M.closeShadeMasterPopup();
     if (M.quickPopup && M.quickPopup.classList.contains("open")) closeQuickPopup();
     const tabChanged = id !== M.activeTab;
     if (tabChanged && M.SEARCH_EL) {
@@ -1871,6 +1881,8 @@
     else if (M.ALL_OFF_BTN) M.ALL_OFF_BTN.hidden = nonLights;
     if (M.CENTRAL_TSTAT_BTN) M.CENTRAL_TSTAT_BTN.hidden = !(M.tabMode && id === "thermostats");
     if (M.CENTRAL_MUSIC_BTN) M.CENTRAL_MUSIC_BTN.hidden = !(M.tabMode && id === "music");
+    if (M.CENTRAL_BLINDS_BTN) M.CENTRAL_BLINDS_BTN.hidden = !(M.tabMode && id === "blinds");
+    if (M.CENTRAL_FAN_BTN) M.CENTRAL_FAN_BTN.hidden = !(M.tabMode && id === "fans");
     if (M.SEARCH_EL) M.SEARCH_EL.placeholder = nonLights ? "Search " + (M.TAB_LABELS[id] || "items") : "Search lights or rooms";
     updateTabActiveStates();
     if (nonLights) {
@@ -1914,6 +1926,8 @@
       else if (M.ALL_OFF_BTN) M.ALL_OFF_BTN.hidden = false;
       if (M.CENTRAL_TSTAT_BTN) M.CENTRAL_TSTAT_BTN.hidden = true;
       if (M.CENTRAL_MUSIC_BTN) M.CENTRAL_MUSIC_BTN.hidden = true;
+      if (M.CENTRAL_BLINDS_BTN) M.CENTRAL_BLINDS_BTN.hidden = true;
+      if (M.CENTRAL_FAN_BTN) M.CENTRAL_FAN_BTN.hidden = true;
       if (M.SEARCH_EL) M.SEARCH_EL.placeholder = "Search lights or rooms";
     } else {
       showTab("lights");
@@ -2778,6 +2792,20 @@
     M.CENTRAL_MUSIC_BTN.addEventListener("click", () => {
       M.hapticTap();
       M.openMusicMasterPopup();
+    });
+  }
+  if (M.CENTRAL_BLINDS_BTN) {
+    M.CENTRAL_BLINDS_BTN.innerHTML = CENTRAL_BLINDS_SVG + '<span>All blinds</span>';
+    M.CENTRAL_BLINDS_BTN.addEventListener("click", () => {
+      M.hapticTap();
+      M.openShadeMasterPopup();
+    });
+  }
+  if (M.CENTRAL_FAN_BTN) {
+    M.CENTRAL_FAN_BTN.innerHTML = CENTRAL_FANS_SVG + '<span>All fans</span>';
+    M.CENTRAL_FAN_BTN.addEventListener("click", () => {
+      M.hapticTap();
+      M.openFanMasterPopup();
     });
   }
   if (M.tabMode) { ensureTabView(); updateTabActiveStates(); }

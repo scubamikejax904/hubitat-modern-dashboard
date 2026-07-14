@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.66
+
+- **Fans:** **All fans** top-bar control on the Fans tab — multi-select target menu,
+  then turn selected fans on/off or set a common speed.
+- **Blinds:** **All blinds** top-bar control on the Blinds tab — multi-select target
+  menu, then open, close, or set position for the selection.
+- **Docs:** HPM install instructions updated — **Modern Dashboard** is in the default
+  Hubitat Package Manager repository (no custom repo URL required).
+- **Docs:** File Manager asset count corrected to 12 files (`mld-app-core.js`);
+  scheduler and plain-switch descriptions aligned with current app behavior.
+
 ## 0.2.65
 
 - **Sensors:** filter chips count merged tiles in every matching category — for

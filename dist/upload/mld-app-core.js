@@ -1634,6 +1634,8 @@
     closeTstatPopup();
     if (M.colorSession) closeColorPopup(false);
     closeMusicMasterPopup();
+    closeFanMasterPopup();
+    closeShadeMasterPopup();
     if (!M.thermostats.length) return;
     const ids = M.thermostats.map((t) => t.i);
     const first = M.thermostats[0];
@@ -1662,6 +1664,8 @@
     closeTstatPopup();
     if (M.colorSession) closeColorPopup(false);
     closeMusicMasterPopup();
+    closeFanMasterPopup();
+    closeShadeMasterPopup();
     const roomKey = normalizeRoomId(rid);
     const list = M.thermoByRoom.get(roomKey) || [];
     if (!list.length) return;
@@ -1696,6 +1700,8 @@
     closeTstatPopup();
     if (M.colorSession) closeColorPopup(false);
     closeMusicMasterPopup();
+    closeFanMasterPopup();
+    closeShadeMasterPopup();
     const t = M.thermostats.find((x) => x.i === tstatId);
     if (!t) return;
     M.tstatSession = {
@@ -1819,6 +1825,8 @@
     M.cancelAllSlideGestures();
     closeTstatPopup();
     if (M.colorSession) closeColorPopup(false);
+    closeFanMasterPopup();
+    closeShadeMasterPopup();
     M.postCall("closeQuickPopup");
     if (!M.music.length) return;
     renderMusicMasterBody();
@@ -1833,6 +1841,556 @@
     M.musicMasterPopup.setAttribute("hidden", "");
     M.musicMasterPopup.classList.remove("open");
     M.publishMld({ musicMasterPopup: null });
+  }
+
+  function closeMasterTargetMenu(state) {
+    if (state.cleanup) {
+      state.cleanup();
+      state.cleanup = null;
+    }
+    if (state.menu) {
+      state.menu.remove();
+      state.menu = null;
+    }
+    state.anchor = null;
+  }
+
+  function repositionMasterTargetMenu(state) {
+    const menu = state.menu;
+    const anchorBtn = state.anchor;
+    if (!menu || !anchorBtn?.isConnected) return;
+    const rect = anchorBtn.getBoundingClientRect();
+    const menuW = menu.offsetWidth;
+    const menuH = menu.offsetHeight;
+    let top = rect.bottom + 6;
+    if (top + menuH > window.innerHeight - 8) top = rect.top - menuH - 6;
+    let left = rect.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - menuW - 8));
+    menu.style.top = top + "px";
+    menu.style.left = left + "px";
+  }
+
+  function updateMasterTargetButton(btn, session, labels, getDeviceName) {
+    if (!btn) return;
+    if (!session) {
+      btn.hidden = true;
+      return;
+    }
+    btn.hidden = false;
+    const labelEl = btn.querySelector(".tstat-target-btn-label");
+    const allCount = (session.allIds || []).length;
+    const selCount = session.ids.length;
+    let label;
+    if (selCount === 0) label = "No " + labels.unit + " selected";
+    else if (selCount === allCount) label = labels.all + " (" + allCount + ")";
+    else if (selCount === 1) label = getDeviceName(session.ids[0]) || ("1 " + labels.one);
+    else label = selCount + " of " + allCount + " " + labels.unit;
+    if (labelEl) labelEl.textContent = label;
+    btn.setAttribute("aria-label", "Choose " + labels.unit + " to control: " + label);
+  }
+
+  function syncMasterTargetMenu(state, session, datasetKey) {
+    if (!state.menu || !session) return;
+    const allIds = session.allIds || [];
+    const selectedSet = new Set(session.ids);
+    const allSelected = allIds.length > 0 && allIds.every((id) => selectedSet.has(id));
+    const selectAllBtn = state.menu.querySelector(".tstat-target-all");
+    if (selectAllBtn) {
+      selectAllBtn.classList.toggle("active", allSelected);
+      selectAllBtn.setAttribute("aria-selected", allSelected ? "true" : "false");
+    }
+    for (const b of state.menu.querySelectorAll(".tstat-target-opt:not(.tstat-target-all)")) {
+      const id = Number(b.dataset[datasetKey]);
+      const on = selectedSet.has(id);
+      b.classList.toggle("active", on);
+      if (on) b.setAttribute("aria-selected", "true");
+      else b.removeAttribute("aria-selected");
+    }
+  }
+
+  function openMasterTargetMenu(state, anchorBtn, config) {
+    closeMasterTargetMenu(state);
+    const session = config.getSession();
+    if (!session) return;
+
+    const menu = ce("div", "tstat-target-menu");
+    menu.setAttribute("role", "listbox");
+    menu.setAttribute("aria-multiselectable", "true");
+
+    const allIds = session.allIds || [];
+    const selectedSet = new Set(session.ids);
+    const allSelected = allIds.length > 0 && allIds.every((id) => selectedSet.has(id));
+
+    const selectAllBtn = ce("button", "tstat-target-opt tstat-target-all");
+    selectAllBtn.type = "button";
+    selectAllBtn.setAttribute("role", "option");
+    const selectAllCheck = ce("span", "tstat-target-check");
+    const selectAllInfo = ce("span", "tstat-target-info");
+    const selectAllName = ce("span", "tstat-target-name");
+    selectAllName.textContent = "Select all";
+    selectAllInfo.appendChild(selectAllName);
+    selectAllBtn.appendChild(selectAllCheck);
+    selectAllBtn.appendChild(selectAllInfo);
+    if (allSelected) {
+      selectAllBtn.classList.add("active");
+      selectAllBtn.setAttribute("aria-selected", "true");
+    }
+    selectAllBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      hapticTap();
+      const currentSelected = new Set(session.ids);
+      const currentlyAll = allIds.length > 0 && allIds.every((id) => currentSelected.has(id));
+      config.onApply(currentlyAll ? [] : allIds.slice());
+    });
+    menu.appendChild(selectAllBtn);
+
+    for (const dev of config.getPool()) {
+      const b = ce("button", "tstat-target-opt");
+      b.type = "button";
+      b.setAttribute("role", "option");
+      b.dataset[config.datasetKey] = String(dev.i);
+      const check = ce("span", "tstat-target-check");
+      const info = ce("span", "tstat-target-info");
+      const name = ce("span", "tstat-target-name");
+      name.textContent = dev.n || (config.deviceFallback + " " + dev.i);
+      const room = ce("span", "tstat-target-room");
+      room.textContent = M.postCall("roomLabel", dev.r) || String(dev.r ?? "");
+      info.appendChild(name);
+      info.appendChild(room);
+      b.appendChild(check);
+      b.appendChild(info);
+      if (selectedSet.has(dev.i)) {
+        b.classList.add("active");
+        b.setAttribute("aria-selected", "true");
+      }
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        hapticTap();
+        const next = new Set(session.ids);
+        if (next.has(dev.i)) next.delete(dev.i);
+        else next.add(dev.i);
+        config.onApply([...next]);
+      });
+      menu.appendChild(b);
+    }
+
+    document.body.appendChild(menu);
+    state.menu = menu;
+    state.anchor = anchorBtn;
+    repositionMasterTargetMenu(state);
+    anchorBtn.setAttribute("aria-expanded", "true");
+
+    const onOutside = (e) => {
+      if (menu.contains(e.target) || anchorBtn.contains(e.target)) return;
+      if (config.onCloseMenu) config.onCloseMenu();
+      else closeMasterTargetMenu(state);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        if (config.onCloseMenu) config.onCloseMenu();
+        else closeMasterTargetMenu(state);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener("click", onOutside);
+      document.addEventListener("keydown", onKey);
+    }, 0);
+
+    state.cleanup = () => {
+      document.removeEventListener("click", onOutside);
+      document.removeEventListener("keydown", onKey);
+      anchorBtn.setAttribute("aria-expanded", "false");
+      state.anchor = null;
+    };
+  }
+
+  function closeFanMasterTargetMenu() {
+    closeMasterTargetMenu(M.fanMasterTargetState);
+    M.fanMasterTargetMenu = null;
+    M.fanMasterTargetMenuAnchor = null;
+    M.fanMasterTargetMenuCleanup = null;
+  }
+
+  function closeShadeMasterTargetMenu() {
+    closeMasterTargetMenu(M.shadeMasterTargetState);
+    M.shadeMasterTargetMenu = null;
+    M.shadeMasterTargetMenuAnchor = null;
+    M.shadeMasterTargetMenuCleanup = null;
+  }
+
+  function applyFanMasterSelection(selectedIds) {
+    if (!M.fanMasterSession) return;
+    const allIds = M.fanMasterSession.allIds || M.ceilingFans.map((f) => f.i);
+    M.fanMasterSession.ids = selectedIds.filter((id) => allIds.includes(id));
+    M.publishMld({ M.fanMasterSession });
+    updateFanMasterHead();
+    renderFanMasterBody();
+    syncMasterTargetMenu(M.fanMasterTargetState, M.fanMasterSession, "fanId");
+  }
+
+  function applyShadeMasterSelection(selectedIds) {
+    if (!M.shadeMasterSession) return;
+    const allIds = M.shadeMasterSession.allIds || M.windowShades.map((s) => s.i);
+    M.shadeMasterSession.ids = selectedIds.filter((id) => allIds.includes(id));
+    M.publishMld({ M.shadeMasterSession });
+    updateShadeMasterHead();
+    renderShadeMasterBody();
+    syncMasterTargetMenu(M.shadeMasterTargetState, M.shadeMasterSession, "shadeId");
+  }
+
+  function updateFanMasterHead() {
+    const popup = M.fanMasterPopup;
+    if (!popup) return;
+    updateMasterTargetButton(
+      popup._targetBtn,
+      M.fanMasterSession,
+      { all: "All fans", unit: "fans", one: "fan" },
+      (id) => M.ceilingFans.find((f) => f.i === id)?.n
+    );
+    const favBtn = popup._favBtn;
+    if (!favBtn) return;
+    if (!M.fanMasterSession?.ids?.length || M.fanMasterSession.ids.length !== 1 || !M.isFavoriteableDeviceId(M.fanMasterSession.ids[0])) {
+      favBtn.hidden = true;
+      return;
+    }
+    favBtn.hidden = false;
+    M.syncFavButton(favBtn, M.fanMasterSession.ids[0]);
+  }
+
+  function updateShadeMasterHead() {
+    const popup = M.shadeMasterPopup;
+    if (!popup) return;
+    updateMasterTargetButton(
+      popup._targetBtn,
+      M.shadeMasterSession,
+      { all: "All blinds", unit: "blinds", one: "blind" },
+      (id) => M.windowShades.find((s) => s.i === id)?.n
+    );
+    const favBtn = popup._favBtn;
+    if (!favBtn) return;
+    if (!M.shadeMasterSession?.ids?.length || M.shadeMasterSession.ids.length !== 1 || !M.isFavoriteableDeviceId(M.shadeMasterSession.ids[0])) {
+      favBtn.hidden = true;
+      return;
+    }
+    favBtn.hidden = false;
+    M.syncFavButton(favBtn, M.shadeMasterSession.ids[0]);
+  }
+
+  function openFanMasterTargetMenu(anchorBtn) {
+    closeFanMasterTargetMenu();
+    if (!M.fanMasterSession) return;
+    openMasterTargetMenu(M.fanMasterTargetState, anchorBtn, {
+      getSession: () => M.fanMasterSession,
+      onApply: applyFanMasterSelection,
+      getPool: () => M.postCall("sortByRoomThenFullName", M.ceilingFans) || M.ceilingFans.slice(),
+      datasetKey: "fanId",
+      deviceFallback: "Fan",
+      onCloseMenu: closeFanMasterTargetMenu,
+    });
+    M.fanMasterTargetMenu = M.fanMasterTargetState.menu;
+    M.fanMasterTargetMenuAnchor = M.fanMasterTargetState.anchor;
+    M.fanMasterTargetMenuCleanup = M.fanMasterTargetState.cleanup;
+  }
+
+  function openShadeMasterTargetMenu(anchorBtn) {
+    closeShadeMasterTargetMenu();
+    if (!M.shadeMasterSession) return;
+    openMasterTargetMenu(M.shadeMasterTargetState, anchorBtn, {
+      getSession: () => M.shadeMasterSession,
+      onApply: applyShadeMasterSelection,
+      getPool: () => M.postCall("sortByRoomThenFullName", M.windowShades) || M.windowShades.slice(),
+      datasetKey: "shadeId",
+      deviceFallback: "Shade",
+      onCloseMenu: closeShadeMasterTargetMenu,
+    });
+    M.shadeMasterTargetMenu = M.shadeMasterTargetState.menu;
+    M.shadeMasterTargetMenuAnchor = M.shadeMasterTargetState.anchor;
+    M.shadeMasterTargetMenuCleanup = M.shadeMasterTargetState.cleanup;
+  }
+
+  function ensureFanMasterPopup() {
+    if (M.fanMasterPopup) return M.fanMasterPopup;
+    const popup = ce("div", "fan-master-popup");
+    popup.hidden = true;
+    popup.setAttribute("role", "dialog");
+    popup.setAttribute("aria-modal", "true");
+    popup.setAttribute("aria-label", "All fans");
+
+    const panel = ce("div", "fan-master-panel");
+    const head = ce("div", "fan-master-head");
+    const leading = ce("div", "fan-master-head-leading");
+    const title = ce("div", "fan-master-title");
+    title.textContent = "All fans";
+    const targetBtn = ce("button", "tstat-target-btn");
+    targetBtn.type = "button";
+    targetBtn.setAttribute("aria-haspopup", "listbox");
+    targetBtn.setAttribute("aria-expanded", "false");
+    const targetLabel = ce("span", "tstat-target-btn-label");
+    const targetCaret = ce("span", "tstat-target-btn-caret");
+    targetCaret.setAttribute("aria-hidden", "true");
+    targetCaret.textContent = "\u25be";
+    targetBtn.appendChild(targetLabel);
+    targetBtn.appendChild(targetCaret);
+    targetBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      hapticTap();
+      if (M.fanMasterTargetMenu) closeFanMasterTargetMenu();
+      else openFanMasterTargetMenu(targetBtn);
+    });
+    const favBtn = ce("button", "tstat-fav");
+    favBtn.type = "button";
+    favBtn.hidden = true;
+    favBtn.innerHTML = FAVORITES_SVG;
+    favBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (M.fanMasterSession?.ids?.length !== 1) return;
+      const id = M.fanMasterSession.ids[0];
+      if (id == null || !M.isFavoriteableDeviceId(id)) return;
+      hapticTap();
+      M.postCall("toggleFavorite", id);
+    });
+    const closeBtn = ce("button", "fan-master-close");
+    closeBtn.type = "button";
+    closeBtn.setAttribute("aria-label", "Close");
+    closeBtn.textContent = "\u00d7";
+    leading.appendChild(title);
+    leading.appendChild(targetBtn);
+    leading.appendChild(favBtn);
+    head.appendChild(leading);
+    head.appendChild(closeBtn);
+
+    const body = ce("div", "fan-master-body");
+    panel.appendChild(head);
+    panel.appendChild(body);
+    popup.appendChild(panel);
+    M.appendPopup(popup);
+
+    M.bindPopupDismiss(popup, panel, closeBtn, closeFanMasterPopup);
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" || !popup.classList.contains("open")) return;
+      if (M.fanMasterTargetMenu) { closeFanMasterTargetMenu(); return; }
+      closeFanMasterPopup();
+    });
+
+    popup._body = body;
+    popup._title = title;
+    popup._targetBtn = targetBtn;
+    popup._favBtn = favBtn;
+    M.fanMasterPopup = popup;
+    return popup;
+  }
+
+  function renderFanMasterBody() {
+    const popup = ensureFanMasterPopup();
+    const body = popup._body;
+    body.innerHTML = "";
+    const selectedIds = new Set(M.fanMasterSession?.ids || []);
+    const selectedFans = M.ceilingFans.filter((f) => selectedIds.has(f.i));
+    const noneSelected = !selectedFans.length;
+    const anyOn = !noneSelected && selectedFans.some((f) => M.effectiveFanOn(f));
+
+    const controls = ce("div", "fan-controls fan-master-controls" + (anyOn ? " is-on" : ""));
+    const power = ce("button", "fan-power");
+    power.type = "button";
+    power.innerHTML = FAN_BTN_SVG;
+    power.disabled = noneSelected;
+    power.setAttribute("aria-label", anyOn ? "Turn all fans off" : "Turn all fans on");
+    power.setAttribute("aria-pressed", anyOn ? "true" : "false");
+    power.addEventListener("click", () => M.postCall("broadcastFanPower"));
+    if (selectedFans.length) {
+      const ref = selectedFans[0];
+      M.syncFanBladeSpin(power, ref, anyOn, M.effectiveFanSpeed(ref));
+    }
+    controls.appendChild(power);
+    body.appendChild(controls);
+
+    const speeds = M.intersectionCeilingFanSpeeds(selectedFans);
+    if (speeds.length) {
+      const row = ce("div", "fan-master-speeds");
+
+      for (const sp of speeds) {
+        const btn = ce("button", "fan-master-speed-btn");
+        btn.type = "button";
+        btn.textContent = M.ceilingFanSpeedLabel(sp);
+        btn.disabled = noneSelected;
+        btn.addEventListener("click", () => M.postCall("broadcastFanSpeed", sp));
+        row.appendChild(btn);
+      }
+      body.appendChild(row);
+    }
+  }
+
+  function openFanMasterPopup() {
+    M.cancelAllSlideGestures();
+    closeTstatPopup();
+    if (M.colorSession) closeColorPopup(false);
+    closeMusicMasterPopup();
+    closeShadeMasterPopup();
+    M.postCall("closeQuickPopup");
+    if (!M.ceilingFans.length) return;
+    const ids = M.ceilingFans.map((f) => f.i);
+    M.fanMasterSession = { ids: ids.slice(), allIds: ids.slice() };
+    M.publishMld({ M.fanMasterSession });
+    renderFanMasterBody();
+    updateFanMasterHead();
+    const popup = ensureFanMasterPopup();
+    popup.removeAttribute("hidden");
+    popup.classList.add("open");
+    M.publishMld({ fanMasterPopup: popup });
+  }
+
+  function closeFanMasterPopup() {
+    closeFanMasterTargetMenu();
+    if (!M.fanMasterPopup) return;
+    M.fanMasterPopup.setAttribute("hidden", "");
+    M.fanMasterPopup.classList.remove("open");
+    M.fanMasterSession = null;
+    M.publishMld({ fanMasterPopup: null, fanMasterSession: null });
+  }
+
+  function ensureShadeMasterPopup() {
+    if (M.shadeMasterPopup) return M.shadeMasterPopup;
+    const popup = ce("div", "shade-master-popup");
+    popup.hidden = true;
+    popup.setAttribute("role", "dialog");
+    popup.setAttribute("aria-modal", "true");
+    popup.setAttribute("aria-label", "All blinds");
+
+    const panel = ce("div", "shade-master-panel");
+    const head = ce("div", "shade-master-head");
+    const leading = ce("div", "shade-master-head-leading");
+    const title = ce("div", "shade-master-title");
+    title.textContent = "All blinds";
+    const targetBtn = ce("button", "tstat-target-btn");
+    targetBtn.type = "button";
+    targetBtn.setAttribute("aria-haspopup", "listbox");
+    targetBtn.setAttribute("aria-expanded", "false");
+    const targetLabel = ce("span", "tstat-target-btn-label");
+    const targetCaret = ce("span", "tstat-target-btn-caret");
+    targetCaret.setAttribute("aria-hidden", "true");
+    targetCaret.textContent = "\u25be";
+    targetBtn.appendChild(targetLabel);
+    targetBtn.appendChild(targetCaret);
+    targetBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      hapticTap();
+      if (M.shadeMasterTargetMenu) closeShadeMasterTargetMenu();
+      else openShadeMasterTargetMenu(targetBtn);
+    });
+    const favBtn = ce("button", "tstat-fav");
+    favBtn.type = "button";
+    favBtn.hidden = true;
+    favBtn.innerHTML = FAVORITES_SVG;
+    favBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (M.shadeMasterSession?.ids?.length !== 1) return;
+      const id = M.shadeMasterSession.ids[0];
+      if (id == null || !M.isFavoriteableDeviceId(id)) return;
+      hapticTap();
+      M.postCall("toggleFavorite", id);
+    });
+    const closeBtn = ce("button", "shade-master-close");
+    closeBtn.type = "button";
+    closeBtn.setAttribute("aria-label", "Close");
+    closeBtn.textContent = "\u00d7";
+    leading.appendChild(title);
+    leading.appendChild(targetBtn);
+    leading.appendChild(favBtn);
+    head.appendChild(leading);
+    head.appendChild(closeBtn);
+
+    const body = ce("div", "shade-master-body");
+    panel.appendChild(head);
+    panel.appendChild(body);
+    popup.appendChild(panel);
+    M.appendPopup(popup);
+
+    M.bindPopupDismiss(popup, panel, closeBtn, closeShadeMasterPopup);
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" || !popup.classList.contains("open")) return;
+      if (M.shadeMasterTargetMenu) { closeShadeMasterTargetMenu(); return; }
+      closeShadeMasterPopup();
+    });
+
+    popup._body = body;
+    popup._title = title;
+    popup._targetBtn = targetBtn;
+    popup._favBtn = favBtn;
+    M.shadeMasterPopup = popup;
+    return popup;
+  }
+
+  function renderShadeMasterBody() {
+    const popup = ensureShadeMasterPopup();
+    const body = popup._body;
+    body.innerHTML = "";
+    const selectedIds = new Set(M.shadeMasterSession?.ids || []);
+    const selectedShades = M.windowShades.filter((s) => selectedIds.has(s.i));
+    const noneSelected = !selectedShades.length;
+
+    const actions = ce("div", "shade-master-actions");
+    const openBtn = ce("button", "quick-lock-btn shade-btn");
+    openBtn.type = "button";
+    openBtn.innerHTML = SHADE_OPEN_SVG + '<span class="quick-lock-btn-label">Open</span>';
+    openBtn.disabled = noneSelected;
+    openBtn.addEventListener("click", () => M.postCall("broadcastShadeCmd", "open"));
+    const closeBtn = ce("button", "quick-lock-btn shade-btn");
+    closeBtn.type = "button";
+    closeBtn.innerHTML = SHADE_CLOSE_SVG + '<span class="quick-lock-btn-label">Close</span>';
+    closeBtn.disabled = noneSelected;
+    closeBtn.addEventListener("click", () => M.postCall("broadcastShadeCmd", "close"));
+    actions.appendChild(openBtn);
+    actions.appendChild(closeBtn);
+    body.appendChild(actions);
+
+    const positioned = selectedShades.filter((s) => s.pos != null);
+    if (positioned.length) {
+      const sliderWrap = ce("div", "shade-master-slider-wrap");
+      const levelLabel = ce("span", "shade-level-label");
+      const pos = M.averageShadePosition(positioned);
+      levelLabel.textContent = pos + "%";
+      const slider = ce("div", "slider shade-slider");
+      const inner = ce("div", "slider-inner");
+      inner.appendChild(ce("div", "slider-fill"));
+      slider.appendChild(inner);
+      slider.appendChild(ce("div", "slider-thumb"));
+      if (noneSelected) slider.classList.add("disabled");
+      M.postCall("setSliderLevel", slider, pos);
+      sliderWrap.appendChild(levelLabel);
+      sliderWrap.appendChild(slider);
+      body.appendChild(sliderWrap);
+      if (!noneSelected) {
+        M.postCall("attachBulkShadeDrag", sliderWrap, slider, (lvl) => { levelLabel.textContent = lvl + "%"; });
+      }
+    }
+  }
+
+  function openShadeMasterPopup() {
+    M.cancelAllSlideGestures();
+    closeTstatPopup();
+    if (M.colorSession) closeColorPopup(false);
+    closeMusicMasterPopup();
+    closeFanMasterPopup();
+    M.postCall("closeQuickPopup");
+    if (!M.windowShades.length) return;
+    const ids = M.windowShades.map((s) => s.i);
+    M.shadeMasterSession = { ids: ids.slice(), allIds: ids.slice() };
+    M.publishMld({ M.shadeMasterSession });
+    renderShadeMasterBody();
+    updateShadeMasterHead();
+    const popup = ensureShadeMasterPopup();
+    popup.removeAttribute("hidden");
+    popup.classList.add("open");
+    M.publishMld({ shadeMasterPopup: popup });
+  }
+
+  function closeShadeMasterPopup() {
+    closeShadeMasterTargetMenu();
+    if (!M.shadeMasterPopup) return;
+    M.shadeMasterPopup.setAttribute("hidden", "");
+    M.shadeMasterPopup.classList.remove("open");
+    M.shadeMasterSession = null;
+    M.publishMld({ shadeMasterPopup: null, shadeMasterSession: null });
   }
 
   function reconcileTstat(id) {
@@ -2340,5 +2898,5 @@
       if (rec?.wrap) nav.appendChild(rec.wrap);
     }
   }
-  Object.assign(M, { ensureColorPopup, setColorTab, updateColorPopupUI, tileRecsFor, applyLevelChange, applyCtChange, applyRgbChange, attachCtPresets, attachLevelPresets, trackPctFromEvent, levelFromTrackEvent, updateLevelTrackVisual, bindLevelTrackDrag, makeLevelTrackSlider, updateCtTrackVisual, bindCtTrackDrag, makeCtTrackSlider, attachLevelTrackDrag, attachRgbPresets, attachRgbWheel, ensureLightOn, attachCtTrackDrag, kToPct, pctToK, kFromEvent, setCtVisual, setRgbVisual, setLevelVisual, openColorPopup, closeColorPopup, closeCtPopup, applyCentralTstatSelection, tstatTargetPickerEnabled, updateCentralTstatTargetButton, updateTstatHeadExtras, updateTstatFavButton, ensureTstatPopup, activeTstat, tstatSetpointTarget, commitTstatSetpoint, adjustTstatSetpoint, renderTstatDial, renderTstatModeButtons, renderTstatControls, attachTstatDialDrag, tstatModeLocked, reapplyTstatDeviceModeLocks, tstatModeDisplayLabel, favoriteTstatTarget, favoriteTstatTemps, favoriteTstatState, modeCmdForKey, applyTstatModeOptimistic, sendTstatModeCmd, adjustFavoriteTstat, refreshOpenTstatQuickPopups, closeFavoriteTstatModeMenu, repositionFavoriteTstatModeMenu, syncFavoriteTstatModeMenu, applyFavoriteTstatMode, openFavoriteTstatModeMenu, closeCentralTstatTargetMenu, repositionCentralTstatTargetMenu, syncCentralTstatTargetMenu, openCentralTstatTargetMenu, setTstatMode, setFanMode, setFanSpeed, positionTstatPopup, openCentralTstatPopup, openTstatPopup, openTstatPopupForDevice, closeTstatPopup, ensureMusicMasterPopup, renderMusicMasterBody, openMusicMasterPopup, closeMusicMasterPopup, reconcileTstat, updateClimateWidgets, setStatus, flash, hapticTap, effectiveTheme, updateThemeSegmentUI, applyTheme, applyDashboardName, isCloudOrigin, isLocalOrigin, isAndroid, isStandaloneDisplay, initAndroidLocalImmersive, loadStoredLocalUrl, saveStoredLocalUrl, loadStoredCloudUrl, saveStoredCloudUrl, preferCloudMode, setPreferCloudMode, consumePreferCloudParam, loadLocalOkTs, saveLocalOkTs, localOkFresh, refreshLocalUrlFromConfig, navigateToLocal, maybeRefreshLocalOkFromReferrer, navigateToCloud, updateLocalModeMenuUI, hideLocalModeBanner, showLocalModeBanner, applyLocalModeStrategy, rebuildDevicesByRoom, rebuildOutletsByRoom, applyTstatSessionModeLock, emptyState, loadingState, noDevicesState, sortRoomsByOrder, ensureRoomsFromDevices, contentRoomIds, outletsInLightsRooms, getDisplayRoomIds, getDefaultNavOrder, getDisplayNavOrder, applyNavOrder });
+  Object.assign(M, { ensureColorPopup, setColorTab, updateColorPopupUI, tileRecsFor, applyLevelChange, applyCtChange, applyRgbChange, attachCtPresets, attachLevelPresets, trackPctFromEvent, levelFromTrackEvent, updateLevelTrackVisual, bindLevelTrackDrag, makeLevelTrackSlider, updateCtTrackVisual, bindCtTrackDrag, makeCtTrackSlider, attachLevelTrackDrag, attachRgbPresets, attachRgbWheel, ensureLightOn, attachCtTrackDrag, kToPct, pctToK, kFromEvent, setCtVisual, setRgbVisual, setLevelVisual, openColorPopup, closeColorPopup, closeCtPopup, applyCentralTstatSelection, tstatTargetPickerEnabled, updateCentralTstatTargetButton, updateTstatHeadExtras, updateTstatFavButton, ensureTstatPopup, activeTstat, tstatSetpointTarget, commitTstatSetpoint, adjustTstatSetpoint, renderTstatDial, renderTstatModeButtons, renderTstatControls, attachTstatDialDrag, tstatModeLocked, reapplyTstatDeviceModeLocks, tstatModeDisplayLabel, favoriteTstatTarget, favoriteTstatTemps, favoriteTstatState, modeCmdForKey, applyTstatModeOptimistic, sendTstatModeCmd, adjustFavoriteTstat, refreshOpenTstatQuickPopups, closeFavoriteTstatModeMenu, repositionFavoriteTstatModeMenu, syncFavoriteTstatModeMenu, applyFavoriteTstatMode, openFavoriteTstatModeMenu, closeCentralTstatTargetMenu, repositionCentralTstatTargetMenu, syncCentralTstatTargetMenu, openCentralTstatTargetMenu, setTstatMode, setFanMode, setFanSpeed, positionTstatPopup, openCentralTstatPopup, openTstatPopup, openTstatPopupForDevice, closeTstatPopup, ensureMusicMasterPopup, renderMusicMasterBody, openMusicMasterPopup, closeMusicMasterPopup, closeMasterTargetMenu, repositionMasterTargetMenu, updateMasterTargetButton, syncMasterTargetMenu, openMasterTargetMenu, closeFanMasterTargetMenu, closeShadeMasterTargetMenu, applyFanMasterSelection, applyShadeMasterSelection, updateFanMasterHead, updateShadeMasterHead, openFanMasterTargetMenu, openShadeMasterTargetMenu, ensureFanMasterPopup, renderFanMasterBody, openFanMasterPopup, closeFanMasterPopup, ensureShadeMasterPopup, renderShadeMasterBody, openShadeMasterPopup, closeShadeMasterPopup, reconcileTstat, updateClimateWidgets, setStatus, flash, hapticTap, effectiveTheme, updateThemeSegmentUI, applyTheme, applyDashboardName, isCloudOrigin, isLocalOrigin, isAndroid, isStandaloneDisplay, initAndroidLocalImmersive, loadStoredLocalUrl, saveStoredLocalUrl, loadStoredCloudUrl, saveStoredCloudUrl, preferCloudMode, setPreferCloudMode, consumePreferCloudParam, loadLocalOkTs, saveLocalOkTs, localOkFresh, refreshLocalUrlFromConfig, navigateToLocal, maybeRefreshLocalOkFromReferrer, navigateToCloud, updateLocalModeMenuUI, hideLocalModeBanner, showLocalModeBanner, applyLocalModeStrategy, rebuildDevicesByRoom, rebuildOutletsByRoom, applyTstatSessionModeLock, emptyState, loadingState, noDevicesState, sortRoomsByOrder, ensureRoomsFromDevices, contentRoomIds, outletsInLightsRooms, getDisplayRoomIds, getDefaultNavOrder, getDisplayNavOrder, applyNavOrder });
 })();

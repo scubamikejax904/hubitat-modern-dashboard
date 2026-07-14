@@ -54,44 +54,43 @@ Maker API setup. Rooms and names come from your Hubitat room assignments. You
 - **Lights** — room-grouped tiles, drag-to-dim, RGB / color temperature, **per-room
   and whole-house on/off**, light snapshots (slide to save/restore)
 - **Scheduler** — daily, weekly, one-time, sunrise/sunset (with offsets), and hub
-  mode triggers; actions for lights, switches, outlets, thermostats, and hub mode
+  mode triggers; actions for lights, outlets, thermostats, and hub mode
 - **Climate** — thermostat dial (setpoints, mode, fan) and **multi-select bulk
   thermostat control**
 - **Security & home** — locks (optional PIN), HSM arm/disarm (optional PIN),
   Hubitat scenes, hub mode
 - **Shades / blinds** — open/close/pause and drag-to-position
+- **Ceiling fans** — on/off and speed control on a dedicated Fans tab
 - **Music / media** — Sonos, Echo Speaks, AirPlay, Chromecast (where supported)
-- **Sensors** — motion, contact, water, presence, humidity, illuminance, smoke/CO,
-  temperature (+ battery when available)
+- **Sensors** — motion, contact, shock/glass-break, water, presence, humidity,
+  illuminance, smoke/CO, temperature (+ battery when available)
 - **UX** — dark/light/auto theme, search, collapsible rooms, favorites, reorderable
   rooms and nav icons (synced across devices), local ↔ cloud switching
 
-Plain switches are selected separately and used in the **scheduler** (not shown
-as tiles). Outlets use socket-style tiles; enable **separate Outlets tab** in
+Standalone switches (relay modules, exhaust fans, etc.) have no separate tile type.
+Add them to the **Lights** or **Outlets** picker to control them from the dashboard
+or scheduler. Outlets use socket-style tiles; enable **separate Outlets tab** in
 app settings to show them outside the Lights room view.
 
 ### Install (HPM — recommended)
 
-1. In **Hubitat Package Manager → Settings**, add this custom repository:
-
-   `https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/master/hubitat/repository.json`
-
-2. **Install → By Repository** → **Modern Dashboard**
+1. Open **Hubitat Package Manager** on your hub.
+2. **Install** (or search) → **Modern Dashboard**
 3. **Apps → Add User App → Modern Dashboard** → select devices → **Done**
 4. Open the **Cloud** link from the app page
 5. On your phone: install as a PWA / Add to Home Screen if you like
 6. Tap the **Scheduler** icon to add schedules you can manage remotely
 
-HPM enables OAuth and deploys the File Manager assets automatically.
+The package is listed in HPM's default repository — no custom repository URL is
+required. HPM enables OAuth and deploys the File Manager assets automatically.
 
-**Updates:** use HPM Update. The custom repo must point at `master` (not a
-version-tagged URL), or updates will never appear. If files look stale after Match
-Up, use **Repair** on the package.
+**Updates:** use HPM **Update**. If files look stale after **Match Up**, use
+**Repair** on the package.
 
 ### Manual / bundle install
 
 See the [README](https://github.com/evdev/hubitat-modern-dashboard#readme) for
-bundle and paste-into-Apps-Code instructions (upload 11 `mld-*` files to File
+bundle and paste-into-Apps-Code instructions (upload 12 `mld-*` files to File
 Manager, enable OAuth).
 
 ### Security note

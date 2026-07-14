@@ -17,9 +17,9 @@ can manage remotely without logging into the Hubitat admin UI, and runs
 Works over both the local URL and Hubitat's **cloud proxy**, so the same
 experience works at home and away.
 
-Supports lights (dimmers, switches, CT, RGB), motorized shades, thermostats,
-locks, HSM, Hubitat scenes, hub mode, music/media players, sensors, and a
-built-in scheduler for lights, switches, outlets, thermostats, and hub mode.
+Supports lights (dimmers, switches, CT, RGB), motorized shades, ceiling fans,
+thermostats, locks, HSM, Hubitat scenes, hub mode, music/media players, sensors,
+and a built-in scheduler for lights, outlets, thermostats, and hub mode.
 Designed to show ~130 lights on one page, within Hubitat's 128 KB cloud response
 cap.
 
@@ -170,6 +170,7 @@ quick-nav popup and as tiles grouped by room on that view.
 
 - Open / close / pause buttons
 - Drag the position slider to set shade level
+- **All blinds:** top-bar button on the Blinds tab opens a central control with a multi-select target menu — choose which shades to adjust, then open, close, or set position for the selection
 - Favorites star works on shade tiles
 
 ### Ceiling fans
@@ -181,6 +182,7 @@ via `supportedFanSpeeds`).
 
 - Tap the fan icon to turn on or off (on restores the last speed on the hub)
 - Use **+** / **−** to step through supported speeds
+- **All fans:** top-bar button on the Fans tab opens a central control with a multi-select target menu — choose which fans to adjust, then use the fan power button (same as per-fan tiles) to turn all selected fans on or off, or pick a common speed
 - Favorites star works on fan tiles
 
 ### Locks & garage doors
@@ -279,7 +281,6 @@ triggers.
 | Target | Options |
 | ------ | ------- |
 | Lights | Per-room or per-device; on/off; dim level; color temperature (CT devices) |
-| Switches | Per-room or per-device; on/off only (devices from the **Switches** picker) |
 | Outlets | Per-room or per-device; on/off only (devices from the **Outlets** picker) |
 | Thermostats | Mode, heat/cool setpoints, fan mode |
 | Hub mode | Set location mode |
@@ -440,7 +441,7 @@ src/
   sw.js                  pass-through service worker
   styles.css             visual design (served at /app.css)
   app-pre.js             SVG/data constants + helpers
-  app.js                 core UI (split into 4 File Manager chunks at build)
+  app.js                 core UI (split into 6 JS File Manager chunks at build)
 lib/
   pwa-icons.mjs          generates dashboard PNG icons at build time
 app/
@@ -450,10 +451,10 @@ preview/
   server.mjs             local mock server (~130 lights) for UI dev
 dist/
   ModernLightsDashboard.groovy   generated SmartApp
-  upload/mld-*                   File Manager assets (11 files)
+  upload/mld-*                   File Manager assets (12 files)
 docs/
   hubitat-community-post.md      Hubitat Community forum draft
-  hpm-registry.md                HPM community registry submission
+  hpm-registry.md                HPM registry notes for maintainers
 ```
 
 ## Develop the UI locally (no hub needed)
@@ -478,7 +479,7 @@ Outputs:
 | ---- | ------- |
 | `dist/ModernLightsDashboard.bundle.zip` | Manual install — Bundles → Import ZIP |
 | `dist/ModernLightsDashboard.groovy` | HPM / manual paste into Apps Code |
-| `dist/upload/mld-*` | File Manager assets (11 files; HPM auto-deploys) |
+| `dist/upload/mld-*` | File Manager assets (12 files; HPM auto-deploys) |
 | `hubitat/packageManifest.json` | HPM manifest — app (`oauth: true`) + files |
 | `dist/packageManifest.json` | Copy of the HPM manifest |
 
@@ -487,9 +488,10 @@ HPM_BASE_URL=https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/ma
 ```
 
 The Groovy app does **not** embed the UI (Hubitat cannot compile huge blobs). The
-app reads **11 files** from File Manager at runtime. JS is split into
-`mld-app-pre.js`, `mld-app.js`, `mld-app-post.js`, `mld-app-post2.js`, and
-`mld-app-post3.js` to stay under the hub's ~128 KB per-file limit. PWA assets
+app reads **12 files** from File Manager at runtime. JS is split into
+`mld-app-pre.js`, `mld-app.js`, `mld-app-core.js`, `mld-app-post.js`,
+`mld-app-post2.js`, and `mld-app-post3.js` to stay under the hub's ~128 KB
+per-file limit. PWA assets
 (`mld-manifest.webmanifest`, `mld-sw.js`, icon `.b64` files) enable home-screen
 install on the cloud URL. Icons are stored as base64 text because Hubitat cannot
 reliably serve binary PNGs from File Manager.
@@ -501,6 +503,7 @@ mld-index.html
 mld-app.css
 mld-app-pre.js
 mld-app.js
+mld-app-core.js
 mld-app-post.js
 mld-app-post2.js
 mld-app-post3.js
@@ -512,21 +515,21 @@ mld-icon-512.b64
 
 ## Install on a hub (HPM — recommended)
 
-1. In HPM **Settings**, add this custom repository URL:
-   `https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/master/hubitat/repository.json`
-2. **Install → By Repository** → find **Modern Dashboard** → install.
+1. Open **Hubitat Package Manager** on your hub.
+2. **Install** (or search) → find **Modern Dashboard** → install.
 3. HPM installs the Groovy app, **enables OAuth automatically**, and deploys all
-   11 File Manager assets.
+   12 File Manager assets.
 4. **Apps → Add User App → Modern Dashboard** → select devices → **Done**.
 5. Open the **Cloud** URL shown in the app page and install as a PWA (see below).
 
-**Important for updates:** HPM must track the floating manifest on `master`, not a
-version-tagged URL. Tagged URLs freeze the version HPM sees and updates never
-appear. If you previously installed from a tagged manifest URL, use **Unmatch**
-on the old entry, then install again via the custom repository above.
+The package is listed in HPM's default repository — **you do not need to add a
+custom repository URL**.
 
-If HPM shows the latest version but files did not change (for example after
-**Match Up**), use **Repair** on the package to redeploy assets.
+**Updates:** use HPM **Update**. If HPM shows the latest version but files did not
+change (for example after **Match Up**), use **Repair** on the package to redeploy
+assets. If you previously installed from a version-tagged manifest URL or an old
+custom-repo entry that no longer updates, use **Unmatch** on the old package, then
+install again from HPM search.
 
 No manual OAuth toggle or File Manager upload is needed when installing via HPM.
 
@@ -536,7 +539,7 @@ No manual OAuth toggle or File Manager upload is needed when installing via HPM.
 2. Hubitat → **Settings → Developer Tools → Bundles → Import ZIP**
 3. Upload `dist/ModernLightsDashboard.bundle.zip` and wait for **Bundle imported**.
 4. **Apps Code → Modern Dashboard** → click **OAuth** → enable OAuth → **Save**.
-5. **Settings → File Manager** — upload all **11** files from `dist/upload/`
+5. **Settings → File Manager** — upload all **12** files from `dist/upload/`
    (or extract `file-manager/` from the bundle zip). Filenames must match exactly.
 6. **Apps → Add User App → Modern Dashboard** → select your devices → **Done**.
 7. Open the **Cloud** URL and install as a PWA if desired.
@@ -547,7 +550,7 @@ No manual OAuth toggle or File Manager upload is needed when installing via HPM.
 2. **Apps Code → New App**: paste the entire contents of
    `dist/ModernLightsDashboard.groovy`.
 3. Click **OAuth** and enable OAuth, then **Save**.
-4. **Settings → File Manager**: upload all **11** files from `dist/upload/`
+4. **Settings → File Manager**: upload all **12** files from `dist/upload/`
    (exact names listed above).
 5. **Apps → Add User App → Modern Dashboard** → select devices → **Done**.
 6. Open the **Cloud** URL and install as a PWA if desired.
@@ -592,7 +595,8 @@ All settings below are in **Apps → Modern Dashboard** (the installed app insta
 | Thermostats | Room header + Thermostats popup | Mode, setpoints, fan | All thermostats bulk |
 | Temperature sensors | Room header (read-only) | — | Sensors popup |
 | Locks | — | — | Locks popup (locks + garage doors) |
-| Shades | — | — | Blinds popup |
+| Shades | — | — | Blinds popup; All blinds bulk |
+| Ceiling fans | — | — | Fans popup; All fans bulk |
 | Music / speakers | — | — | Music popup |
 | Motion, contact, water, etc. | — | — | Sensors popup |
 | Valves | — | — | Sensors popup (open/close) |
@@ -608,9 +612,9 @@ lights, including room/house on/off). The **Outlets** picker and optional
 - **Forum release post:**
   [Hubitat Community thread](https://community.hubitat.com/t/release-modern-dashboard-mdash-minimal-setup-pwa-with-built-in-scheduler-runs-entirely-on-your-hub/165028)
   (draft/archive in [`docs/hubitat-community-post.md`](docs/hubitat-community-post.md)).
-- **HPM community registry:** see [`docs/hpm-registry.md`](docs/hpm-registry.md)
-  for submitting a PR so the package appears in HPM search (optional; custom repo
-  install works today).
+- **HPM:** **Modern Dashboard** is listed in the default Hubitat Package Manager
+  repository — search HPM to install; no custom repository URL required. Maintainer
+  notes in [`docs/hpm-registry.md`](docs/hpm-registry.md).
 
 ## Security
 
@@ -641,7 +645,7 @@ Nothing to edit.
 
 - UI assets live in Hubitat **File Manager** (`mld-*` files). The Groovy SmartApp
   serves them and implements a slim JSON API — no Maker API.
-- JS is split into four chunks to stay under Hubitat's ~128 KB per-file limit.
+- JS is split into six chunks to stay under Hubitat's ~128 KB per-file limit.
 - PWA manifest and pass-through service worker enable home-screen install from the
   cloud URL.
 
@@ -679,9 +683,11 @@ Kitchen room are not shortened incorrectly.
 
 - No offline mode — hub must be reachable (local or cloud).
 - WebSocket only on the local URL; cloud access uses polling only.
-- Plain switches are scheduler-only (not shown as tiles). Outlets can appear in
-  room cards or a separate Outlets tab (companion app preference); they are
-  excluded from room/house on/off and light snapshots either way.
+- Standalone switches (relay modules, exhaust fans, etc.) have no separate tile
+  type. Add them to the **Lights** or **Outlets** picker to control them from the
+  dashboard or scheduler. Outlets can appear in room cards or a separate Outlets
+  tab (companion app preference); they are excluded from room/house on/off and
+  light snapshots either way.
 - Cloud responses are capped at ~128 KB; the slim API supports ~130 lights on one
   page but very large installs may need device subsetting.
 - Service worker does not cache — refresh always fetches from the hub.

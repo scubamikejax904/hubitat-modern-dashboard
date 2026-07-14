@@ -12,6 +12,8 @@
   const ALL_OFF_SAVE_BTN = document.getElementById("all-off-save");
   const CENTRAL_TSTAT_BTN = document.getElementById("tstat-central-btn");
   const CENTRAL_MUSIC_BTN = document.getElementById("music-central-btn");
+  const CENTRAL_BLINDS_BTN = document.getElementById("blinds-central-btn");
+  const CENTRAL_FAN_BTN = document.getElementById("fan-central-btn");
   const EXPAND_ALL_BTN = document.getElementById("expand-all");
   const REORDER_DONE_BTN = document.getElementById("reorder-done");
   const REORDER_CANCEL_BTN = document.getElementById("reorder-cancel");
@@ -153,6 +155,18 @@
   const tstatDeviceModeLock = new Map(); // id -> { until, mode }
 
   let musicMasterPopup = null;
+  let fanMasterPopup = null;
+  let shadeMasterPopup = null;
+  let fanMasterSession = null;   // { ids: number[], allIds: number[] }
+  let shadeMasterSession = null;
+  let fanMasterTargetMenu = null;
+  let fanMasterTargetMenuCleanup = null;
+  let fanMasterTargetMenuAnchor = null;
+  let shadeMasterTargetMenu = null;
+  let shadeMasterTargetMenuCleanup = null;
+  let shadeMasterTargetMenuAnchor = null;
+  const fanMasterTargetState = { menu: null, anchor: null, cleanup: null };
+  const shadeMasterTargetState = { menu: null, anchor: null, cleanup: null };
   const MUSIC_VOL_STEP = 5;
 
   let hubModes = [];
@@ -579,6 +593,65 @@
       });
     }
     return CEILING_FAN_SPEED_ORDER.slice(0, 3); // low, medium, high
+  }
+
+  function ceilingFanSupportsSpeed(fan, speed) {
+    const sp = String(speed || "").toLowerCase();
+    if (!sp || sp === "off") return true;
+    return ceilingFanSpeeds(fan).includes(sp);
+  }
+
+  function sortCeilingFanSpeedTokens(speeds) {
+    return speeds.slice().sort((a, b) => {
+      const ia = CEILING_FAN_SPEED_ORDER.indexOf(a);
+      const ib = CEILING_FAN_SPEED_ORDER.indexOf(b);
+      if (ia >= 0 && ib >= 0) return ia - ib;
+      if (ia >= 0) return -1;
+      if (ib >= 0) return 1;
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
+  }
+
+  function intersectionCeilingFanSpeeds(fans) {
+    if (!fans.length) return [];
+    let common = new Set(ceilingFanSpeeds(fans[0]).map((s) => String(s).toLowerCase()));
+    for (let i = 1; i < fans.length; i++) {
+      const supported = new Set(ceilingFanSpeeds(fans[i]).map((s) => String(s).toLowerCase()));
+      common = new Set([...common].filter((s) => supported.has(s)));
+      if (!common.size) break;
+    }
+    return sortCeilingFanSpeedTokens([...common]);
+  }
+
+  function unionCeilingFanSpeeds(fans) {
+    const seen = new Set();
+    const out = [];
+    for (const fan of fans) {
+      for (const sp of ceilingFanSpeeds(fan)) {
+        const key = String(sp).toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          out.push(key);
+        }
+      }
+    }
+    return sortCeilingFanSpeedTokens(out);
+  }
+
+  function allHouseCeilingFanSpeeds() {
+    return unionCeilingFanSpeeds(ceilingFans);
+  }
+
+  function averageShadePosition(shades) {
+    const list = shades || windowShades;
+    const positioned = list.filter((s) => s.pos != null);
+    if (!positioned.length) return 50;
+    let sum = 0;
+    for (const shade of positioned) {
+      const pos = effectiveShadePosition(shade);
+      sum += pos != null ? pos : 0;
+    }
+    return Math.round(sum / positioned.length);
   }
 
   const NAMED_FAN_SPIN_SEC = {
@@ -1330,5 +1403,5 @@
   }
 
   // ---------- render ----------
-  globalThis.__MLD = { ROOMS_EL, SEARCH_EL, STATUS_EL, ALL_ON_BTN, ALL_OFF_BTN, ALL_ON_TRACK, ALL_OFF_TRACK, ALL_ON_RESTORE_BTN, ALL_OFF_SAVE_BTN, CENTRAL_TSTAT_BTN, CENTRAL_MUSIC_BTN, EXPAND_ALL_BTN, REORDER_DONE_BTN, REORDER_CANCEL_BTN, OVERFLOW_BTN, OVERFLOW_MENU, MENU_REORDER_BTN, MENU_HAPTICS_EL, MENU_TABS_EL, MENU_DRAWER_EL, MENU_THEME_SEGMENT, MENU_OPEN_LOCAL_BTN, MENU_OPEN_CLOUD_BTN, MENU_LOCAL_URL_EL, HAPTICS_STORAGE_KEY, THEME_STORAGE_KEY, TABS_STORAGE_KEY, DRAWER_STORAGE_KEY, LOCAL_URL_STORAGE_KEY, LOCAL_OK_STORAGE_KEY, CLOUD_URL_STORAGE_KEY, PREFER_CLOUD_STORAGE_KEY, DASH_SESSION_STORAGE_KEY, DASH_SESSION_EXPIRES_KEY, LOCAL_OK_MAX_AGE_MS, DASH_SESSION_MAX_AGE_MS, THEME_OPTIONS, APP_EL, REORDER_DRAG_THRESHOLD, DASHBOARD_TITLE_EL, CURRENT_CATEGORY_TITLE_EL, POLL_DEFAULT, POLL_WS_FALLBACK, loadHapticsPref, saveHapticsPref, loadThemePref, saveThemePref, loadTabsPref, saveTabsPref, loadDrawerPref, saveDrawerPref, cfg, localModeBannerEl, localBannerDismissed, rooms, roomMap, devices, devicesByRoom, outletsByRoom, devMap, outletMap, favDevMap, roomEls, lastDataSig, pollTimer, ws, wsConnected, wsRetry, wsReconnectTimer, pageWasHidden, reorderMode, reorderBusy, reorderSnapshot, reorderDraftOrder, navReorderSnapshot, navReorderDraftOrder, navReorderDrawerRelocated, navEls, colorPopup, colorSession, levelOptimistic, switchOptimistic, lockOptimistic, garageOptimistic, shadeOptimistic, fanOptimistic, valveOptimistic, musicOptimistic, setpointOptimistic, rgbWheelCache, thermostats, tempSensors, thermoByRoom, sensorByRoom, climateEls, tstatPopup, tstatSession, tstatDeviceModeLock, musicMasterPopup, MUSIC_VOL_STEP, hubModes, currentHubMode, scenes, locks, garageDoors, windowShades, ceilingFans, valves, outlets, music, favorites, snapshots, roomGestureLockCount, hubModeLockUntil, hsmStatus, hsmAlert, hsmAlertDesc, hsmEnabled, hsmPinRequired, thermostatsPopupEnabled, outletsSeparateTab, unlockPinEnabled, unlockPinRequired, hsmLockUntil, pinPadPopup, pinPadState, gatePopup, gateState, dashSession, dashSessionExpiresAt, dashboardPasswordRequired, dashSessionActivityBound, ensureDashboardAccessTask, confirmPopup, confirmPending, quickPopup, quickPopupOpenType, syncQuickPopupRef, TAB_CATEGORIES, TAB_LABELS, tabMode, activeTab, tabViewEl, QUICK_LIGHTS_BTN, favTstatModeMenu, favTstatModeMenuCleanup, favTstatModeMenuId, favTstatModeMenuAnchor, centralTstatTargetMenu, centralTstatTargetMenuCleanup, centralTstatTargetMenuAnchor, favTstatMap, favPopupSig, tstatsPopupMap, tstatsPopupSig, setLevelOptimistic, setSwitchOptimistic, clearSwitchOptimistic, reapplySwitchOptimistic, effectiveSwitch, effectiveLevel, setLockOptimistic, clearLockOptimistic, reapplyLockOptimistic, effectiveLock, lockStatusLabel, setGarageOptimistic, clearGarageOptimistic, reapplyGarageOptimistic, effectiveGarageState, garageIsOpen, garageIsMoving, garageStatusLabel, setShadeOptimistic, clearShadeOptimistic, reapplyShadeOptimistic, effectiveShadeState, effectiveShadePosition, shadeIsMoving, shadeStatusLabel, setFanOptimistic, clearFanOptimistic, reapplyFanOptimistic, effectiveFanOn, effectiveFanSpeed, ceilingFanSpeedLabel, ceilingFanSpeeds, NAMED_FAN_SPIN_SEC, fanSpinDuration, syncFanBladeSpin, fanStatusLabel, setValveOptimistic, clearValveOptimistic, reapplyValveOptimistic, effectiveValveState, valveIsMoving, normalizeValveForCard, isMusicPlaying, musicControls, effectiveMusicStatus, effectiveMusicVolume, musicStatusLabel, setMusicOptimistic, clearMusicOptimistic, reapplyMusicOptimistic, setSetpointOptimistic, clearSetpointOptimistic, reapplySetpointOptimistic, applyTstatSetpoints, drawRgbWheel, activeSlideGestures, cancelAllSlideGestures, appendPopup, bindPopupDismiss, supportedModes, supportedFanModes, deviceHasFanSpeed, supportedFanSpeeds, showFanSpeedControls, fanModeActive, tstatSectionLabel, tstatStateClass, formatRoomTemp, roomClimateInfo, roomHasClimate, roomTstatState, isFavorite, syncFavButton, isFavoriteableDeviceId, centralThermostatsSorted, buildCentralTstat, postCall, loadDashSession, saveDashSession, clearDashSession, isDashSessionFresh, dashSessionRenewInFlight, dashSessionLastRenewAt, DASH_SESSION_RENEW_MIN_INTERVAL_MS, renewDashSessionFromServer, slideDashSessionExpiry, applyDashSessionFromResponse, isDashboardGateOpen, setupDashSessionActivityRenewal, ACCESS_TOKEN, withToken, fetchWithTimeout, getJson, fetchData, sendCmd, sendCmdBatch, publishMld, sensors, sensorCardMap, sensorRoomEls, favSensorMap, favMusicMap, favLockMap, favGarageMap, favShadeMap, favFanMap, fansPopupMap, fansPopupSig, shadePopupMap, blindsPopupSig, sensorsPopupSig, sensorTypeFilter, sensorFilterOpen, sensorFilterChipsEl, sensorFilterBtnEl, sensorFilterEmptyEl, replaceList, repopulateThermoByRoom, repopulateSensorByRoom, syncRoomMap };
+  globalThis.__MLD = { ROOMS_EL, SEARCH_EL, STATUS_EL, ALL_ON_BTN, ALL_OFF_BTN, ALL_ON_TRACK, ALL_OFF_TRACK, ALL_ON_RESTORE_BTN, ALL_OFF_SAVE_BTN, CENTRAL_TSTAT_BTN, CENTRAL_MUSIC_BTN, CENTRAL_BLINDS_BTN, CENTRAL_FAN_BTN, EXPAND_ALL_BTN, REORDER_DONE_BTN, REORDER_CANCEL_BTN, OVERFLOW_BTN, OVERFLOW_MENU, MENU_REORDER_BTN, MENU_HAPTICS_EL, MENU_TABS_EL, MENU_DRAWER_EL, MENU_THEME_SEGMENT, MENU_OPEN_LOCAL_BTN, MENU_OPEN_CLOUD_BTN, MENU_LOCAL_URL_EL, HAPTICS_STORAGE_KEY, THEME_STORAGE_KEY, TABS_STORAGE_KEY, DRAWER_STORAGE_KEY, LOCAL_URL_STORAGE_KEY, LOCAL_OK_STORAGE_KEY, CLOUD_URL_STORAGE_KEY, PREFER_CLOUD_STORAGE_KEY, DASH_SESSION_STORAGE_KEY, DASH_SESSION_EXPIRES_KEY, LOCAL_OK_MAX_AGE_MS, DASH_SESSION_MAX_AGE_MS, THEME_OPTIONS, APP_EL, REORDER_DRAG_THRESHOLD, DASHBOARD_TITLE_EL, CURRENT_CATEGORY_TITLE_EL, POLL_DEFAULT, POLL_WS_FALLBACK, loadHapticsPref, saveHapticsPref, loadThemePref, saveThemePref, loadTabsPref, saveTabsPref, loadDrawerPref, saveDrawerPref, cfg, localModeBannerEl, localBannerDismissed, rooms, roomMap, devices, devicesByRoom, outletsByRoom, devMap, outletMap, favDevMap, roomEls, lastDataSig, pollTimer, ws, wsConnected, wsRetry, wsReconnectTimer, pageWasHidden, reorderMode, reorderBusy, reorderSnapshot, reorderDraftOrder, navReorderSnapshot, navReorderDraftOrder, navReorderDrawerRelocated, navEls, colorPopup, colorSession, levelOptimistic, switchOptimistic, lockOptimistic, garageOptimistic, shadeOptimistic, fanOptimistic, valveOptimistic, musicOptimistic, setpointOptimistic, rgbWheelCache, thermostats, tempSensors, thermoByRoom, sensorByRoom, climateEls, tstatPopup, tstatSession, tstatDeviceModeLock, musicMasterPopup, fanMasterPopup, shadeMasterPopup, fanMasterSession, shadeMasterSession, fanMasterTargetMenu, fanMasterTargetMenuCleanup, fanMasterTargetMenuAnchor, shadeMasterTargetMenu, shadeMasterTargetMenuCleanup, shadeMasterTargetMenuAnchor, fanMasterTargetState, shadeMasterTargetState, MUSIC_VOL_STEP, hubModes, currentHubMode, scenes, locks, garageDoors, windowShades, ceilingFans, valves, outlets, music, favorites, snapshots, roomGestureLockCount, hubModeLockUntil, hsmStatus, hsmAlert, hsmAlertDesc, hsmEnabled, hsmPinRequired, thermostatsPopupEnabled, outletsSeparateTab, unlockPinEnabled, unlockPinRequired, hsmLockUntil, pinPadPopup, pinPadState, gatePopup, gateState, dashSession, dashSessionExpiresAt, dashboardPasswordRequired, dashSessionActivityBound, ensureDashboardAccessTask, confirmPopup, confirmPending, quickPopup, quickPopupOpenType, syncQuickPopupRef, TAB_CATEGORIES, TAB_LABELS, tabMode, activeTab, tabViewEl, QUICK_LIGHTS_BTN, favTstatModeMenu, favTstatModeMenuCleanup, favTstatModeMenuId, favTstatModeMenuAnchor, centralTstatTargetMenu, centralTstatTargetMenuCleanup, centralTstatTargetMenuAnchor, favTstatMap, favPopupSig, tstatsPopupMap, tstatsPopupSig, setLevelOptimistic, setSwitchOptimistic, clearSwitchOptimistic, reapplySwitchOptimistic, effectiveSwitch, effectiveLevel, setLockOptimistic, clearLockOptimistic, reapplyLockOptimistic, effectiveLock, lockStatusLabel, setGarageOptimistic, clearGarageOptimistic, reapplyGarageOptimistic, effectiveGarageState, garageIsOpen, garageIsMoving, garageStatusLabel, setShadeOptimistic, clearShadeOptimistic, reapplyShadeOptimistic, effectiveShadeState, effectiveShadePosition, shadeIsMoving, shadeStatusLabel, setFanOptimistic, clearFanOptimistic, reapplyFanOptimistic, effectiveFanOn, effectiveFanSpeed, ceilingFanSpeedLabel, ceilingFanSpeeds, ceilingFanSupportsSpeed, sortCeilingFanSpeedTokens, intersectionCeilingFanSpeeds, unionCeilingFanSpeeds, allHouseCeilingFanSpeeds, averageShadePosition, NAMED_FAN_SPIN_SEC, fanSpinDuration, syncFanBladeSpin, fanStatusLabel, setValveOptimistic, clearValveOptimistic, reapplyValveOptimistic, effectiveValveState, valveIsMoving, normalizeValveForCard, isMusicPlaying, musicControls, effectiveMusicStatus, effectiveMusicVolume, musicStatusLabel, setMusicOptimistic, clearMusicOptimistic, reapplyMusicOptimistic, setSetpointOptimistic, clearSetpointOptimistic, reapplySetpointOptimistic, applyTstatSetpoints, drawRgbWheel, activeSlideGestures, cancelAllSlideGestures, appendPopup, bindPopupDismiss, supportedModes, supportedFanModes, deviceHasFanSpeed, supportedFanSpeeds, showFanSpeedControls, fanModeActive, tstatSectionLabel, tstatStateClass, formatRoomTemp, roomClimateInfo, roomHasClimate, roomTstatState, isFavorite, syncFavButton, isFavoriteableDeviceId, centralThermostatsSorted, buildCentralTstat, postCall, loadDashSession, saveDashSession, clearDashSession, isDashSessionFresh, dashSessionRenewInFlight, dashSessionLastRenewAt, DASH_SESSION_RENEW_MIN_INTERVAL_MS, renewDashSessionFromServer, slideDashSessionExpiry, applyDashSessionFromResponse, isDashboardGateOpen, setupDashSessionActivityRenewal, ACCESS_TOKEN, withToken, fetchWithTimeout, getJson, fetchData, sendCmd, sendCmdBatch, publishMld, sensors, sensorCardMap, sensorRoomEls, favSensorMap, favMusicMap, favLockMap, favGarageMap, favShadeMap, favFanMap, fansPopupMap, fansPopupSig, shadePopupMap, blindsPopupSig, sensorsPopupSig, sensorTypeFilter, sensorFilterOpen, sensorFilterChipsEl, sensorFilterBtnEl, sensorFilterEmptyEl, replaceList, repopulateThermoByRoom, repopulateSensorByRoom, syncRoomMap };
 })();

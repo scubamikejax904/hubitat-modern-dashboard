@@ -32,7 +32,7 @@ const APP_DISPLAY_NAME = "Modern Dashboard";
 
 const HPM_BASE_URL =
   process.env.HPM_BASE_URL ??
-  "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/master/dist";
+  "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/beta/dist";
 
 const APP_AUTHOR = "Ephrayim (evdev)";
 const GITHUB_URL = "https://github.com/evdev/hubitat-modern-dashboard";
@@ -49,10 +49,10 @@ const COMMUNITY_LINK =
   "https://community.hubitat.com/t/release-modern-dashboard-mdash-minimal-setup-pwa-with-built-in-scheduler-runs-entirely-on-your-hub/165028";
 const HPM_REPO_PACKAGE_ID = "e8f4a1c2-3b5d-4e9f-a7c6-1d2e3f4a5b6c";
 const REPOSITORY_JSON_URL =
-  "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/master/hubitat/repository.json";
+  "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/beta/hubitat/repository.json";
 const PACKAGE_MANIFEST_URL =
   process.env.HPM_PACKAGE_MANIFEST_URL ??
-  "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/master/hubitat/packageManifest.json";
+  "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/beta/hubitat/packageManifest.json";
 
 // Stable UUIDs for HPM update tracking (do not regenerate per build)
 const HPM_APP_ID = "a4f8c2e1-6b3d-4a9f-8e7c-1d2b3c4d5e6f";
@@ -515,8 +515,9 @@ THEN (required — bundles cannot install File Manager files or enable OAuth):
   Apps → Add User App → ${APP_DISPLAY_NAME} → select devices → Done
 
 HPM INSTALL (recommended):
-  Hubitat Package Manager — OAuth and File Manager files are handled automatically.
-  Custom repo: ${REPOSITORY_JSON_URL}
+  Hubitat Package Manager → search for Modern Dashboard → Install
+  OAuth and File Manager files are handled automatically.
+  Listed in the default HPM repository (no custom repo URL required).
 `
 );
 
@@ -591,7 +592,7 @@ for (const { name } of FILE_MANAGER_ASSETS) {
   console.log(`  dist/upload/${name.padEnd(24)} ${kb(path).padStart(6)} KB  (${blobHeadroom(path)} KB headroom)`);
 }
 console.log(`  hubitat/packageManifest.json            (HPM: app + oauth + ${FILE_MANAGER_ASSETS.length} files)`);
-console.log(`  hubitat/repository.json                 (HPM custom repository listing)`);
+console.log(`  hubitat/repository.json                 (HPM repository listing; in default HPM registry)`);
 console.log(`  dist/packageManifest.json               (copy of HPM manifest)`);
 if (HPM_BASE_URL.includes("UPDATE_USER")) {
   console.log("\nHPM: set HPM_BASE_URL to your hosted dist/ raw URL before publishing, then rebuild.");

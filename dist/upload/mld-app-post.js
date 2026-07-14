@@ -645,6 +645,8 @@
     for (const [, rec] of M.favShadeMap) M.syncFavButton(rec.favBtn, rec.i);
     for (const [, rec] of M.favFanMap) M.syncFavButton(rec.favBtn, rec.i);
     M.updateTstatFavButton();
+    if (M.fanMasterPopup?.classList.contains("open")) M.postCall("updateFanMasterHead");
+    if (M.shadeMasterPopup?.classList.contains("open")) M.postCall("updateShadeMasterHead");
   }
 
   function attachFavButton(btn, id) {
@@ -1882,6 +1884,96 @@
     slider.addEventListener("pointerdown", start);
   }
 
+  function attachBulkShadeDrag(tile, slider, onLevelChange) {
+    const INTENT = 8;
+    const TAP_MOVE = 10;
+    let dragging = false;
+    let aborted = false;
+    let startX = 0, startY = 0;
+    let lastCommit = 0;
+    let pendingLevel = null;
+    let downLevel = null;
+
+    function pctFromEvent(e) {
+      return M.trackPctFromEvent(slider, e);
+    }
+    function setVisual(p) {
+      const level = clampLevel(p);
+      setSliderLevel(slider, level);
+      if (onLevelChange) onLevelChange(level);
+    }
+    function commitLevel(p) {
+      setVisual(p);
+      broadcastShadeCmd("setPosition", p);
+    }
+    function cleanup() {
+      dragging = false;
+      aborted = false;
+      slider.classList.remove("dragging");
+      tile.classList.remove("dragging");
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    }
+    function start(e) {
+      if (e.button != null && e.button !== 0) return;
+      dragging = false;
+      aborted = false;
+      startX = e.clientX; startY = e.clientY;
+      downLevel = pctFromEvent(e);
+      pendingLevel = downLevel;
+      window.addEventListener("pointermove", move, { passive: false });
+      window.addEventListener("pointerup", end, { passive: false });
+      window.addEventListener("pointercancel", end, { passive: false });
+    }
+    function move(e) {
+      if (aborted) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (!dragging) {
+        if (Math.abs(dx) < INTENT && Math.abs(dy) < INTENT) return;
+        if (Math.abs(dy) > Math.abs(dx)) {
+          aborted = true;
+          cleanup();
+          return;
+        }
+        dragging = true;
+        slider.classList.add("dragging");
+        tile.classList.add("dragging");
+      }
+      e.preventDefault();
+      const p = pctFromEvent(e);
+      setVisual(p);
+      pendingLevel = p;
+      const now = Date.now();
+      if (now - lastCommit > 350) {
+        lastCommit = now;
+        broadcastShadeCmd("setPosition", p);
+      }
+    }
+    function end(e) {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      if (aborted) { cleanup(); return; }
+      if (dragging) {
+        const p = pendingLevel == null ? 0 : pendingLevel;
+        slider.classList.remove("dragging");
+        tile.classList.remove("dragging");
+        dragging = false;
+        commitLevel(p);
+        return;
+      }
+      if (e && e.clientX != null) {
+        const dx = Math.abs(e.clientX - startX);
+        const dy = Math.abs(e.clientY - startY);
+        if (dx <= TAP_MOVE && dy <= TAP_MOVE) commitLevel(downLevel);
+      }
+      cleanup();
+    }
+    slider.addEventListener("pointerdown", start);
+  }
+
   // ---------- commands ----------
   // Diagnostic shown when the user enables haptics, so we can tell exactly why
   // the device isn't buzzing (secure context, API presence, or call acceptance).
@@ -2272,6 +2364,58 @@
     return result;
   }
 
+  function fanMasterTargetIds() {
+    if (!M.fanMasterSession) return [];
+    return M.fanMasterSession.ids || [];
+  }
+
+  function shadeMasterTargetIds() {
+    if (!M.shadeMasterSession) return [];
+    return M.shadeMasterSession.ids || [];
+  }
+
+  function broadcastFanPower() {
+    const ids = fanMasterTargetIds();
+    if (!ids.length) return;
+    const fans = ids.map((id) => M.ceilingFans.find((f) => f.i === id)).filter(Boolean);
+    if (!fans.length) return;
+    const anyOn = fans.some((f) => M.effectiveFanOn(f));
+    const cmd = anyOn ? "off" : "on";
+    for (const fan of fans) sendFanCmd(fan.i, cmd);
+    if (M.currentCategory() === "fans") M.refreshFansPopup();
+    else if (M.currentCategory() === "favorites") M.postCall("refreshFavoritesPopup");
+    if (M.fanMasterPopup?.classList.contains("open")) M.postCall("renderFanMasterBody");
+  }
+
+  function broadcastFanSpeed(speed) {
+    const ids = fanMasterTargetIds();
+    if (!ids.length) return;
+    const sp = String(speed || "").toLowerCase();
+    for (const id of ids) {
+      const fan = M.ceilingFans.find((f) => f.i === id);
+      if (!fan) continue;
+      if (sp === "off") sendFanCmd(fan.i, "off");
+      else if (M.ceilingFanSupportsSpeed(fan, sp)) sendFanCmd(fan.i, "setSpeed", sp);
+    }
+    if (M.currentCategory() === "fans") M.refreshFansPopup();
+    else if (M.currentCategory() === "favorites") M.postCall("refreshFavoritesPopup");
+    if (M.fanMasterPopup?.classList.contains("open")) M.postCall("renderFanMasterBody");
+  }
+
+  function broadcastShadeCmd(cmd, val) {
+    const ids = shadeMasterTargetIds();
+    if (!ids.length) return;
+    for (const id of ids) {
+      const shade = M.windowShades.find((s) => s.i === id);
+      if (!shade) continue;
+      if (cmd === "setPosition" && shade.pos == null) continue;
+      sendShadeCmd(shade.i, cmd, val);
+    }
+    if (M.currentCategory() === "blinds") M.refreshBlindsPopup();
+    else if (M.currentCategory() === "favorites") M.postCall("refreshFavoritesPopup");
+    if (M.shadeMasterPopup?.classList.contains("open")) M.postCall("renderShadeMasterBody");
+  }
+
   function applySwitchCmdOptimistic(dev, cmd) {
     const id = dev.i;
     if (cmd === "on") {
@@ -2488,5 +2632,5 @@
     }
     body.appendChild(list);
   }
-  Object.assign(M, { saveRoomOrder, currentNavOrderFromDom, updateNavDraftOrderFromDom, showAllNavForReorder, cleanupNavDragState, saveNavOrder, postJson, postJsonSilent, setHsmApi, setHubModeApi, activateSceneApi, bulkLightsApi, snapshotSaveApi, snapshotRestoreApi, saveFavorites, hubModeLocked, hsmLocked, roomLabel, compareByRoomThenFullName, sortByRoomThenFullName, snapshotRoomKey, snapshotHouseKey, setRoomGestureLock, attachRoomSlideAction, updateRoomSnapshotUi, getFavoriteEntries, updateAllFavButtons, attachFavButton, toggleFavorite, currentRoomOrderFromDom, updateDraftOrderFromDom, updateMoveButtons, moveRoom, enterReorderMode, exitReorderMode, finishReorderMode, cancelReorderMode, closeTopbarOverflowMenu, openTopbarOverflowMenu, toggleTopbarOverflowMenu, attachRoomReorder, attachNavReorder, setupNavReorderItems, relocateNavForReorder, restoreNavAfterReorder, captureUiScroll, restoreUiScroll, render, buildDom, makeTile, makeOutletTile, attachOutletSocketTap, attachSwitchTap, attachBulbTap, attachColorNameClick, clampLevel, setSliderLevel, syncTileState, updateStates, updateRoomMeta, attachDrag, attachShadeDrag, testHaptics, toggleSwitch, toggleOutlet, toggleDimmer, reconcileDevice, refreshDevice, reconcileLock, reconcileShade, reconcileFan, reconcileMusic, sendMusicCmd, broadcastMusic, broadcastMusicVolume, reconcileGarage, sendGarageCmd, sendLockCmd, sendShadeCmd, sendFanCmd, applySwitchCmdOptimistic, roomAll, allLights, ensureQuickPopup, syncQuickPopupWidth, syncQuickPopupWidthForOpen, updateFavoriteGarageRow, makeGarageRow, makeLockRow, updateFavoriteLockRow, renderLocksPopup });
+  Object.assign(M, { saveRoomOrder, currentNavOrderFromDom, updateNavDraftOrderFromDom, showAllNavForReorder, cleanupNavDragState, saveNavOrder, postJson, postJsonSilent, setHsmApi, setHubModeApi, activateSceneApi, bulkLightsApi, snapshotSaveApi, snapshotRestoreApi, saveFavorites, hubModeLocked, hsmLocked, roomLabel, compareByRoomThenFullName, sortByRoomThenFullName, snapshotRoomKey, snapshotHouseKey, setRoomGestureLock, attachRoomSlideAction, updateRoomSnapshotUi, getFavoriteEntries, updateAllFavButtons, attachFavButton, toggleFavorite, currentRoomOrderFromDom, updateDraftOrderFromDom, updateMoveButtons, moveRoom, enterReorderMode, exitReorderMode, finishReorderMode, cancelReorderMode, closeTopbarOverflowMenu, openTopbarOverflowMenu, toggleTopbarOverflowMenu, attachRoomReorder, attachNavReorder, setupNavReorderItems, relocateNavForReorder, restoreNavAfterReorder, captureUiScroll, restoreUiScroll, render, buildDom, makeTile, makeOutletTile, attachOutletSocketTap, attachSwitchTap, attachBulbTap, attachColorNameClick, clampLevel, setSliderLevel, syncTileState, updateStates, updateRoomMeta, attachDrag, attachShadeDrag, attachBulkShadeDrag, testHaptics, toggleSwitch, toggleOutlet, toggleDimmer, reconcileDevice, refreshDevice, reconcileLock, reconcileShade, reconcileFan, reconcileMusic, sendMusicCmd, broadcastMusic, broadcastMusicVolume, reconcileGarage, sendGarageCmd, sendLockCmd, sendShadeCmd, sendFanCmd, fanMasterTargetIds, shadeMasterTargetIds, broadcastFanPower, broadcastFanSpeed, broadcastShadeCmd, applySwitchCmdOptimistic, roomAll, allLights, ensureQuickPopup, syncQuickPopupWidth, syncQuickPopupWidthForOpen, updateFavoriteGarageRow, makeGarageRow, makeLockRow, updateFavoriteLockRow, renderLocksPopup });
 })();
