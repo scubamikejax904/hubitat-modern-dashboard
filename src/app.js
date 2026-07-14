@@ -7157,12 +7157,21 @@
 
   function sensorTypesWithCounts() {
     const counts = new Map();
-    for (const d of mergedSensorList()) counts.set(d.t, (counts.get(d.t) || 0) + 1);
+    for (const d of mergedSensorList()) {
+      for (const t of sensorCardFilterTypes(d)) {
+        counts.set(t, (counts.get(t) || 0) + 1);
+      }
+    }
     return [...counts.entries()].sort((a, b) => sensorTypeLabel(a[0]).localeCompare(sensorTypeLabel(b[0])));
   }
 
   function sensorMatchesFilter(dev) {
-    return !sensorTypeFilter.size || sensorTypeFilter.has(dev.t);
+    if (!sensorTypeFilter.size) return true;
+    const types = sensorCardFilterTypes(dev);
+    for (const t of sensorTypeFilter) {
+      if (types.has(t)) return true;
+    }
+    return false;
   }
 
   function syncSensorFilterBtn() {

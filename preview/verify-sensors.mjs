@@ -5,7 +5,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { buildMergedSensorCard } from "./merge-sensor-card.mjs";
+import { buildMergedSensorCard, sensorCardFilterTypes } from "./merge-sensor-card.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = String(18000 + Math.floor(Math.random() * 2000));
@@ -118,6 +118,8 @@ async function main() {
     const mergedHum = buildMergedSensorCard(dualTemp, dualHum);
     assert(mergedHum.t === "temp", "merged temp+humidity card is temperature-primary");
     assert(mergedHum.ex.some((e) => e.k === "humidity" && e.v === dualHum.v), "merged card carries humidity as secondary");
+    const mergedHumTypes = sensorCardFilterTypes(mergedHum);
+    assert(mergedHumTypes.has("temp") && mergedHumTypes.has("humidity"), "temp+humidity tile counts in both filter categories");
 
     const dualIllTemp = data.tempSensors.find((t) => t.i === 2106);
     const dualIll = data.sensors.find((s) => s.i === 2106 && s.t === "illuminance");
@@ -132,6 +134,8 @@ async function main() {
     const mergedGeneric = buildMergedSensorCard(dualGenericTemp, dualGeneric);
     assert(mergedGeneric.t === "generic", "merged temp+generic card keeps generic primary");
     assert(mergedGeneric.ex.some((e) => e.k === "temperature" && e.v === dualGenericTemp.temp), "merged generic card folds temperature into ex[]");
+    const mergedGenericTypes = sensorCardFilterTypes(mergedGeneric);
+    assert(mergedGenericTypes.has("generic") && mergedGenericTypes.has("temp"), "temp+generic tile counts in both filter categories");
 
     const motion = data.sensors.find((s) => s.t === "motion");
     const motionDev = await getJson(`/device?id=${motion.i}`);

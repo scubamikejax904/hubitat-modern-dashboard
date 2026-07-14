@@ -76,6 +76,35 @@ const SENSOR_ALERT_TYPES = new Set(["smoke", "leak", "contact", "motion", "prese
 const SENSOR_LAST_EVENT_TYPES = new Set(["smoke", "leak", "contact", "motion", "presence", "shock"]);
 const SENSOR_TEMP_PROMOTE_TYPES = new Set(["humidity", "illuminance"]);
 
+const SENSOR_EX_KEY_TO_FILTER_TYPE = {
+  temperature: "temp",
+  humidity: "humidity",
+  illuminance: "illuminance",
+  motion: "motion",
+  contact: "contact",
+  water: "leak",
+  smoke: "smoke",
+  presence: "presence",
+  acceleration: "shock",
+  shock: "shock",
+  vibration: "shock",
+};
+
+function sensorCardFilterTypes(dev) {
+  const types = new Set();
+  const add = (t) => {
+    if (t && SENSOR_TYPE_META[t]) types.add(t);
+  };
+  add(dev.t);
+  add(dev._senRef?.t);
+  if (dev._tempRef) add("temp");
+  for (const e of dev.ex || []) {
+    const k = String(e.k || "").toLowerCase();
+    add(SENSOR_EX_KEY_TO_FILTER_TYPE[k] || (SENSOR_TYPE_META[k] ? k : null));
+  }
+  return types;
+}
+
 function secondaryAttrRank(k) {
   const n = String(k || "").toLowerCase();
   const idx = SECONDARY_ATTR_ORDER.indexOf(n);

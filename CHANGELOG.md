@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.65
+
+- **Sensors:** filter chips count merged tiles in every matching category — for
+  example, a temp+humidity tile appears under both Temperature and Humidity filters.
+
 ## 0.2.64
 
 - **Sensors:** new Shock / glass-break picker and tile type.

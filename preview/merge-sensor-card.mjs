@@ -57,6 +57,39 @@ function sensorPrimaryCard(sensorRec, tempRec) {
   };
 }
 
+// Mirror of sensorCardFilterTypes in src/app-pre.js for preview verification.
+const SENSOR_FILTER_TYPE_KEYS = new Set([
+  "temp", "motion", "shock", "contact", "leak", "smoke", "humidity", "illuminance", "presence", "valve", "generic",
+]);
+const SENSOR_EX_KEY_TO_FILTER_TYPE = {
+  temperature: "temp",
+  humidity: "humidity",
+  illuminance: "illuminance",
+  motion: "motion",
+  contact: "contact",
+  water: "leak",
+  smoke: "smoke",
+  presence: "presence",
+  acceleration: "shock",
+  shock: "shock",
+  vibration: "shock",
+};
+
+function sensorCardFilterTypes(dev) {
+  const types = new Set();
+  const add = (t) => {
+    if (t && SENSOR_FILTER_TYPE_KEYS.has(t)) types.add(t);
+  };
+  add(dev.t);
+  add(dev._senRef?.t);
+  if (dev._tempRef) add("temp");
+  for (const e of dev.ex || []) {
+    const k = String(e.k || "").toLowerCase();
+    add(SENSOR_EX_KEY_TO_FILTER_TYPE[k] || (SENSOR_FILTER_TYPE_KEYS.has(k) ? k : null));
+  }
+  return types;
+}
+
 export function buildMergedSensorCard(tempRec, sensorRec) {
   if (tempRec && sensorRec && SENSOR_TEMP_PROMOTE_TYPES.has(sensorRec.t)) {
     return environmentalTempPrimaryCard(tempRec, sensorRec);
@@ -67,3 +100,5 @@ export function buildMergedSensorCard(tempRec, sensorRec) {
   }
   return null;
 }
+
+export { sensorCardFilterTypes };
