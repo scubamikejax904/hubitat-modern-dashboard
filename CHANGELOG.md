@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.73
+
+- **Scheduler:** optional "Hide scheduler" app preference — hides the Scheduler tab and stops all schedule jobs on the hub while keeping saved schedules for re-enable.
+- **Scheduler:** clear in-progress draft when disabled; preview server mirrors hub 403/empty-schedules behavior.
+- **Scheduler:** nav reorder and About section respect the hide-scheduler preference.
+
 ## 0.2.72
 
 - **Blinds:** three device pickers — Window Shade, Window Blind, and Switch Level —

@@ -190,6 +190,7 @@
   let hsmPinRequired = false;
   let thermostatsPopupEnabled = false;
   let outletsSeparateTab = false;
+  let schedulerEnabled = true;
   let unlockPinEnabled = false;
   let unlockPinRequired = false;
   let hsmLockUntil = 0;
@@ -443,6 +444,7 @@
       shadeOptimistic.delete(id);
       if (postCall("currentCategory") === "blinds") postCall("refreshBlindsPopup");
       else if (postCall("currentCategory") === "favorites") postCall("refreshFavoritesPopup");
+      if (shadeMasterPopup?.classList.contains("open")) postCall("updateShadeMasterBody");
     }, LEVEL_OPTIMISTIC_MS);
     shadeOptimistic.set(id, entry);
   }
@@ -3735,15 +3737,23 @@
     openBtn.type = "button";
     openBtn.innerHTML = SHADE_OPEN_SVG + '<span class="quick-lock-btn-label">Open</span>';
     openBtn.disabled = noneSelected;
-    openBtn.addEventListener("click", () => postCall("broadcastShadeCmd", "open"));
+    openBtn.addEventListener("click", () => {
+      hapticTap();
+      postCall("broadcastShadeCmd", "open");
+    });
     const closeBtn = ce("button", "quick-lock-btn shade-btn");
     closeBtn.type = "button";
     closeBtn.innerHTML = SHADE_CLOSE_SVG + '<span class="quick-lock-btn-label">Close</span>';
     closeBtn.disabled = noneSelected;
-    closeBtn.addEventListener("click", () => postCall("broadcastShadeCmd", "close"));
+    closeBtn.addEventListener("click", () => {
+      hapticTap();
+      postCall("broadcastShadeCmd", "close");
+    });
     actions.appendChild(openBtn);
     actions.appendChild(closeBtn);
     body.appendChild(actions);
+    popup._openBtn = openBtn;
+    popup._closeBtn = closeBtn;
 
     const positioned = selectedShades.filter((s) => s.pos != null);
     if (positioned.length) {
@@ -3761,9 +3771,46 @@
       sliderWrap.appendChild(levelLabel);
       sliderWrap.appendChild(slider);
       body.appendChild(sliderWrap);
+      popup._sliderWrap = sliderWrap;
+      popup._levelLabel = levelLabel;
+      popup._slider = slider;
       if (!noneSelected) {
         postCall("attachBulkShadeDrag", sliderWrap, slider, (lvl) => { levelLabel.textContent = lvl + "%"; });
       }
+    } else {
+      popup._sliderWrap = null;
+      popup._levelLabel = null;
+      popup._slider = null;
+    }
+    updateShadeMasterBody();
+  }
+
+  function updateShadeMasterBody() {
+    const popup = shadeMasterPopup;
+    if (!popup?.classList.contains("open")) return;
+    const selectedIds = new Set(shadeMasterSession?.ids || []);
+    const selectedShades = windowShades.filter((s) => selectedIds.has(s.i));
+    const noneSelected = !selectedShades.length;
+    const anyMoving = !noneSelected && selectedShades.some((s) => shadeIsMoving(s));
+    const allOpen = !noneSelected && selectedShades.every((s) => effectiveShadeState(s) === "open");
+    const allClosed = !noneSelected && selectedShades.every((s) => effectiveShadeState(s) === "closed");
+
+    if (popup._openBtn) {
+      popup._openBtn.classList.toggle("active", allOpen);
+      popup._openBtn.classList.toggle("moving", anyMoving);
+      popup._openBtn.disabled = noneSelected || anyMoving;
+    }
+    if (popup._closeBtn) {
+      popup._closeBtn.classList.toggle("active", allClosed);
+      popup._closeBtn.classList.toggle("moving", anyMoving);
+      popup._closeBtn.disabled = noneSelected || anyMoving;
+    }
+
+    const positioned = selectedShades.filter((s) => s.pos != null);
+    if (popup._slider && popup._levelLabel && positioned.length && !popup._slider.classList.contains("dragging")) {
+      const pos = averageShadePosition(positioned);
+      postCall("setSliderLevel", popup._slider, pos);
+      popup._levelLabel.textContent = pos + "%";
     }
   }
 
@@ -4357,11 +4404,14 @@
 
   function showAllNavForReorder() {
     const nav = document.querySelector(".quick-nav");
-    if (nav) nav.hidden = false;
-    for (const [, rec] of navEls) {
-      if (rec.wrap) rec.wrap.hidden = false;
-      if (rec.btn) rec.btn.hidden = false;
+    let anyVisible = false;
+    for (const [key, rec] of navEls) {
+      const show = key === "lights" ? tabMode : quickNavPopupHasContent(key);
+      if (rec.wrap) rec.wrap.hidden = !show;
+      if (rec.btn) rec.btn.hidden = !show;
+      if (show) anyVisible = true;
     }
+    if (nav) nav.hidden = !anyVisible;
   }
 
   function cleanupNavDragState() {
@@ -5435,6 +5485,7 @@
     hsmPinRequired = !!d.hsmPinRequired;
     thermostatsPopupEnabled = d.thermostatsPopupEnabled !== false;
     outletsSeparateTab = !!d.outletsSeparateTab;
+    schedulerEnabled = d.schedulerEnabled !== false;
     unlockPinEnabled = !!d.unlockPinEnabled;
     unlockPinRequired = !!d.unlockPinRequired;
     replaceList(scenes, d.scenes);
@@ -6246,7 +6297,7 @@
       const now = Date.now();
       if (now - lastCommit > 350) {
         lastCommit = now;
-        broadcastShadeCmd("setPosition", p);
+        broadcastShadeCmd("setPosition", p, { quiet: true, skipMasterUpdate: true });
       }
     }
     function end(e) {
@@ -6608,25 +6659,30 @@
     return result;
   }
 
-  async function sendShadeCmd(id, cmd, val) {
+  async function sendShadeCmd(id, cmd, val, opts) {
+    const quiet = opts?.quiet;
     const shade = windowShades.find(s => s.i === id);
     if (!shade) return { ok: false };
-    hapticTap();
+    if (!quiet) hapticTap();
     let patch = {};
     if (cmd === "open") patch = { st: "opening" };
     else if (cmd === "close") patch = { st: "closing" };
     else if (cmd === "setPosition") patch = { pos: Math.max(0, Math.min(100, Number(val))) };
     if (patch.st != null || patch.pos != null) {
       setShadeOptimistic(id, patch);
-      if (currentCategory() === "blinds") refreshBlindsPopup();
-      else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
+      if (!quiet) {
+        if (currentCategory() === "blinds") refreshBlindsPopup();
+        else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
+      }
     }
     const result = await sendCmd(id, cmd, val);
     if (!result.ok) {
       clearShadeOptimistic(id);
       reconcileShade(id);
-      if (currentCategory() === "blinds") refreshBlindsPopup();
-      else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
+      if (!quiet) {
+        if (currentCategory() === "blinds") refreshBlindsPopup();
+        else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
+      }
     } else {
       reconcileShade(id);
     }
@@ -6700,18 +6756,39 @@
     if (fanMasterPopup?.classList.contains("open")) postCall("renderFanMasterBody");
   }
 
-  function broadcastShadeCmd(cmd, val) {
+  function broadcastShadeCmd(cmd, val, opts) {
     const ids = shadeMasterTargetIds();
     if (!ids.length) return;
+    const quiet = opts?.quiet;
+    const skipMasterUpdate = opts?.skipMasterUpdate;
+    if (!quiet) hapticTap();
+
+    const shades = [];
     for (const id of ids) {
       const shade = windowShades.find((s) => s.i === id);
       if (!shade) continue;
       if (cmd === "setPosition" && shade.pos == null) continue;
-      sendShadeCmd(shade.i, cmd, val);
+      shades.push(shade);
     }
-    if (currentCategory() === "blinds") refreshBlindsPopup();
-    else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
-    if (shadeMasterPopup?.classList.contains("open")) postCall("renderShadeMasterBody");
+    if (!shades.length) return;
+
+    for (const shade of shades) {
+      let patch = {};
+      if (cmd === "open") patch = { st: "opening" };
+      else if (cmd === "close") patch = { st: "closing" };
+      else if (cmd === "setPosition") patch = { pos: Math.max(0, Math.min(100, Number(val))) };
+      if (patch.st != null || patch.pos != null) setShadeOptimistic(shade.i, patch);
+    }
+
+    for (const shade of shades) sendShadeCmd(shade.i, cmd, val, { quiet: true });
+
+    if (!skipMasterUpdate && shadeMasterPopup?.classList.contains("open")) {
+      postCall("updateShadeMasterBody");
+    }
+    if (!quiet) {
+      if (currentCategory() === "blinds") refreshBlindsPopup();
+      else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
+    }
   }
 
   function applySwitchCmdOptimistic(dev, cmd) {
@@ -8589,7 +8666,7 @@
       case "blinds": return windowShades.length > 0;
       case "fans": return ceilingFans.length > 0;
       case "outlets": return outletsSeparateTab && outlets.length > 0;
-      case "scheduling": return true;
+      case "scheduling": return schedulerEnabled;
       case "sensors": return mergedSensorList().length > 0;
       case "thermostats": return thermostatsPopupEnabled && thermostats.length > 0;
       case "music": return music.length > 0;
@@ -10004,12 +10081,18 @@
 
   function applySchedulesFromData(data) {
     if (!data) return;
+    schedulerEnabled = data.schedulerEnabled !== false;
+    if (!schedulerEnabled) {
+      schedDraft = null;
+      schedEditingId = null;
+      schedStep = 1;
+    }
     if (Array.isArray(data.schedules)) schedules = data.schedules;
     if (data.sunTimes && typeof data.sunTimes === "object") {
       sunTimes = { sunrise: data.sunTimes.sunrise ?? null, sunset: data.sunTimes.sunset ?? null };
     }
     schedUse24Hour = data.schedUse24Hour === true;
-    if (schedulerViewIsActive()) renderSchedulerActive();
+    if (schedulerViewIsActive() && schedulerEnabled) renderSchedulerActive();
   }
 
   function schedulerViewIsActive() {
@@ -10018,7 +10101,7 @@
   }
 
   function schedulerHasContent() {
-    return true;
+    return schedulerEnabled;
   }
 
   function schedParseTime24(str) {

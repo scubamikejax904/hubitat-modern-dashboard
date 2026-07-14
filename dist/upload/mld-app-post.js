@@ -59,11 +59,14 @@
 
   function showAllNavForReorder() {
     const nav = document.querySelector(".quick-nav");
-    if (nav) nav.hidden = false;
-    for (const [, rec] of M.navEls) {
-      if (rec.wrap) rec.wrap.hidden = false;
-      if (rec.btn) rec.btn.hidden = false;
+    let anyVisible = false;
+    for (const [key, rec] of M.navEls) {
+      const show = key === "lights" ? M.tabMode : M.quickNavPopupHasContent(key);
+      if (rec.wrap) rec.wrap.hidden = !show;
+      if (rec.btn) rec.btn.hidden = !show;
+      if (show) anyVisible = true;
     }
+    if (nav) nav.hidden = !anyVisible;
   }
 
   function cleanupNavDragState() {
@@ -1137,6 +1140,7 @@
     M.hsmPinRequired = !!d.hsmPinRequired;
     M.thermostatsPopupEnabled = d.thermostatsPopupEnabled !== false;
     M.outletsSeparateTab = !!d.outletsSeparateTab;
+    M.schedulerEnabled = d.schedulerEnabled !== false;
     M.unlockPinEnabled = !!d.unlockPinEnabled;
     M.unlockPinRequired = !!d.unlockPinRequired;
     M.replaceList(M.scenes, d.scenes);
@@ -1948,7 +1952,7 @@
       const now = Date.now();
       if (now - lastCommit > 350) {
         lastCommit = now;
-        broadcastShadeCmd("setPosition", p);
+        broadcastShadeCmd("setPosition", p, { quiet: true, skipMasterUpdate: true });
       }
     }
     function end(e) {
@@ -2310,25 +2314,30 @@
     return result;
   }
 
-  async function sendShadeCmd(id, cmd, val) {
+  async function sendShadeCmd(id, cmd, val, opts) {
+    const quiet = opts?.quiet;
     const shade = M.windowShades.find(s => s.i === id);
     if (!shade) return { ok: false };
-    M.hapticTap();
+    if (!quiet) M.hapticTap();
     let patch = {};
     if (cmd === "open") patch = { st: "opening" };
     else if (cmd === "close") patch = { st: "closing" };
     else if (cmd === "setPosition") patch = { pos: Math.max(0, Math.min(100, Number(val))) };
     if (patch.st != null || patch.pos != null) {
       M.setShadeOptimistic(id, patch);
-      if (M.currentCategory() === "blinds") M.refreshBlindsPopup();
-      else if (M.currentCategory() === "favorites") M.postCall("refreshFavoritesPopup");
+      if (!quiet) {
+        if (M.currentCategory() === "blinds") M.refreshBlindsPopup();
+        else if (M.currentCategory() === "favorites") M.postCall("refreshFavoritesPopup");
+      }
     }
     const result = await M.sendCmd(id, cmd, val);
     if (!result.ok) {
       M.clearShadeOptimistic(id);
       reconcileShade(id);
-      if (M.currentCategory() === "blinds") M.refreshBlindsPopup();
-      else if (M.currentCategory() === "favorites") M.postCall("refreshFavoritesPopup");
+      if (!quiet) {
+        if (M.currentCategory() === "blinds") M.refreshBlindsPopup();
+        else if (M.currentCategory() === "favorites") M.postCall("refreshFavoritesPopup");
+      }
     } else {
       reconcileShade(id);
     }
@@ -2402,18 +2411,39 @@
     if (M.fanMasterPopup?.classList.contains("open")) M.postCall("renderFanMasterBody");
   }
 
-  function broadcastShadeCmd(cmd, val) {
+  function broadcastShadeCmd(cmd, val, opts) {
     const ids = shadeMasterTargetIds();
     if (!ids.length) return;
+    const quiet = opts?.quiet;
+    const skipMasterUpdate = opts?.skipMasterUpdate;
+    if (!quiet) M.hapticTap();
+
+    const shades = [];
     for (const id of ids) {
       const shade = M.windowShades.find((s) => s.i === id);
       if (!shade) continue;
       if (cmd === "setPosition" && shade.pos == null) continue;
-      sendShadeCmd(shade.i, cmd, val);
+      shades.push(shade);
     }
-    if (M.currentCategory() === "blinds") M.refreshBlindsPopup();
-    else if (M.currentCategory() === "favorites") M.postCall("refreshFavoritesPopup");
-    if (M.shadeMasterPopup?.classList.contains("open")) M.postCall("renderShadeMasterBody");
+    if (!shades.length) return;
+
+    for (const shade of shades) {
+      let patch = {};
+      if (cmd === "open") patch = { st: "opening" };
+      else if (cmd === "close") patch = { st: "closing" };
+      else if (cmd === "setPosition") patch = { pos: Math.max(0, Math.min(100, Number(val))) };
+      if (patch.st != null || patch.pos != null) M.setShadeOptimistic(shade.i, patch);
+    }
+
+    for (const shade of shades) sendShadeCmd(shade.i, cmd, val, { quiet: true });
+
+    if (!skipMasterUpdate && M.shadeMasterPopup?.classList.contains("open")) {
+      M.postCall("updateShadeMasterBody");
+    }
+    if (!quiet) {
+      if (M.currentCategory() === "blinds") M.refreshBlindsPopup();
+      else if (M.currentCategory() === "favorites") M.postCall("refreshFavoritesPopup");
+    }
   }
 
   function applySwitchCmdOptimistic(dev, cmd) {

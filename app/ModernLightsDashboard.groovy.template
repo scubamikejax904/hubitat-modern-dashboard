@@ -36,8 +36,12 @@ def mainPage() {
             paragraph "<small><b>Control-first:</b> optimized for acting on devices — bulk room/house lights, multi-thermostat control — not just viewing status.</small>"
             paragraph "<small><b>Minimal effort:</b> select your devices below — the dashboard groups them by Hubitat room and lays them out automatically. Customization is optional.</small>"
             paragraph "<small><b>PWA:</b> use the cloud link below to install on your phone's home screen (standalone app icon).</small>"
-            paragraph "<small><b>Scheduler:</b> create and manage schedules from the dashboard — including remotely — without logging into the Hubitat admin UI.</small>"
-            paragraph "<small><b>Hub-only:</b> UI, API, and scheduler run entirely on your hub — no Maker API or third-party cloud.</small>"
+            if (schedulerDisabled != true) {
+                paragraph "<small><b>Scheduler:</b> create and manage schedules from the dashboard — including remotely — without logging into the Hubitat admin UI.</small>"
+                paragraph "<small><b>Hub-only:</b> UI, API, and scheduler run entirely on your hub — no Maker API or third-party cloud.</small>"
+            } else {
+                paragraph "<small><b>Hub-only:</b> UI and API run entirely on your hub — no Maker API or third-party cloud.</small>"
+            }
             paragraph "<small>Version __APP_VERSION__ · __APP_AUTHOR__ · __LICENSE_NAME__ · <a href='__GITHUB_URL__' target='_blank'>Source</a></small>"
         }
         section("Devices") {
@@ -110,8 +114,14 @@ def mainPage() {
             input "enableWs", "bool", title: "Enable real-time updates on local network (eventsocket)", defaultValue: true, required: false
         }
         section("Scheduler") {
-            input "schedulerUse24Hour", "bool", title: "Use 24-hour time in scheduler", defaultValue: false
-            paragraph "<small>When off, scheduler times display with AM/PM. Times are always stored in 24-hour form for reliable scheduling.</small>"
+            input "schedulerDisabled", "bool",
+                title: "Hide scheduler (also stops schedules from running)",
+                defaultValue: false, submitOnChange: true
+            paragraph "<small>When checked, the Scheduler tab is hidden and no schedules run. Saved schedules are kept if you turn it back on.</small>"
+            if (schedulerDisabled != true) {
+                input "schedulerUse24Hour", "bool", title: "Use 24-hour time in scheduler", defaultValue: false
+                paragraph "<small>When off, scheduler times display with AM/PM. Times are always stored in 24-hour form for reliable scheduling.</small>"
+            }
         }
         section("Light control") {
             paragraph "<small>Applies to snapshot restore, All on/off, and room on/off. Metering is on by default.</small>"
@@ -1178,6 +1188,7 @@ def renderData() {
     out << ",\"hsmPinRequired\":" << (hsmEnabled == true && hsmPinEnabled == true && hsmPin?.toString()?.trim() ? "true" : "false")
     out << ",\"thermostatsPopupEnabled\":" << (thermostatsPopupEnabled == true ? "true" : "false")
     out << ",\"outletsSeparateTab\":" << (outletsSeparateTab == true ? "true" : "false")
+    out << ",\"schedulerEnabled\":" << (schedulerIsEnabled() ? "true" : "false")
     out << ",\"schedUse24Hour\":" << (schedulerUse24Hour == true ? "true" : "false")
     out << ",\"unlockPinEnabled\":" << (unlockPinEnabled == true ? "true" : "false")
     out << ",\"unlockPinRequired\":" << (unlockPinEnabled == true && unlockPin?.toString()?.trim() ? "true" : "false")
@@ -3370,7 +3381,25 @@ def scheduleSummary(s) {
     }
 }
 
+def schedulerIsEnabled() {
+    return schedulerDisabled != true
+}
+
+def shutdownScheduler() {
+    // Targeted unschedules only — never bare unschedule() (would kill light metering jobs).
+    try { unschedule("scheduledJobHandler") } catch (e) {}
+    try { unschedule("cleanupSchedules") } catch (e) {}
+    try { unschedule("schedulerMidnightRearm") } catch (e) {}
+}
+
+def guardSchedulerEnabled() {
+    if (schedulerIsEnabled()) return true
+    render(contentType: "application/json", data: '{"ok":false,"error":"scheduler disabled"}', status: 403)
+    return false
+}
+
 def schedulesJsonFragment() {
+    if (!schedulerIsEnabled()) return ',"schedules":[]'
     def map = parseSchedulesMap()
     def out = new StringBuilder()
     out << ",\"schedules\":["
@@ -3407,10 +3436,8 @@ def schedulesJsonFragment() {
 }
 
 def initializeScheduler() {
-    // Targeted unschedules only — never bare unschedule() (would kill light metering jobs).
-    try { unschedule("scheduledJobHandler") } catch (e) {}
-    try { unschedule("cleanupSchedules") } catch (e) {}
-    try { unschedule("schedulerMidnightRearm") } catch (e) {}
+    shutdownScheduler()
+    if (!schedulerIsEnabled()) return
     rebuildScheduledJobs()
     try { subscribe(location, "sunriseTime", schedulerSunTimeChanged) } catch (e) {}
     try { subscribe(location, "sunsetTime", schedulerSunTimeChanged) } catch (e) {}
@@ -3420,14 +3447,17 @@ def initializeScheduler() {
 }
 
 def schedulerSunTimeChanged(evt) {
+    if (!schedulerIsEnabled()) return
     try { rebuildScheduledJobs() } catch (e) { log.warn "Modern Dashboard: sun time re-arm failed: ${e}" }
 }
 
 def schedulerMidnightRearm() {
+    if (!schedulerIsEnabled()) return
     try { rebuildScheduledJobs() } catch (e) { log.warn "Modern Dashboard: midnight scheduler re-arm failed: ${e}" }
 }
 
 def schedulerModeChanged(evt) {
+    if (!schedulerIsEnabled()) return
     def newMode = evt?.value?.toString()?.trim()
     if (!newMode) {
         try { newMode = location.mode?.toString()?.trim() } catch (e) {}
@@ -3448,6 +3478,7 @@ def schedulerModeChanged(evt) {
 }
 
 def rebuildScheduledJobs() {
+    if (!schedulerIsEnabled()) return
     try { unschedule("scheduledJobHandler") } catch (e) {}
     def map = parseSchedulesMap()
     def now = now()
@@ -3517,6 +3548,7 @@ def scheduleOnceToMs(at) {
 }
 
 def scheduledJobHandler(data) {
+    if (!schedulerIsEnabled()) return
     def id = data?.id?.toString()
     if (!id) return
     def map = parseSchedulesMap()
@@ -3676,6 +3708,7 @@ def runScheduleThermostatAction(action) {
 }
 
 def cleanupSchedules() {
+    if (!schedulerIsEnabled()) return
     def map = parseSchedulesMap()
     def now = now()
     def changed = false
@@ -3699,6 +3732,7 @@ def cleanupSchedules() {
 
 def schedulesGet() {
     if (!guardDashboardAccess()) return renderAuthRequired()
+    if (!guardSchedulerEnabled()) return
     return render(contentType: "application/json", data: withAuthJson(groovy.json.JsonOutput.toJson([ok: true, schedules: schedulesListForClient()])), status: 200)
 }
 
@@ -3809,6 +3843,7 @@ def schedulesNormalizePayload(body) {
 
 def schedulesSave() {
     if (!guardDashboardAccess()) return renderAuthRequired()
+    if (!guardSchedulerEnabled()) return
     def body = parseRequestJson()
     if (body == null) {
         return render(contentType: "application/json", data: '{"ok":false,"error":"missing body"}', status: 400)
@@ -3831,6 +3866,7 @@ def schedulesSave() {
 
 def schedulesDelete() {
     if (!guardDashboardAccess()) return renderAuthRequired()
+    if (!guardSchedulerEnabled()) return
     def body = parseRequestJson()
     def id = body?.id?.toString()?.trim()
     if (!id) {
@@ -3851,6 +3887,7 @@ def schedulesDelete() {
 
 def schedulesToggle() {
     if (!guardDashboardAccess()) return renderAuthRequired()
+    if (!guardSchedulerEnabled()) return
     def body = parseRequestJson()
     def id = body?.id?.toString()?.trim()
     if (!id) {
@@ -3875,6 +3912,7 @@ def schedulesToggle() {
 
 def schedulesTest() {
     if (!guardDashboardAccess()) return renderAuthRequired()
+    if (!guardSchedulerEnabled()) return
     def body = parseRequestJson()
     def id = body?.id?.toString()?.trim()
     if (!id) {

@@ -18,12 +18,18 @@
 
   function applySchedulesFromData(data) {
     if (!data) return;
+    M.schedulerEnabled = data.schedulerEnabled !== false;
+    if (!M.schedulerEnabled) {
+      schedDraft = null;
+      schedEditingId = null;
+      schedStep = 1;
+    }
     if (Array.isArray(data.schedules)) schedules = data.schedules;
     if (data.sunTimes && typeof data.sunTimes === "object") {
       sunTimes = { sunrise: data.sunTimes.sunrise ?? null, sunset: data.sunTimes.sunset ?? null };
     }
     schedUse24Hour = data.schedUse24Hour === true;
-    if (schedulerViewIsActive()) renderSchedulerActive();
+    if (schedulerViewIsActive() && M.schedulerEnabled) renderSchedulerActive();
   }
 
   function schedulerViewIsActive() {
@@ -32,7 +38,7 @@
   }
 
   function schedulerHasContent() {
-    return true;
+    return M.schedulerEnabled;
   }
 
   function schedParseTime24(str) {

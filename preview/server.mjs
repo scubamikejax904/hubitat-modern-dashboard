@@ -199,7 +199,7 @@ function buildMockData(count) {
   return { config: { pollIntervalMs: 5000, useWebSocket: false, dashboardName: "mDash", roomOrder: [], navOrder: [], favorites: [1, 5, 1001, 2103, 2201, 5101] }, rooms, devices, outlets: [
     { i: 601, n: "Kitchen Outlet", r: 2, s: 1 },
     { i: 602, n: "Office Outlet", r: 4, s: 0 },
-  ], thermostats, tempSensors, sensors, valves, locks, garageDoors, music, windowShades, ceilingFans, hubModes: ["Day", "Evening", "Night", "Away"], currentHubMode: "Day", hsmStatus: "disarmed", hsmAlert: "water", hsmAlertDesc: "Basement leak sensor", hsmEnabled: true, hsmPinEnabled: true, hsmPinRequired: true, thermostatsPopupEnabled: true, outletsSeparateTab: false, schedUse24Hour: false, unlockPinEnabled: true, unlockPinRequired: true, dashboardPasswordEnabled: true, dashboardPasswordRequired: true, scenes: [{ id: 1, n: "Good Morning" }, { id: 2, n: "Movie Time" }, { id: 3, n: "Good Night" }, { id: 4, n: "Away" }], schedules: [], sunTimes: mockSunTimes() };
+  ], thermostats, tempSensors, sensors, valves, locks, garageDoors, music, windowShades, ceilingFans, hubModes: ["Day", "Evening", "Night", "Away"], currentHubMode: "Day", hsmStatus: "disarmed", hsmAlert: "water", hsmAlertDesc: "Basement leak sensor", hsmEnabled: true, hsmPinEnabled: true, hsmPinRequired: true, thermostatsPopupEnabled: true, outletsSeparateTab: false, schedulerEnabled: true, schedUse24Hour: false, unlockPinEnabled: true, unlockPinRequired: true, dashboardPasswordEnabled: true, dashboardPasswordRequired: true, scenes: [{ id: 1, n: "Good Morning" }, { id: 2, n: "Movie Time" }, { id: 3, n: "Good Night" }, { id: 4, n: "Away" }], schedules: [], sunTimes: mockSunTimes() };
 }
 
 function tstatOstateForMode(tm) {
@@ -424,6 +424,15 @@ function appendDashSession(payload, renewed) {
   return { ...payload, dashSession: renewed.session, dashSessionExpiresAt: renewed.expiresAt };
 }
 
+function schedulerMockEnabled() {
+  return state.schedulerEnabled !== false;
+}
+
+function sendSchedulerDisabled(res) {
+  res.writeHead(403, { "Content-Type": "application/json" });
+  return res.end('{"ok":false,"error":"scheduler disabled"}');
+}
+
 function sendAuthRequired(res) {
   res.writeHead(401, { "Content-Type": "application/json", "Cache-Control": "no-store" });
   return res.end(JSON.stringify({ ok: false, error: "auth required" }));
@@ -585,7 +594,9 @@ const server = createServer(async (req, res) => {
     }
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     state.sunTimes = mockSunTimes();
-    return res.end(JSON.stringify(appendDashSession(state, auth.renewed)));
+    const payload = appendDashSession(state, auth.renewed);
+    if (!schedulerMockEnabled()) payload.schedules = [];
+    return res.end(JSON.stringify(payload));
   }
   if (p === "/device") {
     const auth = requireDashAuth(res, url, null);
@@ -947,6 +958,7 @@ const server = createServer(async (req, res) => {
   }
   // ---------- scheduler mock ----------
   if (p.startsWith("/schedules")) {
+    if (!schedulerMockEnabled()) return sendSchedulerDisabled(res);
     const sub = p.replace(/^\/schedules\/?/, "");
     if (req.method === "GET" && (sub === "" || sub === "/")) {
       res.writeHead(200, { "Content-Type": "application/json" });

@@ -1661,7 +1661,7 @@
       case "blinds": return M.windowShades.length > 0;
       case "fans": return M.ceilingFans.length > 0;
       case "outlets": return M.outletsSeparateTab && M.outlets.length > 0;
-      case "scheduling": return true;
+      case "scheduling": return M.schedulerEnabled;
       case "sensors": return mergedSensorList().length > 0;
       case "thermostats": return M.thermostatsPopupEnabled && M.thermostats.length > 0;
       case "music": return M.music.length > 0;
