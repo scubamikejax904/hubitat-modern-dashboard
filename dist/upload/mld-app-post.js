@@ -2054,19 +2054,31 @@
     try {
       const d = await M.getJson("device?id=" + id);
       if (!d || d.i == null) return;
-      const rec = M.devMap.get(Number(d.i));
-      if (rec) {
-        const dev = M.devices.find((x) => x.i === Number(d.i));
+      const numId = Number(d.i);
+
+      const shade = M.windowShades.find(x => x.i === numId);
+      if (shade && (d.st != null || d.pos != null)) {
+        if (d.st != null) shade.st = d.st;
+        if (d.pos != null) shade.pos = d.pos;
+        const opt = M.shadeOptimistic.get(numId);
+        if (opt && M.shadeOptimisticSatisfied(opt, shade)) M.clearShadeOptimistic(numId);
+        M.refreshShadeViews();
+      }
+
+      const rec = M.devMap.get(numId) || M.favDevMap.get(numId);
+      if (rec && !rec.isOutlet) {
+        const dev = M.devices.find((x) => x.i === numId);
         if (dev) {
-          dev.s = d.s ? 1 : 0;
+          if (d.s != null) dev.s = d.s ? 1 : 0;
           if (rec.isDim && d.l != null) dev.l = d.l;
           if (rec.data.ct && d.k != null) dev.k = d.k;
           if (rec.data.rgb && d.h != null) dev.h = d.h;
           if (rec.data.rgb && d.sat != null) dev.sat = d.sat;
         }
-        const opt = M.switchOptimistic.get(Number(d.i));
-        if (opt && !!dev?.s === !!opt.s) M.clearSwitchOptimistic(Number(d.i));
+        const opt = M.switchOptimistic.get(numId);
+        if (opt && !!dev?.s === !!opt.s) M.clearSwitchOptimistic(numId);
         updateStates();
+        if (shade && (d.st != null || d.pos != null)) return;
         return;
       }
       // thermostat reconcile
@@ -2090,7 +2102,6 @@
       const sen = M.sensors.find(x => x.i === Number(d.i));
       const lock = M.locks.find(x => x.i === Number(d.i));
       const garage = M.garageDoors.find(x => x.i === Number(d.i));
-      const shade = M.windowShades.find(x => x.i === Number(d.i));
       const fan = M.ceilingFans.find(x => x.i === Number(d.i));
       const valve = M.valves.find(x => x.i === Number(d.i));
       const mp = M.music.find(x => x.i === Number(d.i));
@@ -2131,16 +2142,7 @@
         else if (M.currentCategory() === "favorites") M.postCall("refreshFavoritesPopup");
         return;
       }
-      if (shade) {
-        if (d.st != null) shade.st = d.st;
-        if (d.pos != null) shade.pos = d.pos;
-        const opt = M.shadeOptimistic.get(Number(d.i));
-        if (opt && M.shadeOptimisticSatisfied(opt, shade)) M.clearShadeOptimistic(Number(d.i));
-        if (M.currentCategory() === "blinds") M.refreshBlindsPopup();
-        else if (M.currentCategory() === "favorites") M.postCall("refreshFavoritesPopup");
-        if (M.shadeMasterPopup?.classList.contains("open")) M.postCall("updateShadeMasterBody");
-        return;
-      }
+      if (shade && (d.st != null || d.pos != null)) return;
       if (fan) {
         if (d.s != null) fan.s = d.s ? 1 : 0;
         if (d.sp != null) fan.sp = d.sp;

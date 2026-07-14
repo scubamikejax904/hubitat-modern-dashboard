@@ -271,8 +271,8 @@ def shadeStatus(dev) {
     st = safeCurrent(dev, "windowBlind")
     if (st != null) return st
     def pos = shadePosition(dev)
-    if (pos != null) {
-        int p = pos.toInteger()
+    if (pos != null && isNumberLike(pos)) {
+        int p = new BigDecimal(pos.toString()).intValue()
         if (p <= 0) return "closed"
         if (p >= 99) return "open"
         return "partially open"
@@ -1528,6 +1528,7 @@ def renderDevice() {
         return render(contentType: "application/json", data: '{"error":"missing id"}', status: 400)
     }
     def dev = lights?.find { it.id.toString() == id.toString() }
+    def shadeForDev = allWindowShades()?.find { it.id.toString() == id.toString() }
     if (dev != null) {
         def isDim = dev.hasCapability("SwitchLevel")
         def hasCt = dev.hasCapability("ColorTemperature")
@@ -1546,7 +1547,13 @@ def renderDevice() {
         out << ",\"l\":" << (lvl == null ? "null" : lvl.toString())
         out << ",\"k\":" << (kelvin == null ? "null" : kelvin.toString())
         out << ",\"h\":" << (hue == null ? "null" : hue.toString())
-        out << ",\"sat\":" << (sat == null ? "null" : sat.toString()) << "}"
+        out << ",\"sat\":" << (sat == null ? "null" : sat.toString())
+        if (shadeForDev != null) {
+            try { shadeForDev.refresh() } catch (e) {}
+            out << ",\"st\":" << jsonStr(shadeStatus(shadeForDev))
+            out << ",\"pos\":" << numOrNull(shadePosition(shadeForDev))
+        }
+        out << "}"
         return render(contentType: "application/json", data: withAuthJson(out.toString()), status: 200)
     }
     // thermostat?
@@ -1914,6 +1921,10 @@ def validateUnlockPin(pin) {
     return [ok: true]
 }
 
+def isShadeCmd(c) {
+    return c == "open" || c == "close" || c == "setPosition" || c == "stop"
+}
+
 def executeOneCmd(id, c, v, pin) {
     if (id == null || c == null) {
         return [ok: false, error: "missing params"]
@@ -1931,7 +1942,9 @@ def executeOneCmd(id, c, v, pin) {
         return [ok: false, error: "device not found"]
     }
     try {
-        if (fan != null && (c == "on" || c == "off" || c == "setSpeed")) {
+        if (shade != null && isShadeCmd(c)) {
+            runShadeCmd(shade, c, v)
+        } else if (fan != null && (c == "on" || c == "off" || c == "setSpeed")) {
             runFanCmd(fan, c, v)
         } else if (dev != null) {
             runLightCmd(dev, c, v)

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.75
+
+- **Blinds:** shade commands route correctly when a device is also listed as a light
+  (e.g. Switch Level shades); `/device` refresh returns shade state/position.
+- **Blinds:** live updates handle `windowBlind`, `level`, and `switch` events; position
+  parsing tolerates non-integer hub values.
+- **Blinds:** reconcile and WebSocket paths share shade refresh logic so dual-listed
+  devices stay in sync.
+
 ## 0.2.74
 
 - **Blinds master popup:** Open/Close stay clickable while shades move so you can

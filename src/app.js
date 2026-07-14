@@ -502,6 +502,34 @@
     return shade.pos;
   }
 
+  function applyShadeWsEvent(shade, name, value) {
+    if (!shade) return false;
+    const opt = shadeOptimistic.get(shade.i);
+    if (opt && opt.until > Date.now()) return true;
+    if (name === "windowShade" || name === "windowBlind") {
+      shade.st = String(value || "");
+    } else if (name === "position" || name === "level") {
+      const pos = Math.round(Number(value));
+      if (!isNaN(pos)) {
+        shade.pos = pos;
+        if (pos <= 0) shade.st = "closed";
+        else if (pos >= 99) shade.st = "open";
+        else shade.st = "partially open";
+      }
+    } else if (name === "switch") {
+      const sw = String(value || "");
+      if (sw === "on") shade.st = "open";
+      else if (sw === "off") shade.st = "closed";
+    } else return false;
+    return true;
+  }
+
+  function refreshShadeViews() {
+    if (postCall("currentCategory") === "blinds") postCall("refreshBlindsPopup");
+    else if (postCall("currentCategory") === "favorites") postCall("refreshFavoritesPopup");
+    if (shadeMasterPopup?.classList.contains("open")) postCall("updateShadeMasterBody");
+  }
+
   function shadeIsMoving(shade) {
     const st = effectiveShadeState(shade);
     return st === "opening" || st === "closing";
@@ -6413,19 +6441,31 @@
     try {
       const d = await getJson("device?id=" + id);
       if (!d || d.i == null) return;
-      const rec = devMap.get(Number(d.i));
-      if (rec) {
-        const dev = devices.find((x) => x.i === Number(d.i));
+      const numId = Number(d.i);
+
+      const shade = windowShades.find(x => x.i === numId);
+      if (shade && (d.st != null || d.pos != null)) {
+        if (d.st != null) shade.st = d.st;
+        if (d.pos != null) shade.pos = d.pos;
+        const opt = shadeOptimistic.get(numId);
+        if (opt && shadeOptimisticSatisfied(opt, shade)) clearShadeOptimistic(numId);
+        refreshShadeViews();
+      }
+
+      const rec = devMap.get(numId) || favDevMap.get(numId);
+      if (rec && !rec.isOutlet) {
+        const dev = devices.find((x) => x.i === numId);
         if (dev) {
-          dev.s = d.s ? 1 : 0;
+          if (d.s != null) dev.s = d.s ? 1 : 0;
           if (rec.isDim && d.l != null) dev.l = d.l;
           if (rec.data.ct && d.k != null) dev.k = d.k;
           if (rec.data.rgb && d.h != null) dev.h = d.h;
           if (rec.data.rgb && d.sat != null) dev.sat = d.sat;
         }
-        const opt = switchOptimistic.get(Number(d.i));
-        if (opt && !!dev?.s === !!opt.s) clearSwitchOptimistic(Number(d.i));
+        const opt = switchOptimistic.get(numId);
+        if (opt && !!dev?.s === !!opt.s) clearSwitchOptimistic(numId);
         updateStates();
+        if (shade && (d.st != null || d.pos != null)) return;
         return;
       }
       // thermostat reconcile
@@ -6449,7 +6489,6 @@
       const sen = sensors.find(x => x.i === Number(d.i));
       const lock = locks.find(x => x.i === Number(d.i));
       const garage = garageDoors.find(x => x.i === Number(d.i));
-      const shade = windowShades.find(x => x.i === Number(d.i));
       const fan = ceilingFans.find(x => x.i === Number(d.i));
       const valve = valves.find(x => x.i === Number(d.i));
       const mp = music.find(x => x.i === Number(d.i));
@@ -6490,16 +6529,7 @@
         else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
         return;
       }
-      if (shade) {
-        if (d.st != null) shade.st = d.st;
-        if (d.pos != null) shade.pos = d.pos;
-        const opt = shadeOptimistic.get(Number(d.i));
-        if (opt && shadeOptimisticSatisfied(opt, shade)) clearShadeOptimistic(Number(d.i));
-        if (currentCategory() === "blinds") refreshBlindsPopup();
-        else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
-        if (shadeMasterPopup?.classList.contains("open")) postCall("updateShadeMasterBody");
-        return;
-      }
+      if (shade && (d.st != null || d.pos != null)) return;
       if (fan) {
         if (d.s != null) fan.s = d.s ? 1 : 0;
         if (d.sp != null) fan.sp = d.sp;
@@ -9605,8 +9635,16 @@
           return;
         }
         if (m.source !== "DEVICE" || m.deviceId == null) return;
-        const rec = devMap.get(Number(m.deviceId));
-        if (rec) {
+        const deviceId = Number(m.deviceId);
+        const shade = windowShades.find(x => x.i === deviceId);
+        const shadeName = String(m.name || "");
+        const shadeEvt = shade && (shadeName === "windowShade" || shadeName === "windowBlind" || shadeName === "position" || shadeName === "level" || shadeName === "switch");
+        if (shadeEvt && applyShadeWsEvent(shade, shadeName, m.value)) {
+          refreshShadeViews();
+          if (shadeName !== "switch" && shadeName !== "level") return;
+        }
+        const rec = devMap.get(deviceId) || favDevMap.get(deviceId);
+        if (rec && !rec.isOutlet) {
           const dev = devices.find((x) => x.i === Number(m.deviceId));
           if (m.name === "switch") {
             const s = (m.value === "on") ? 1 : 0;
@@ -9670,21 +9708,6 @@
           if (opt && opt.until > Date.now()) return;
           garage.st = String(m.value || "");
           if (currentCategory() === "locks") renderLocksPopup();
-          else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
-          return;
-        }
-        const shade = windowShades.find(x => x.i === Number(m.deviceId));
-        if (shade) {
-          const name = String(m.name || "");
-          const opt = shadeOptimistic.get(shade.i);
-          if (opt && opt.until > Date.now()) return;
-          if (name === "windowShade") {
-            shade.st = String(m.value || "");
-          } else if (name === "position") {
-            const pos = Math.round(Number(m.value));
-            if (!isNaN(pos)) shade.pos = pos;
-          } else return;
-          if (currentCategory() === "blinds") refreshBlindsPopup();
           else if (currentCategory() === "favorites") postCall("refreshFavoritesPopup");
           return;
         }
