@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.89
+
+- **Cameras:** even larger reorder controls (80px touch targets, wider overlay padding)
+  on the Cameras tab.
+
 ## 0.2.88
 
 - **Cameras:** larger reorder controls (drag handle and up/down buttons) for easier
