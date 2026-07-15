@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.88
+
+- **Cameras:** larger reorder controls (drag handle and up/down buttons) for easier
+  touch use on the Cameras tab.
+
 ## 0.2.87
 
 - **Cameras:** manual reorder on the Cameras tab via overflow **Reorder** — drag handle and up/down buttons on each tile; order syncs across devices (`cameraOrder`).

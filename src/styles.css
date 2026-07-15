@@ -318,25 +318,25 @@ body {
 .camera-reorder-overlay {
   display: none; position: absolute; inset: 0; z-index: 2;
   align-items: center; justify-content: space-between;
-  padding: 8px 10px; pointer-events: none;
+  padding: 12px 14px; pointer-events: none;
   background: linear-gradient(to bottom, rgba(0,0,0,.55), rgba(0,0,0,.15) 40%, rgba(0,0,0,.55));
 }
 .camera-drag-handle {
   display: none; appearance: none; border: none; background: rgba(0,0,0,.35);
-  color: #fff; padding: 8px 6px; border-radius: 10px;
-  cursor: grab; touch-action: none; min-width: 36px; min-height: 44px;
+  color: #fff; padding: 12px 10px; border-radius: 14px;
+  cursor: grab; touch-action: none; min-width: 56px; min-height: 56px;
   align-items: center; justify-content: center; pointer-events: auto;
 }
-.camera-drag-handle svg { width: 18px; height: 18px; fill: currentColor; }
+.camera-drag-handle svg { width: 24px; height: 24px; fill: currentColor; }
 .camera-drag-handle:active { cursor: grabbing; }
-.camera-move-btns { display: none; flex-shrink: 0; gap: 6px; pointer-events: auto; }
+.camera-move-btns { display: none; flex-shrink: 0; gap: 10px; pointer-events: auto; }
 .camera-move-btn {
   appearance: none; border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.45);
-  color: #fff; border-radius: 10px; padding: 0; width: 40px; height: 40px;
+  color: #fff; border-radius: 14px; padding: 0; width: 56px; height: 56px;
   display: flex; align-items: center; justify-content: center; cursor: pointer;
   touch-action: manipulation;
 }
-.camera-move-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.camera-move-btn svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .camera-move-btn:active:not(:disabled) { transform: scale(.94); }
 .camera-move-btn:disabled { opacity: 0.35; cursor: default; }
 .cameras-reorder-mode .camera-reorder-overlay { display: flex; }
