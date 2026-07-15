@@ -97,7 +97,7 @@
     try { localStorage.setItem(DRAWER_STORAGE_KEY, on ? "1" : "0"); } catch {}
   }
 
-  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", roomOrder: null, navOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), localUrl: "", cloudUrl: "" };
+  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", roomOrder: null, navOrder: null, cameraOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), localUrl: "", cloudUrl: "" };
 
   let localModeBannerEl = null;
   let localBannerDismissed = false;
@@ -1328,6 +1328,9 @@
       if (!reorderMode && Array.isArray(d.config.navOrder)) {
         cfg.navOrder = d.config.navOrder.length ? d.config.navOrder : null;
         postCall("applyNavOrder", postCall("getDisplayNavOrder"));
+      }
+      if (!reorderMode && Array.isArray(d.config.cameraOrder)) {
+        cfg.cameraOrder = d.config.cameraOrder.length ? d.config.cameraOrder : null;
       }
       if (d.config.localUrl != null) cfg.localUrl = String(d.config.localUrl || "");
       if (d.config.cloudUrl != null) cfg.cloudUrl = String(d.config.cloudUrl || "");

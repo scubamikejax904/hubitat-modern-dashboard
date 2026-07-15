@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.87
+
+- **Cameras:** manual reorder on the Cameras tab via overflow **Reorder** — drag handle and up/down buttons on each tile; order syncs across devices (`cameraOrder`).
+
 ## 0.2.86
 
 - **Sensors:** security and life-safety tiles show **Last activity ·** (not enrollment or other driver internals).

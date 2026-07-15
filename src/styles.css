@@ -315,6 +315,37 @@ body {
   background: rgba(255,255,255,.15); color: #fff; font-size: 24px; line-height: 1;
   cursor: pointer;
 }
+.camera-reorder-overlay {
+  display: none; position: absolute; inset: 0; z-index: 2;
+  align-items: center; justify-content: space-between;
+  padding: 8px 10px; pointer-events: none;
+  background: linear-gradient(to bottom, rgba(0,0,0,.55), rgba(0,0,0,.15) 40%, rgba(0,0,0,.55));
+}
+.camera-drag-handle {
+  display: none; appearance: none; border: none; background: rgba(0,0,0,.35);
+  color: #fff; padding: 8px 6px; border-radius: 10px;
+  cursor: grab; touch-action: none; min-width: 36px; min-height: 44px;
+  align-items: center; justify-content: center; pointer-events: auto;
+}
+.camera-drag-handle svg { width: 18px; height: 18px; fill: currentColor; }
+.camera-drag-handle:active { cursor: grabbing; }
+.camera-move-btns { display: none; flex-shrink: 0; gap: 6px; pointer-events: auto; }
+.camera-move-btn {
+  appearance: none; border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.45);
+  color: #fff; border-radius: 10px; padding: 0; width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  touch-action: manipulation;
+}
+.camera-move-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.camera-move-btn:active:not(:disabled) { transform: scale(.94); }
+.camera-move-btn:disabled { opacity: 0.35; cursor: default; }
+.cameras-reorder-mode .camera-reorder-overlay { display: flex; }
+.cameras-reorder-mode .camera-drag-handle,
+.cameras-reorder-mode .camera-move-btns { display: flex; }
+.cameras-reorder-mode .camera-tile { outline: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); cursor: default; }
+.cameras-reorder-mode .camera-iframe { pointer-events: none; }
+.camera-tile.camera-dragging { position: fixed; z-index: 10001; opacity: 0.92; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+.camera-drag-placeholder { width: 100%; aspect-ratio: 16 / 9; background: rgba(255,255,255,.06); border: 1px dashed rgba(255,255,255,.2); }
 
 .quick-panel .quick-fav-grid,
 .quick-panel .sensor-grid {
@@ -385,6 +416,7 @@ body {
 }
 .nav-drag-handle svg { width: 12px; height: 12px; fill: currentColor; opacity: 0.85; }
 .reorder-mode .search-wrap { display: none !important; }
+.reorder-mode.cameras-reorder-mode .quick-nav { display: none !important; }
 #app.cameras-view .search-wrap { display: none !important; }
 .reorder-mode .quick-nav {
   justify-content: flex-start; gap: 8px; margin-top: 10px; padding-bottom: 2px;

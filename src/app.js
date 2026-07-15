@@ -97,7 +97,7 @@
     try { localStorage.setItem(DRAWER_STORAGE_KEY, on ? "1" : "0"); } catch {}
   }
 
-  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", roomOrder: null, navOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), localUrl: "", cloudUrl: "" };
+  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", roomOrder: null, navOrder: null, cameraOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), localUrl: "", cloudUrl: "" };
 
   let localModeBannerEl = null;
   let localBannerDismissed = false;
@@ -1328,6 +1328,9 @@
       if (!reorderMode && Array.isArray(d.config.navOrder)) {
         cfg.navOrder = d.config.navOrder.length ? d.config.navOrder : null;
         postCall("applyNavOrder", postCall("getDisplayNavOrder"));
+      }
+      if (!reorderMode && Array.isArray(d.config.cameraOrder)) {
+        cfg.cameraOrder = d.config.cameraOrder.length ? d.config.cameraOrder : null;
       }
       if (d.config.localUrl != null) cfg.localUrl = String(d.config.localUrl || "");
       if (d.config.cloudUrl != null) cfg.cloudUrl = String(d.config.cloudUrl || "");
@@ -4338,6 +4341,25 @@
     return sorted;
   }
 
+  function sortCamerasByOrder(allCams, order) {
+    const list = Array.isArray(allCams) ? allCams : [];
+    if (!order?.length) return list.slice();
+    const byId = new Map(list.map(c => [Number(c.i), c]));
+    const sorted = [];
+    const seen = new Set();
+    for (const rawId of order) {
+      const id = Number(rawId);
+      if (byId.has(id)) {
+        sorted.push(byId.get(id));
+        seen.add(id);
+      }
+    }
+    for (const c of list) {
+      if (!seen.has(Number(c.i))) sorted.push(c);
+    }
+    return sorted;
+  }
+
   function ensureRoomsFromDevices() {
     if (rooms.length) return;
     const byId = new Map();
@@ -4471,6 +4493,46 @@
     }
     flash(lastMsg === "Could not save room order"
       ? "Could not save room order — update the hub app code and try again"
+      : lastMsg, true);
+    return false;
+  }
+
+  async function saveCameraOrder(order) {
+    if (!order?.length) {
+      flash("No cameras to save", true);
+      return false;
+    }
+    const headers = { "Accept": "application/json" };
+    const paths = ["camera-order", "settings/camera-order"];
+    let lastMsg = "Could not save camera order";
+    for (const path of paths) {
+      try {
+        let r = await fetch(withToken(path), {
+          method: "POST",
+          cache: "no-store",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ order }),
+        });
+        if (r.ok) return true;
+        try {
+          const body = await r.json();
+          if (body?.error) lastMsg = String(body.error);
+        } catch {}
+        if (r.status === 404) continue;
+        r = await fetch(withToken(path + "?order=" + encodeURIComponent(order.join(","))), {
+          method: "GET",
+          cache: "no-store",
+          headers,
+        });
+        if (r.ok) return true;
+        try {
+          const body = await r.json();
+          if (body?.error) lastMsg = String(body.error);
+        } catch {}
+      } catch {}
+    }
+    flash(lastMsg === "Could not save camera order"
+      ? "Could not save camera order — update the hub app code and try again"
       : lastMsg, true);
     return false;
   }
@@ -5156,6 +5218,10 @@
   }
 
   function enterReorderMode() {
+    if (tabMode && activeTab === "cameras" && cameras.length) {
+      postCall("enterCameraReorderMode");
+      return;
+    }
     reorderSnapshot = cfg.roomOrder?.length ? cfg.roomOrder.slice() : null;
     reorderDraftOrder = currentRoomOrderFromDom();
     navReorderSnapshot = cfg.navOrder?.length ? cfg.navOrder.slice() : null;
@@ -5199,6 +5265,10 @@
   }
 
   async function finishReorderMode() {
+    if (postCall("isCameraReorderActive")) {
+      await postCall("finishCameraReorderMode");
+      return;
+    }
     const order = reorderDraftOrder ?? currentRoomOrderFromDom();
     const navOrder = navReorderDraftOrder ?? currentNavOrderFromDom();
     const [roomsSaved, navSaved] = await Promise.all([
@@ -5214,6 +5284,10 @@
   }
 
   function cancelReorderMode() {
+    if (postCall("isCameraReorderActive")) {
+      postCall("cancelCameraReorderMode");
+      return;
+    }
     cfg.roomOrder = reorderSnapshot ? reorderSnapshot.slice() : null;
     cfg.navOrder = navReorderSnapshot ? navReorderSnapshot.slice() : null;
     lastDataSig = "";
@@ -5582,7 +5656,7 @@
     if (!Array.isArray(valves)) valves = [];
     replaceList(valves, Array.isArray(d.valves) ? d.valves : []);
     replaceList(music, d.music);
-    replaceList(cameras, Array.isArray(d.cameras) ? d.cameras : []);
+    replaceList(cameras, sortCamerasByOrder(Array.isArray(d.cameras) ? d.cameras : [], cfg.cameraOrder));
     if (Array.isArray(d.config?.favorites)) replaceList(favorites, d.config.favorites.map(Number));
     reapplyLockOptimistic();
     reapplyGarageOptimistic();
@@ -10235,6 +10309,227 @@
   let camerasRenderedSig = "";
   let cameraExpandOverlay = null;
   let cameraExpandTile = null;
+  let cameraReorderActive = false;
+  let cameraReorderSnapshot = null;
+  let cameraReorderDraftOrder = null;
+  const cameraReorderEls = new Map();
+
+  function isCameraReorderActive() {
+    return cameraReorderActive;
+  }
+
+  function currentCameraOrderFromDom() {
+    const grid = tabViewEl?.querySelector(".cameras-grid");
+    if (!grid) return cameras.map(c => Number(c.i));
+    return Array.from(grid.querySelectorAll(".camera-tile"))
+      .map(el => Number(el.dataset.camId))
+      .filter(id => Number.isFinite(id));
+  }
+
+  function updateCameraDraftOrderFromDom() {
+    cameraReorderDraftOrder = currentCameraOrderFromDom();
+  }
+
+  function updateCameraMoveButtons() {
+    if (!cameraReorderActive) return;
+    const grid = tabViewEl?.querySelector(".cameras-grid");
+    if (!grid) return;
+    const tiles = Array.from(grid.querySelectorAll(".camera-tile"));
+    tiles.forEach((tile, i) => {
+      const rec = cameraReorderEls.get(Number(tile.dataset.camId));
+      if (!rec?.moveUp || !rec?.moveDown) return;
+      rec.moveUp.disabled = i === 0;
+      rec.moveDown.disabled = i === tiles.length - 1;
+    });
+  }
+
+  function moveCamera(camId, delta) {
+    const grid = tabViewEl?.querySelector(".cameras-grid");
+    if (!grid) return;
+    const tiles = Array.from(grid.querySelectorAll(".camera-tile"));
+    const idx = tiles.findIndex(t => Number(t.dataset.camId) === camId);
+    if (idx < 0) return;
+    const newIdx = idx + delta;
+    if (newIdx < 0 || newIdx >= tiles.length) return;
+    const tile = tiles[idx];
+    const sibling = tiles[newIdx];
+    if (delta < 0) grid.insertBefore(tile, sibling);
+    else grid.insertBefore(sibling, tile);
+    updateCameraDraftOrderFromDom();
+    updateCameraMoveButtons();
+    hapticTap();
+  }
+
+  function attachCameraReorder(tile, handle) {
+    let active = false;
+    let dragging = false;
+    let pointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let floatOffsetY = 0;
+    let placeholder = null;
+    const grid = () => tabViewEl?.querySelector(".cameras-grid");
+
+    function visibleTiles() {
+      const el = grid();
+      if (!el) return [];
+      return Array.from(el.querySelectorAll(".camera-tile:not(.camera-dragging)"));
+    }
+
+    function movePlaceholderForY(y) {
+      if (!placeholder) return;
+      const el = grid();
+      if (!el) return;
+      const tiles = visibleTiles();
+      let insertBefore = null;
+      for (const t of tiles) {
+        const rect = t.getBoundingClientRect();
+        if (y < rect.top + rect.height / 2) {
+          insertBefore = t;
+          break;
+        }
+      }
+      if (insertBefore) el.insertBefore(placeholder, insertBefore);
+      else el.appendChild(placeholder);
+    }
+
+    function positionFloat(clientY) {
+      tile.style.top = (clientY - floatOffsetY) + "px";
+    }
+
+    function beginDrag(e) {
+      dragging = true;
+      reorderBusy = true;
+      const rect = tile.getBoundingClientRect();
+      floatOffsetY = e.clientY - rect.top;
+      placeholder = ce("div", "camera-drag-placeholder");
+      placeholder.style.height = rect.height + "px";
+      tile.parentNode.insertBefore(placeholder, tile);
+      tile.classList.add("camera-dragging");
+      tile.style.width = rect.width + "px";
+      tile.style.left = rect.left + "px";
+      tile.style.top = rect.top + "px";
+      positionFloat(e.clientY);
+      movePlaceholderForY(e.clientY);
+    }
+
+    function commitDrag() {
+      const el = grid();
+      if (placeholder?.parentNode && el) {
+        el.insertBefore(tile, placeholder);
+        placeholder.remove();
+      }
+      tile.classList.remove("camera-dragging");
+      tile.style.width = "";
+      tile.style.left = "";
+      tile.style.top = "";
+      placeholder = null;
+      updateCameraDraftOrderFromDom();
+      updateCameraMoveButtons();
+    }
+
+    function cleanupListeners() {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+    }
+
+    function onMove(e) {
+      if (!active) return;
+      if (!dragging) {
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        if (Math.hypot(dx, dy) < REORDER_DRAG_THRESHOLD) return;
+        beginDrag(e);
+      }
+      e.preventDefault();
+      positionFloat(e.clientY);
+      movePlaceholderForY(e.clientY);
+    }
+
+    function onUp() {
+      if (!active) return;
+      if (dragging) commitDrag();
+      active = false;
+      dragging = false;
+      reorderBusy = false;
+      cleanupListeners();
+      try { handle.releasePointerCapture(pointerId); } catch {}
+    }
+
+    handle.addEventListener("pointerdown", (e) => {
+      if (!cameraReorderActive) return;
+      e.preventDefault();
+      e.stopPropagation();
+      active = true;
+      pointerId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      handle.setPointerCapture(pointerId);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    });
+  }
+
+  function enterCameraReorderMode() {
+    cameraReorderSnapshot = cfg.cameraOrder?.length ? cfg.cameraOrder.map(Number) : null;
+    cameraReorderDraftOrder = null;
+    cameraReorderEls.clear();
+    stopCamerasStreams();
+    stopPolling();
+    reorderMode = true;
+    cameraReorderActive = true;
+    APP_EL?.classList.add("reorder-mode", "cameras-reorder-mode");
+    postCall("closeTopbarOverflowMenu");
+    if (SEARCH_EL) {
+      SEARCH_EL.value = "";
+      applySearch();
+    }
+    if (REORDER_DONE_BTN) REORDER_DONE_BTN.hidden = false;
+    if (REORDER_CANCEL_BTN) REORDER_CANCEL_BTN.hidden = false;
+    camerasRenderedSig = "";
+    renderCamerasPopup();
+    updateCameraMoveButtons();
+  }
+
+  function exitCameraReorderMode(resumePoll) {
+    cameraReorderActive = false;
+    cameraReorderDraftOrder = null;
+    cameraReorderSnapshot = null;
+    cameraReorderEls.clear();
+    reorderMode = false;
+    reorderBusy = false;
+    APP_EL?.classList.remove("reorder-mode", "cameras-reorder-mode");
+    if (REORDER_DONE_BTN) REORDER_DONE_BTN.hidden = true;
+    if (REORDER_CANCEL_BTN) REORDER_CANCEL_BTN.hidden = true;
+    if (resumePoll) {
+      startPolling();
+      refresh();
+    } else {
+      camerasRenderedSig = "";
+      renderCamerasPopup();
+    }
+  }
+
+  async function finishCameraReorderMode() {
+    const order = cameraReorderDraftOrder ?? currentCameraOrderFromDom();
+    const saved = await saveCameraOrder(order);
+    if (!saved) return false;
+    cfg.cameraOrder = order.length ? order.slice() : null;
+    replaceList(cameras, sortCamerasByOrder(cameras, cfg.cameraOrder));
+    lastDataSig = "";
+    exitCameraReorderMode(true);
+    flash("Order saved");
+    return true;
+  }
+
+  function cancelCameraReorderMode() {
+    cfg.cameraOrder = cameraReorderSnapshot?.length ? cameraReorderSnapshot.slice() : null;
+    replaceList(cameras, sortCamerasByOrder(cameras, cfg.cameraOrder));
+    lastDataSig = "";
+    exitCameraReorderMode(false);
+  }
 
   function camerasListSig() {
     return cameras.map(c => `${c.i}:${c.n}:${c.u || ""}:${c.uh || ""}`).join("|");
@@ -10279,6 +10574,7 @@
   }
 
   function openCameraExpand(tile) {
+    if (cameraReorderActive) return;
     if (!tile || cameraExpandTile === tile) {
       closeCameraExpand();
       return;
@@ -10330,6 +10626,7 @@
 
   function refreshCamerasPopup() {
     if (!isLocalOrigin()) return;
+    if (cameraReorderActive) return;
     const sig = camerasListSig();
     if (sig === camerasRenderedSig && tabViewEl?.querySelector(".cameras-grid")) return;
     renderCamerasPopup();
@@ -10348,12 +10645,16 @@
     }
     const grid = ce("div", "cameras-grid");
     const HYSTERESIS_MS = 200;
+    cameraReorderEls.clear();
     for (const cam of cameras) {
       const tile = ce("article", "camera-tile");
+      tile.dataset.camId = String(cam.i);
       tile.dataset.name = String(cam.n || "").toLowerCase();
       tile.dataset.streamUrl = cameraEmbedUrl(cam.u || "");
       tile.dataset.streamUrlHi = cameraEmbedUrl(cam.uh || cam.u || "");
-      tile.addEventListener("click", () => openCameraExpand(tile));
+      if (!cameraReorderActive) {
+        tile.addEventListener("click", () => openCameraExpand(tile));
+      }
       const media = ce("div", "camera-media");
       const iframe = ce("iframe", "camera-iframe");
       iframe.setAttribute("title", cam.n || "Camera");
@@ -10364,10 +10665,37 @@
       const nameEl = ce("span", "camera-name");
       nameEl.textContent = cam.n || "Camera";
       media.appendChild(nameEl);
+      const reorderOverlay = ce("div", "camera-reorder-overlay");
+      const dragHandle = ce("button", "camera-drag-handle");
+      dragHandle.type = "button";
+      dragHandle.setAttribute("aria-label", "Drag to reorder");
+      dragHandle.innerHTML = DRAG_HANDLE_SVG;
+      const moveBtns = ce("div", "camera-move-btns");
+      const moveUp = ce("button", "camera-move-btn");
+      moveUp.type = "button";
+      moveUp.setAttribute("aria-label", "Move camera up");
+      moveUp.innerHTML = MOVE_UP_SVG;
+      moveUp.addEventListener("click", (e) => { e.stopPropagation(); moveCamera(Number(cam.i), -1); });
+      const moveDown = ce("button", "camera-move-btn");
+      moveDown.type = "button";
+      moveDown.setAttribute("aria-label", "Move camera down");
+      moveDown.innerHTML = MOVE_DOWN_SVG;
+      moveDown.addEventListener("click", (e) => { e.stopPropagation(); moveCamera(Number(cam.i), 1); });
+      moveBtns.appendChild(moveUp);
+      moveBtns.appendChild(moveDown);
+      reorderOverlay.appendChild(dragHandle);
+      reorderOverlay.appendChild(moveBtns);
+      attachCameraReorder(tile, dragHandle);
+      cameraReorderEls.set(Number(cam.i), { moveUp, moveDown });
       tile.appendChild(media);
+      tile.appendChild(reorderOverlay);
       grid.appendChild(tile);
     }
     body.appendChild(grid);
+    if (cameraReorderActive) {
+      updateCameraMoveButtons();
+      return;
+    }
     if (!("IntersectionObserver" in window)) {
       const tiles = grid.querySelectorAll(".camera-tile");
       for (let i = 0; i < Math.min(3, tiles.length); i++) {

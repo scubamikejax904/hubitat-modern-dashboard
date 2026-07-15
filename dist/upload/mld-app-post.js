@@ -45,6 +45,46 @@
     return false;
   }
 
+  async function saveCameraOrder(order) {
+    if (!order?.length) {
+      M.flash("No cameras to save", true);
+      return false;
+    }
+    const headers = { "Accept": "application/json" };
+    const paths = ["camera-order", "settings/camera-order"];
+    let lastMsg = "Could not save camera order";
+    for (const path of paths) {
+      try {
+        let r = await fetch(M.withToken(path), {
+          method: "POST",
+          cache: "no-store",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ order }),
+        });
+        if (r.ok) return true;
+        try {
+          const body = await r.json();
+          if (body?.error) lastMsg = String(body.error);
+        } catch {}
+        if (r.status === 404) continue;
+        r = await fetch(M.withToken(path + "?order=" + encodeURIComponent(order.join(","))), {
+          method: "GET",
+          cache: "no-store",
+          headers,
+        });
+        if (r.ok) return true;
+        try {
+          const body = await r.json();
+          if (body?.error) lastMsg = String(body.error);
+        } catch {}
+      } catch {}
+    }
+    M.flash(lastMsg === "Could not save camera order"
+      ? "Could not save camera order — update the hub app code and try again"
+      : lastMsg, true);
+    return false;
+  }
+
   function currentNavOrderFromDom() {
     const nav = document.querySelector(".quick-nav");
     if (!nav) return [];
@@ -726,6 +766,10 @@
   }
 
   function enterReorderMode() {
+    if (M.tabMode && M.activeTab === "cameras" && M.cameras.length) {
+      M.postCall("enterCameraReorderMode");
+      return;
+    }
     M.reorderSnapshot = M.cfg.roomOrder?.length ? M.cfg.roomOrder.slice() : null;
     M.reorderDraftOrder = currentRoomOrderFromDom();
     M.navReorderSnapshot = M.cfg.navOrder?.length ? M.cfg.navOrder.slice() : null;
@@ -769,6 +813,10 @@
   }
 
   async function finishReorderMode() {
+    if (M.postCall("isCameraReorderActive")) {
+      await M.postCall("finishCameraReorderMode");
+      return;
+    }
     const order = M.reorderDraftOrder ?? currentRoomOrderFromDom();
     const navOrder = M.navReorderDraftOrder ?? currentNavOrderFromDom();
     const [roomsSaved, navSaved] = await Promise.all([
@@ -784,6 +832,10 @@
   }
 
   function cancelReorderMode() {
+    if (M.postCall("isCameraReorderActive")) {
+      M.postCall("cancelCameraReorderMode");
+      return;
+    }
     M.cfg.roomOrder = M.reorderSnapshot ? M.reorderSnapshot.slice() : null;
     M.cfg.navOrder = M.navReorderSnapshot ? M.navReorderSnapshot.slice() : null;
     M.lastDataSig = "";
@@ -1152,7 +1204,7 @@
     if (!Array.isArray(M.valves)) M.valves = [];
     M.replaceList(M.valves, Array.isArray(d.valves) ? d.valves : []);
     M.replaceList(M.music, d.music);
-    M.replaceList(M.cameras, Array.isArray(d.cameras) ? d.cameras : []);
+    M.replaceList(M.cameras, M.sortCamerasByOrder(Array.isArray(d.cameras) ? d.cameras : [], M.cfg.cameraOrder));
     if (Array.isArray(d.config?.favorites)) M.replaceList(M.favorites, d.config.favorites.map(Number));
     M.reapplyLockOptimistic();
     M.reapplyGarageOptimistic();
@@ -2671,5 +2723,5 @@
     }
     body.appendChild(list);
   }
-  Object.assign(M, { saveRoomOrder, currentNavOrderFromDom, updateNavDraftOrderFromDom, showAllNavForReorder, cleanupNavDragState, saveNavOrder, postJson, postJsonSilent, setHsmApi, setHubModeApi, activateSceneApi, bulkLightsApi, snapshotSaveApi, snapshotRestoreApi, saveFavorites, hubModeLocked, hsmLocked, roomLabel, compareByRoomThenFullName, sortByRoomThenFullName, snapshotRoomKey, snapshotHouseKey, setRoomGestureLock, attachRoomSlideAction, updateRoomSnapshotUi, getFavoriteEntries, updateAllFavButtons, attachFavButton, toggleFavorite, currentRoomOrderFromDom, updateDraftOrderFromDom, updateMoveButtons, moveRoom, enterReorderMode, exitReorderMode, finishReorderMode, cancelReorderMode, closeTopbarOverflowMenu, openTopbarOverflowMenu, toggleTopbarOverflowMenu, attachRoomReorder, attachNavReorder, setupNavReorderItems, relocateNavForReorder, restoreNavAfterReorder, captureUiScroll, restoreUiScroll, render, buildDom, makeTile, makeOutletTile, attachOutletSocketTap, attachSwitchTap, attachBulbTap, attachColorNameClick, clampLevel, setSliderLevel, syncTileState, updateStates, updateRoomMeta, attachDrag, attachShadeDrag, attachBulkShadeDrag, testHaptics, toggleSwitch, toggleOutlet, toggleDimmer, reconcileDevice, refreshDevice, reconcileLock, reconcileShade, reconcileFan, reconcileMusic, sendMusicCmd, broadcastMusic, broadcastMusicVolume, reconcileGarage, sendGarageCmd, sendLockCmd, sendShadeCmd, sendFanCmd, fanMasterTargetIds, shadeMasterTargetIds, broadcastFanPower, broadcastFanSpeed, broadcastShadeCmd, applySwitchCmdOptimistic, roomAll, allLights, ensureQuickPopup, syncQuickPopupWidth, syncQuickPopupWidthForOpen, updateFavoriteGarageRow, makeGarageRow, makeLockRow, updateFavoriteLockRow, renderLocksPopup });
+  Object.assign(M, { saveRoomOrder, saveCameraOrder, currentNavOrderFromDom, updateNavDraftOrderFromDom, showAllNavForReorder, cleanupNavDragState, saveNavOrder, postJson, postJsonSilent, setHsmApi, setHubModeApi, activateSceneApi, bulkLightsApi, snapshotSaveApi, snapshotRestoreApi, saveFavorites, hubModeLocked, hsmLocked, roomLabel, compareByRoomThenFullName, sortByRoomThenFullName, snapshotRoomKey, snapshotHouseKey, setRoomGestureLock, attachRoomSlideAction, updateRoomSnapshotUi, getFavoriteEntries, updateAllFavButtons, attachFavButton, toggleFavorite, currentRoomOrderFromDom, updateDraftOrderFromDom, updateMoveButtons, moveRoom, enterReorderMode, exitReorderMode, finishReorderMode, cancelReorderMode, closeTopbarOverflowMenu, openTopbarOverflowMenu, toggleTopbarOverflowMenu, attachRoomReorder, attachNavReorder, setupNavReorderItems, relocateNavForReorder, restoreNavAfterReorder, captureUiScroll, restoreUiScroll, render, buildDom, makeTile, makeOutletTile, attachOutletSocketTap, attachSwitchTap, attachBulbTap, attachColorNameClick, clampLevel, setSliderLevel, syncTileState, updateStates, updateRoomMeta, attachDrag, attachShadeDrag, attachBulkShadeDrag, testHaptics, toggleSwitch, toggleOutlet, toggleDimmer, reconcileDevice, refreshDevice, reconcileLock, reconcileShade, reconcileFan, reconcileMusic, sendMusicCmd, broadcastMusic, broadcastMusicVolume, reconcileGarage, sendGarageCmd, sendLockCmd, sendShadeCmd, sendFanCmd, fanMasterTargetIds, shadeMasterTargetIds, broadcastFanPower, broadcastFanSpeed, broadcastShadeCmd, applySwitchCmdOptimistic, roomAll, allLights, ensureQuickPopup, syncQuickPopupWidth, syncQuickPopupWidthForOpen, updateFavoriteGarageRow, makeGarageRow, makeLockRow, updateFavoriteLockRow, renderLocksPopup });
 })();

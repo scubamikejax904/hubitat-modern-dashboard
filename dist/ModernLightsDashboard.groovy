@@ -1,4 +1,4 @@
-// Modern Dashboard v0.2.86
+// Modern Dashboard v0.2.87
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
@@ -42,7 +42,7 @@ def mainPage() {
             } else {
                 paragraph "<small><b>Hub-only:</b> UI and API run entirely on your hub — no Maker API or third-party cloud.</small>"
             }
-            paragraph "<small>Version 0.2.86 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
+            paragraph "<small>Version 0.2.87 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         section("Devices") {
             paragraph "<small>Select the devices you want on the dashboard. Rooms and layout are automatic based on your Hubitat room assignments.</small>"
@@ -112,7 +112,7 @@ def mainPage() {
                 multiple: true, required: false, showFilter: true, submitOnChange: true
         }
         section("Cameras") {
-            paragraph "<small>Select <b>go2rtc Camera</b> devices from the go2rtc Hubitat app (grouped main + sub streams). Requires <b>Enable tabs</b>. The <b>Cameras</b> tab appears only on the <b>local hub dashboard URL</b> (http://…). Grid tiles use the sub stream when available; tap a tile for full-screen main stream.</small>"
+            paragraph "<small>Select <b>go2rtc Camera</b> devices from the go2rtc Hubitat app (grouped main + sub streams). Requires <b>Enable tabs</b>. The <b>Cameras</b> tab appears only on the <b>local hub dashboard URL</b> (http://…). Grid tiles use the sub stream when available; tap a tile for full-screen main stream. Reorder cameras from the overflow menu on the Cameras tab.</small>"
             input "cameras", "capability.imageCapture", title: "Cameras (go2rtc)",
                 multiple: true, required: false, showFilter: true, submitOnChange: true
         }
@@ -765,6 +765,8 @@ mappings {
     path("/room-order") { action: [GET: "saveRoomOrderGet", POST: "saveRoomOrder"] }
     path("/settings/nav-order") { action: [GET: "saveNavOrderGet", POST: "saveNavOrder"] }
     path("/nav-order") { action: [GET: "saveNavOrderGet", POST: "saveNavOrder"] }
+    path("/settings/camera-order") { action: [GET: "saveCameraOrderGet", POST: "saveCameraOrder"] }
+    path("/camera-order") { action: [GET: "saveCameraOrderGet", POST: "saveCameraOrder"] }
     path("/hub-mode") { action: [GET: "setHubModeGet", POST: "setHubMode"] }
     path("/hsm") { action: [GET: "setHsmGet", POST: "setHsm"] }
     path("/scene/activate") { action: [GET: "activateSceneGet", POST: "activateScene"] }
@@ -936,6 +938,7 @@ def renderData() {
     out << ",\"cloudUrl\":" << jsonStr(dashboardUrl(false))
     out << roomOrderJsonFragment()
     out << navOrderJsonFragment()
+    out << cameraOrderJsonFragment()
     out << favoritesJsonFragment()
     out << lightControlConfigJsonFragment()
     out << "},\"rooms\":["
@@ -1104,8 +1107,9 @@ def renderData() {
     }
     out << "],\"cameras\":["
     first = true
-    if (cameras) {
-        for (d in cameras) {
+    def cameraDevs = orderedCamerasList()
+    if (cameraDevs) {
+        for (d in cameraDevs) {
             def urls = cameraStreamUrls(d)
             if (!urls?.u) continue
             if (!first) out << ","; first = false
@@ -2837,6 +2841,117 @@ def saveNavOrderFromList(order) {
     for (key in validated) {
         if (!first) out << ","; first = false
         out << jsonStr(key)
+    }
+    out << "]}"
+    return render(contentType: "application/json", data: withAuthJson(out.toString()), status: 200)
+}
+
+// ---------------------------------------------------------------------------
+// Camera order (state.cameraOrder — synced across devices)
+// ---------------------------------------------------------------------------
+def parseCameraOrderState() {
+    if (!state.cameraOrder) return []
+    try {
+        return state.cameraOrder.split(",").collect { it.trim() }.findAll { it }.collect { it.toLong() }
+    } catch (e) {
+        return []
+    }
+}
+
+def cameraOrderJsonFragment() {
+    def ids = parseCameraOrderState()
+    def out = new StringBuilder()
+    out << ",\"cameraOrder\":["
+    boolean first = true
+    for (id in ids) {
+        if (!first) out << ","; first = false
+        out << id
+    }
+    out << "]"
+    return out.toString()
+}
+
+def validCameraIdSet() {
+    def set = new HashSet()
+    if (cameras) {
+        for (d in cameras) {
+            try { set.add(d.id.toString()) } catch (e) {}
+        }
+    }
+    return set
+}
+
+def orderedCamerasList() {
+    if (!cameras) return []
+    def list = cameras.toList()
+    def order = parseCameraOrderState()
+    if (!order) return list
+    def byId = [:]
+    for (d in list) byId[d.id.toString()] = d
+    def result = []
+    def seen = new HashSet()
+    for (id in order) {
+        def key = id.toString()
+        if (byId[key]) {
+            result << byId[key]
+            seen.add(key)
+        }
+    }
+    for (d in list) {
+        if (!seen.contains(d.id.toString())) result << d
+    }
+    return result
+}
+
+def saveCameraOrderGet() {
+    def orderStr = params?.order
+    if (!orderStr?.trim()) {
+        return render(contentType: "application/json", data: '{"ok":false,"error":"missing order"}', status: 400)
+    }
+    def order = orderStr.split(",").collect { it.trim() }.findAll { it }
+    return saveCameraOrderFromList(order)
+}
+
+def saveCameraOrder() {
+    def body = request?.JSON
+    if (body == null) {
+        try {
+            def raw = request?.postBody ?: request?.content
+            if (raw) body = new groovy.json.JsonSlurper().parseText(raw.toString())
+        } catch (e) {}
+    }
+    def order = body?.order
+    return saveCameraOrderFromList(order)
+}
+
+def saveCameraOrderFromList(order) {
+    if (!guardDashboardAccess()) return renderAuthRequired()
+    if (!(order instanceof List) || order.isEmpty()) {
+        return render(contentType: "application/json", data: '{"ok":false,"error":"missing order"}', status: 400)
+    }
+    def valid = validCameraIdSet()
+    def validated = []
+    def seen = new HashSet()
+    for (item in order) {
+        def key
+        try {
+            key = (item instanceof Number) ? item.longValue().toString() : item.toString().trim()
+        } catch (e) { continue }
+        if (!key || !valid.contains(key)) continue
+        if (seen.contains(key)) continue
+        seen.add(key)
+        validated << key.toLong()
+    }
+    if (validated.isEmpty()) {
+        return render(contentType: "application/json", data: '{"ok":false,"error":"empty order"}', status: 400)
+    }
+    state.cameraOrder = validated.join(",")
+    def out = new StringBuilder()
+    out << "{\"ok\":true,\"order\":["
+    boolean first = true
+    for (id in validated) {
+        if (!first) out << ","; first = false
+        out << id
     }
     out << "]}"
     return render(contentType: "application/json", data: withAuthJson(out.toString()), status: 200)

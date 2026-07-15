@@ -203,7 +203,7 @@ function buildMockData(count) {
     { i: 5102, n: "Master Bedroom Fan", r: 3, s: 0, sp: "off", supSp: "low,medium-low,medium,medium-high,high", hasSw: 1 },
     { i: 5103, n: "Patio DC Fan", r: 7, s: 1, sp: "4", supSp: "1,2,3,4,5,6", hasSw: 1 },
   ];
-  return { config: { pollIntervalMs: 5000, useWebSocket: false, dashboardName: "mDash", roomOrder: [], navOrder: [], favorites: [1, 5, 1001, 2103, 2201, 5101] }, rooms, devices, outlets: [
+  return { config: { pollIntervalMs: 5000, useWebSocket: false, dashboardName: "mDash", roomOrder: [], navOrder: [], cameraOrder: [], favorites: [1, 5, 1001, 2103, 2201, 5101] }, rooms, devices, outlets: [
     { i: 601, n: "Kitchen Outlet", r: 2, s: 1 },
     { i: 602, n: "Office Outlet", r: 4, s: 0 },
   ], thermostats, tempSensors, sensors, valves, locks, garageDoors, music, cameras, windowShades, ceilingFans, hubModes: ["Day", "Evening", "Night", "Away"], currentHubMode: "Day", hsmStatus: "disarmed", hsmAlert: "water", hsmAlertDesc: "Basement leak sensor", hsmEnabled: true, hsmPinEnabled: true, hsmPinRequired: true, thermostatsPopupEnabled: true, outletsSeparateTab: false, roomClimateEnabled: true, schedulerEnabled: true, schedUse24Hour: false, unlockPinEnabled: true, unlockPinRequired: true, dashboardPasswordEnabled: true, dashboardPasswordRequired: true, scenes: [{ id: 1, n: "Good Morning" }, { id: 2, n: "Movie Time" }, { id: 3, n: "Good Night" }, { id: 4, n: "Away" }], schedules: [], sunTimes: mockSunTimes() };
@@ -818,6 +818,51 @@ const server = createServer(async (req, res) => {
         return res.end('{"ok":false,"error":"empty order"}');
       }
       state.config.navOrder = validated;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ ok: true, order: validated }));
+    }
+  }
+  if (p === "/settings/camera-order" || p === "/camera-order") {
+    const orderParam = url.searchParams.get("order");
+    const validCam = new Set((state.cameras || []).map(c => String(c.i)));
+    const validateOrder = (order) => {
+      const validated = [];
+      const seen = new Set();
+      for (const item of order) {
+        const key = String(item);
+        if (!validCam.has(key) || seen.has(key)) continue;
+        seen.add(key);
+        validated.push(Number(key));
+      }
+      return validated;
+    };
+    if (req.method === "GET" && orderParam) {
+      const validated = validateOrder(orderParam.split(",").map(s => s.trim()).filter(Boolean));
+      if (!validated.length) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end('{"ok":false,"error":"empty order"}');
+      }
+      state.config.cameraOrder = validated;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ ok: true, order: validated }));
+    }
+    if (req.method === "POST") {
+      let body;
+      try { body = await readJsonBody(req); } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end('{"ok":false,"error":"invalid json"}');
+      }
+      const order = body?.order;
+      if (!Array.isArray(order) || !order.length) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end('{"ok":false,"error":"missing order"}');
+      }
+      const validated = validateOrder(order);
+      if (!validated.length) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end('{"ok":false,"error":"empty order"}');
+      }
+      state.config.cameraOrder = validated;
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify({ ok: true, order: validated }));
     }

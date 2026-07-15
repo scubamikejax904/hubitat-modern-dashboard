@@ -11,6 +11,227 @@
   let camerasRenderedSig = "";
   let cameraExpandOverlay = null;
   let cameraExpandTile = null;
+  let cameraReorderActive = false;
+  let cameraReorderSnapshot = null;
+  let cameraReorderDraftOrder = null;
+  const cameraReorderEls = new Map();
+
+  function isCameraReorderActive() {
+    return cameraReorderActive;
+  }
+
+  function currentCameraOrderFromDom() {
+    const grid = M.tabViewEl?.querySelector(".cameras-grid");
+    if (!grid) return M.cameras.map(c => Number(c.i));
+    return Array.from(grid.querySelectorAll(".camera-tile"))
+      .map(el => Number(el.dataset.camId))
+      .filter(id => Number.isFinite(id));
+  }
+
+  function updateCameraDraftOrderFromDom() {
+    cameraReorderDraftOrder = currentCameraOrderFromDom();
+  }
+
+  function updateCameraMoveButtons() {
+    if (!cameraReorderActive) return;
+    const grid = M.tabViewEl?.querySelector(".cameras-grid");
+    if (!grid) return;
+    const tiles = Array.from(grid.querySelectorAll(".camera-tile"));
+    tiles.forEach((tile, i) => {
+      const rec = cameraReorderEls.get(Number(tile.dataset.camId));
+      if (!rec?.moveUp || !rec?.moveDown) return;
+      rec.moveUp.disabled = i === 0;
+      rec.moveDown.disabled = i === tiles.length - 1;
+    });
+  }
+
+  function moveCamera(camId, delta) {
+    const grid = M.tabViewEl?.querySelector(".cameras-grid");
+    if (!grid) return;
+    const tiles = Array.from(grid.querySelectorAll(".camera-tile"));
+    const idx = tiles.findIndex(t => Number(t.dataset.camId) === camId);
+    if (idx < 0) return;
+    const newIdx = idx + delta;
+    if (newIdx < 0 || newIdx >= tiles.length) return;
+    const tile = tiles[idx];
+    const sibling = tiles[newIdx];
+    if (delta < 0) grid.insertBefore(tile, sibling);
+    else grid.insertBefore(sibling, tile);
+    updateCameraDraftOrderFromDom();
+    updateCameraMoveButtons();
+    M.hapticTap();
+  }
+
+  function attachCameraReorder(tile, handle) {
+    let active = false;
+    let dragging = false;
+    let pointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let floatOffsetY = 0;
+    let placeholder = null;
+    const grid = () => M.tabViewEl?.querySelector(".cameras-grid");
+
+    function visibleTiles() {
+      const el = grid();
+      if (!el) return [];
+      return Array.from(el.querySelectorAll(".camera-tile:not(.camera-dragging)"));
+    }
+
+    function movePlaceholderForY(y) {
+      if (!placeholder) return;
+      const el = grid();
+      if (!el) return;
+      const tiles = visibleTiles();
+      let insertBefore = null;
+      for (const t of tiles) {
+        const rect = t.getBoundingClientRect();
+        if (y < rect.top + rect.height / 2) {
+          insertBefore = t;
+          break;
+        }
+      }
+      if (insertBefore) el.insertBefore(placeholder, insertBefore);
+      else el.appendChild(placeholder);
+    }
+
+    function positionFloat(clientY) {
+      tile.style.top = (clientY - floatOffsetY) + "px";
+    }
+
+    function beginDrag(e) {
+      dragging = true;
+      M.reorderBusy = true;
+      const rect = tile.getBoundingClientRect();
+      floatOffsetY = e.clientY - rect.top;
+      placeholder = ce("div", "camera-drag-placeholder");
+      placeholder.style.height = rect.height + "px";
+      tile.parentNode.insertBefore(placeholder, tile);
+      tile.classList.add("camera-dragging");
+      tile.style.width = rect.width + "px";
+      tile.style.left = rect.left + "px";
+      tile.style.top = rect.top + "px";
+      positionFloat(e.clientY);
+      movePlaceholderForY(e.clientY);
+    }
+
+    function commitDrag() {
+      const el = grid();
+      if (placeholder?.parentNode && el) {
+        el.insertBefore(tile, placeholder);
+        placeholder.remove();
+      }
+      tile.classList.remove("camera-dragging");
+      tile.style.width = "";
+      tile.style.left = "";
+      tile.style.top = "";
+      placeholder = null;
+      updateCameraDraftOrderFromDom();
+      updateCameraMoveButtons();
+    }
+
+    function cleanupListeners() {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+    }
+
+    function onMove(e) {
+      if (!active) return;
+      if (!dragging) {
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        if (Math.hypot(dx, dy) < M.REORDER_DRAG_THRESHOLD) return;
+        beginDrag(e);
+      }
+      e.preventDefault();
+      positionFloat(e.clientY);
+      movePlaceholderForY(e.clientY);
+    }
+
+    function onUp() {
+      if (!active) return;
+      if (dragging) commitDrag();
+      active = false;
+      dragging = false;
+      M.reorderBusy = false;
+      cleanupListeners();
+      try { handle.releasePointerCapture(pointerId); } catch {}
+    }
+
+    handle.addEventListener("pointerdown", (e) => {
+      if (!cameraReorderActive) return;
+      e.preventDefault();
+      e.stopPropagation();
+      active = true;
+      pointerId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      handle.setPointerCapture(pointerId);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    });
+  }
+
+  function enterCameraReorderMode() {
+    cameraReorderSnapshot = M.cfg.cameraOrder?.length ? M.cfg.cameraOrder.map(Number) : null;
+    cameraReorderDraftOrder = null;
+    cameraReorderEls.clear();
+    stopCamerasStreams();
+    M.stopPolling();
+    M.reorderMode = true;
+    cameraReorderActive = true;
+    M.APP_EL?.classList.add("reorder-mode", "cameras-reorder-mode");
+    M.postCall("closeTopbarOverflowMenu");
+    if (M.SEARCH_EL) {
+      M.SEARCH_EL.value = "";
+      M.applySearch();
+    }
+    if (M.REORDER_DONE_BTN) M.REORDER_DONE_BTN.hidden = false;
+    if (M.REORDER_CANCEL_BTN) M.REORDER_CANCEL_BTN.hidden = false;
+    camerasRenderedSig = "";
+    renderCamerasPopup();
+    updateCameraMoveButtons();
+  }
+
+  function exitCameraReorderMode(resumePoll) {
+    cameraReorderActive = false;
+    cameraReorderDraftOrder = null;
+    cameraReorderSnapshot = null;
+    cameraReorderEls.clear();
+    M.reorderMode = false;
+    M.reorderBusy = false;
+    M.APP_EL?.classList.remove("reorder-mode", "cameras-reorder-mode");
+    if (M.REORDER_DONE_BTN) M.REORDER_DONE_BTN.hidden = true;
+    if (M.REORDER_CANCEL_BTN) M.REORDER_CANCEL_BTN.hidden = true;
+    if (resumePoll) {
+      M.startPolling();
+      M.refresh();
+    } else {
+      camerasRenderedSig = "";
+      renderCamerasPopup();
+    }
+  }
+
+  async function finishCameraReorderMode() {
+    const order = cameraReorderDraftOrder ?? currentCameraOrderFromDom();
+    const saved = await M.saveCameraOrder(order);
+    if (!saved) return false;
+    M.cfg.cameraOrder = order.length ? order.slice() : null;
+    M.replaceList(M.cameras, M.sortCamerasByOrder(M.cameras, M.cfg.cameraOrder));
+    M.lastDataSig = "";
+    exitCameraReorderMode(true);
+    M.flash("Order saved");
+    return true;
+  }
+
+  function cancelCameraReorderMode() {
+    M.cfg.cameraOrder = cameraReorderSnapshot?.length ? cameraReorderSnapshot.slice() : null;
+    M.replaceList(M.cameras, M.sortCamerasByOrder(M.cameras, M.cfg.cameraOrder));
+    M.lastDataSig = "";
+    exitCameraReorderMode(false);
+  }
 
   function camerasListSig() {
     return M.cameras.map(c => `${c.i}:${c.n}:${c.u || ""}:${c.uh || ""}`).join("|");
@@ -55,6 +276,7 @@
   }
 
   function openCameraExpand(tile) {
+    if (cameraReorderActive) return;
     if (!tile || cameraExpandTile === tile) {
       closeCameraExpand();
       return;
@@ -106,6 +328,7 @@
 
   function refreshCamerasPopup() {
     if (!M.isLocalOrigin()) return;
+    if (cameraReorderActive) return;
     const sig = camerasListSig();
     if (sig === camerasRenderedSig && M.tabViewEl?.querySelector(".cameras-grid")) return;
     renderCamerasPopup();
@@ -124,12 +347,16 @@
     }
     const grid = ce("div", "cameras-grid");
     const HYSTERESIS_MS = 200;
+    cameraReorderEls.clear();
     for (const cam of M.cameras) {
       const tile = ce("article", "camera-tile");
+      tile.dataset.camId = String(cam.i);
       tile.dataset.name = String(cam.n || "").toLowerCase();
       tile.dataset.streamUrl = cameraEmbedUrl(cam.u || "");
       tile.dataset.streamUrlHi = cameraEmbedUrl(cam.uh || cam.u || "");
-      tile.addEventListener("click", () => openCameraExpand(tile));
+      if (!cameraReorderActive) {
+        tile.addEventListener("click", () => openCameraExpand(tile));
+      }
       const media = ce("div", "camera-media");
       const iframe = ce("iframe", "camera-iframe");
       iframe.setAttribute("title", cam.n || "Camera");
@@ -140,10 +367,37 @@
       const nameEl = ce("span", "camera-name");
       nameEl.textContent = cam.n || "Camera";
       media.appendChild(nameEl);
+      const reorderOverlay = ce("div", "camera-reorder-overlay");
+      const dragHandle = ce("button", "camera-drag-handle");
+      dragHandle.type = "button";
+      dragHandle.setAttribute("aria-label", "Drag to reorder");
+      dragHandle.innerHTML = DRAG_HANDLE_SVG;
+      const moveBtns = ce("div", "camera-move-btns");
+      const moveUp = ce("button", "camera-move-btn");
+      moveUp.type = "button";
+      moveUp.setAttribute("aria-label", "Move camera up");
+      moveUp.innerHTML = MOVE_UP_SVG;
+      moveUp.addEventListener("click", (e) => { e.stopPropagation(); moveCamera(Number(cam.i), -1); });
+      const moveDown = ce("button", "camera-move-btn");
+      moveDown.type = "button";
+      moveDown.setAttribute("aria-label", "Move camera down");
+      moveDown.innerHTML = MOVE_DOWN_SVG;
+      moveDown.addEventListener("click", (e) => { e.stopPropagation(); moveCamera(Number(cam.i), 1); });
+      moveBtns.appendChild(moveUp);
+      moveBtns.appendChild(moveDown);
+      reorderOverlay.appendChild(dragHandle);
+      reorderOverlay.appendChild(moveBtns);
+      attachCameraReorder(tile, dragHandle);
+      cameraReorderEls.set(Number(cam.i), { moveUp, moveDown });
       tile.appendChild(media);
+      tile.appendChild(reorderOverlay);
       grid.appendChild(tile);
     }
     body.appendChild(grid);
+    if (cameraReorderActive) {
+      updateCameraMoveButtons();
+      return;
+    }
     if (!("IntersectionObserver" in window)) {
       const tiles = grid.querySelectorAll(".camera-tile");
       for (let i = 0; i < Math.min(3, tiles.length); i++) {
@@ -1730,5 +1984,5 @@
   Object.assign(globalThis.__MLD, { applySchedulesFromData, schedulerHasContent, renderSchedulerView });
   globalThis.__MLD.updateQuickNavVisibility?.();
 
-  Object.assign(M, { camerasListSig, isBlankIframe, cameraEmbedUrl, closeCameraExpand, openCameraExpand, stopCamerasStreams, refreshCamerasPopup, renderCamerasPopup, applySchedulesFromData, schedulerViewIsActive, schedulerHasContent, schedParseTime24, schedFormatTime24, schedTime24To12, schedTime12To24, schedFmtClockTime, schedFmtDateTimeLocal, schedCreateScrollWheel, schedOpenTimeWheelSheet, schedBindStepHold, schedAppendTimeStep, schedAppendTimeColumn, schedAppendClockPicker, fmtSchedTime, newSchedDraft, schedApi, renderSchedulerView, renderSchedulerActive, renderSchedList, renderSchedRow, renderSchedWorkflow, schedNavRow, schedBindPickRow, schedBindPickRoom, renderSchedStep1, validateStep1, renderSchedModeTriggerPicker, renderSchedModeCondition, schedOffsetLabel, renderSchedWhenPicker, renderSchedOffsetPicker, renderSchedSunPreview, renderSchedTimePicker, renderSchedDayPicker, defaultOnceAt, renderSchedOncePicker, renderSchedStep2, schedMountDeviceActionsSection, renderSchedStep3, renderSchedOnOffDeviceAction, renderSchedLightAction, renderSchedThermostatAction, renderSchedHubModeAction, autoSchedName, saveSchedule });
+  Object.assign(M, { isCameraReorderActive, currentCameraOrderFromDom, updateCameraDraftOrderFromDom, updateCameraMoveButtons, moveCamera, attachCameraReorder, enterCameraReorderMode, exitCameraReorderMode, finishCameraReorderMode, cancelCameraReorderMode, camerasListSig, isBlankIframe, cameraEmbedUrl, closeCameraExpand, openCameraExpand, stopCamerasStreams, refreshCamerasPopup, renderCamerasPopup, applySchedulesFromData, schedulerViewIsActive, schedulerHasContent, schedParseTime24, schedFormatTime24, schedTime24To12, schedTime12To24, schedFmtClockTime, schedFmtDateTimeLocal, schedCreateScrollWheel, schedOpenTimeWheelSheet, schedBindStepHold, schedAppendTimeStep, schedAppendTimeColumn, schedAppendClockPicker, fmtSchedTime, newSchedDraft, schedApi, renderSchedulerView, renderSchedulerActive, renderSchedList, renderSchedRow, renderSchedWorkflow, schedNavRow, schedBindPickRow, schedBindPickRoom, renderSchedStep1, validateStep1, renderSchedModeTriggerPicker, renderSchedModeCondition, schedOffsetLabel, renderSchedWhenPicker, renderSchedOffsetPicker, renderSchedSunPreview, renderSchedTimePicker, renderSchedDayPicker, defaultOnceAt, renderSchedOncePicker, renderSchedStep2, schedMountDeviceActionsSection, renderSchedStep3, renderSchedOnOffDeviceAction, renderSchedLightAction, renderSchedThermostatAction, renderSchedHubModeAction, autoSchedName, saveSchedule });
 })();
