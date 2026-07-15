@@ -7610,149 +7610,6 @@
     }
   }
 
-  let camerasObserver = null;
-  const camerasStopTimers = new Map();
-  let camerasRenderedSig = "";
-  const CAM_MUTE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5z" fill="currentColor"/><path d="m16 10 2 2m0 0 2 2m-2-2-2 2m2-2 2-2" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>';
-  const CAM_UNMUTE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5z" fill="currentColor"/><path d="M16 9.5a4 4 0 0 1 0 5M18.5 7a7 7 0 0 1 0 10" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>';
-
-  function camerasListSig() {
-    return cameras.map(c => `${c.i}:${c.n}:${c.u || ""}`).join("|");
-  }
-
-  /** go2rtc webrtc.html: media=video (silent) vs media=video+audio. */
-  function cameraEmbedUrl(baseUrl, withAudio) {
-    if (!baseUrl) return "";
-    try {
-      const u = new URL(baseUrl, location.href);
-      if (/stream\.html$/i.test(u.pathname)) u.pathname = u.pathname.replace(/stream\.html$/i, "webrtc.html");
-      u.searchParams.set("media", withAudio ? "video+audio" : "video");
-      return u.toString();
-    } catch {
-      return baseUrl;
-    }
-  }
-
-  function cameraTilePlayUrl(tile) {
-    return cameraEmbedUrl(tile.dataset.streamUrl, tile.dataset.unmuted === "1");
-  }
-
-  function syncCameraMuteBtn(tile) {
-    const btn = tile.querySelector(".camera-mute-btn");
-    if (!btn) return;
-    const unmuted = tile.dataset.unmuted === "1";
-    btn.classList.toggle("is-unmuted", unmuted);
-    btn.setAttribute("aria-label", unmuted ? "Mute" : "Unmute");
-    btn.title = unmuted ? "Mute" : "Unmute";
-    btn.innerHTML = unmuted ? CAM_UNMUTE_SVG : CAM_MUTE_SVG;
-  }
-
-  function setCameraUnmuted(tile, unmuted) {
-    tile.dataset.unmuted = unmuted ? "1" : "0";
-    syncCameraMuteBtn(tile);
-    const iframe = tile.querySelector("iframe");
-    if (!iframe || iframe.src === "about:blank") return;
-    iframe.src = cameraTilePlayUrl(tile);
-  }
-
-  function stopCamerasStreams() {
-    if (camerasObserver) {
-      camerasObserver.disconnect();
-      camerasObserver = null;
-    }
-    for (const t of camerasStopTimers.values()) clearTimeout(t);
-    camerasStopTimers.clear();
-    const grid = tabViewEl?.querySelector(".cameras-grid");
-    if (grid) {
-      for (const iframe of grid.querySelectorAll("iframe")) iframe.src = "about:blank";
-    }
-    camerasRenderedSig = "";
-  }
-
-  function refreshCamerasPopup() {
-    const sig = camerasListSig();
-    if (sig === camerasRenderedSig && tabViewEl?.querySelector(".cameras-grid")) return;
-    renderCamerasPopup();
-  }
-
-  function renderCamerasPopup() {
-    stopCamerasStreams();
-    const body = currentBody();
-    setQuickBodyClass(body, "cameras-tab tab-body");
-    body.innerHTML = "";
-    camerasRenderedSig = camerasListSig();
-    if (!cameras.length) {
-      body.textContent = "No cameras selected — add go2rtc Camera devices in the Hubitat app settings";
-      return;
-    }
-    const grid = ce("div", "cameras-grid");
-    const HYSTERESIS_MS = 200;
-    for (const cam of cameras) {
-      const tile = ce("article", "camera-tile");
-      tile.dataset.name = String(cam.n || "").toLowerCase();
-      tile.dataset.streamUrl = cam.u || "";
-      tile.dataset.unmuted = "0";
-      const media = ce("div", "camera-media");
-      const iframe = ce("iframe", "camera-iframe");
-      iframe.setAttribute("title", cam.n || "Camera");
-      iframe.setAttribute("allow", "autoplay; encrypted-media; fullscreen");
-      iframe.loading = "lazy";
-      iframe.src = "about:blank";
-      media.appendChild(iframe);
-      const chrome = ce("div", "camera-chrome");
-      const nameEl = ce("span", "camera-name");
-      nameEl.textContent = cam.n || "Camera";
-      const muteBtn = ce("button", "camera-mute-btn");
-      muteBtn.type = "button";
-      syncCameraMuteBtn(tile);
-      muteBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        hapticTap();
-        const wantUnmute = tile.dataset.unmuted !== "1";
-        if (wantUnmute) {
-          for (const other of grid.querySelectorAll(".camera-tile")) {
-            if (other !== tile && other.dataset.unmuted === "1") setCameraUnmuted(other, false);
-          }
-        }
-        setCameraUnmuted(tile, wantUnmute);
-      });
-      chrome.appendChild(nameEl);
-      chrome.appendChild(muteBtn);
-      tile.appendChild(media);
-      tile.appendChild(chrome);
-      grid.appendChild(tile);
-    }
-    body.appendChild(grid);
-    if (!("IntersectionObserver" in window)) {
-      const tiles = grid.querySelectorAll(".camera-tile");
-      for (let i = 0; i < Math.min(3, tiles.length); i++) {
-        const iframe = tiles[i].querySelector("iframe");
-        if (iframe) iframe.src = cameraTilePlayUrl(tiles[i]);
-      }
-      return;
-    }
-    camerasObserver = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        const tile = entry.target;
-        const iframe = tile.querySelector("iframe");
-        if (!iframe || !tile.dataset.streamUrl) continue;
-        const key = String(tile.dataset.name || tile.dataset.streamUrl);
-        if (entry.isIntersecting) {
-          const pending = camerasStopTimers.get(key);
-          if (pending) { clearTimeout(pending); camerasStopTimers.delete(key); }
-          if (iframe.src === "about:blank") iframe.src = cameraTilePlayUrl(tile);
-        } else if (!camerasStopTimers.has(key)) {
-          camerasStopTimers.set(key, setTimeout(() => {
-            camerasStopTimers.delete(key);
-            iframe.src = "about:blank";
-            if (tile.dataset.unmuted === "1") setCameraUnmuted(tile, false);
-          }, HYSTERESIS_MS));
-        }
-      }
-    }, { root: null, rootMargin: "0px", threshold: 0.15 });
-    for (const tile of grid.querySelectorAll(".camera-tile")) camerasObserver.observe(tile);
-  }
-
   function renderMusicPopup() {
     const popup = ensureQuickPopup();
     syncQuickPopupWidthForOpen(popup);
@@ -10346,6 +10203,148 @@
   if (globalThis.__MLD) globalThis.__MLD.updateQuickNavVisibility = updateQuickNavVisibility;
 
   // __MLD_SPLIT3__
+
+  // ---------- cameras module (ships as mld-app-post3.js) ----------
+  let camerasObserver = null;
+  const camerasStopTimers = new Map();
+  let camerasRenderedSig = "";
+
+  function camerasListSig() {
+    return cameras.map(c => `${c.i}:${c.n}:${c.u || ""}`).join("|");
+  }
+
+  /** go2rtc webrtc.html: media=video (silent) vs media=video+audio. */
+  function cameraEmbedUrl(baseUrl, withAudio) {
+    if (!baseUrl) return "";
+    try {
+      const u = new URL(baseUrl, location.href);
+      if (/stream\.html$/i.test(u.pathname)) u.pathname = u.pathname.replace(/stream\.html$/i, "webrtc.html");
+      u.searchParams.set("media", withAudio ? "video+audio" : "video");
+      return u.toString();
+    } catch {
+      return baseUrl;
+    }
+  }
+
+  function cameraTilePlayUrl(tile) {
+    return cameraEmbedUrl(tile.dataset.streamUrl, tile.dataset.unmuted === "1");
+  }
+
+  function syncCameraMuteBtn(tile) {
+    const btn = tile.querySelector(".camera-mute-btn");
+    if (!btn) return;
+    const unmuted = tile.dataset.unmuted === "1";
+    btn.classList.toggle("is-unmuted", unmuted);
+    btn.setAttribute("aria-label", unmuted ? "Mute" : "Unmute");
+    btn.title = unmuted ? "Mute" : "Unmute";
+    btn.innerHTML = unmuted ? CAM_UNMUTE_SVG : CAM_MUTE_SVG;
+  }
+
+  function setCameraUnmuted(tile, unmuted) {
+    tile.dataset.unmuted = unmuted ? "1" : "0";
+    syncCameraMuteBtn(tile);
+    const iframe = tile.querySelector("iframe");
+    if (!iframe || iframe.src === "about:blank") return;
+    iframe.src = cameraTilePlayUrl(tile);
+  }
+
+  function stopCamerasStreams() {
+    if (camerasObserver) {
+      camerasObserver.disconnect();
+      camerasObserver = null;
+    }
+    for (const t of camerasStopTimers.values()) clearTimeout(t);
+    camerasStopTimers.clear();
+    const grid = tabViewEl?.querySelector(".cameras-grid");
+    if (grid) {
+      for (const iframe of grid.querySelectorAll("iframe")) iframe.src = "about:blank";
+    }
+    camerasRenderedSig = "";
+  }
+
+  function refreshCamerasPopup() {
+    const sig = camerasListSig();
+    if (sig === camerasRenderedSig && tabViewEl?.querySelector(".cameras-grid")) return;
+    renderCamerasPopup();
+  }
+
+  function renderCamerasPopup() {
+    stopCamerasStreams();
+    const body = currentBody();
+    setQuickBodyClass(body, "cameras-tab tab-body");
+    body.innerHTML = "";
+    camerasRenderedSig = camerasListSig();
+    if (!cameras.length) {
+      body.textContent = "No cameras selected — add go2rtc Camera devices in the Hubitat app settings";
+      return;
+    }
+    const grid = ce("div", "cameras-grid");
+    const HYSTERESIS_MS = 200;
+    for (const cam of cameras) {
+      const tile = ce("article", "camera-tile");
+      tile.dataset.name = String(cam.n || "").toLowerCase();
+      tile.dataset.streamUrl = cam.u || "";
+      tile.dataset.unmuted = "0";
+      const media = ce("div", "camera-media");
+      const iframe = ce("iframe", "camera-iframe");
+      iframe.setAttribute("title", cam.n || "Camera");
+      iframe.setAttribute("allow", "autoplay; encrypted-media; fullscreen");
+      iframe.loading = "lazy";
+      iframe.src = "about:blank";
+      media.appendChild(iframe);
+      const chrome = ce("div", "camera-chrome");
+      const nameEl = ce("span", "camera-name");
+      nameEl.textContent = cam.n || "Camera";
+      const muteBtn = ce("button", "camera-mute-btn");
+      muteBtn.type = "button";
+      muteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        hapticTap();
+        const wantUnmute = tile.dataset.unmuted !== "1";
+        if (wantUnmute) {
+          for (const other of grid.querySelectorAll(".camera-tile")) {
+            if (other !== tile && other.dataset.unmuted === "1") setCameraUnmuted(other, false);
+          }
+        }
+        setCameraUnmuted(tile, wantUnmute);
+      });
+      chrome.appendChild(nameEl);
+      chrome.appendChild(muteBtn);
+      syncCameraMuteBtn(tile);
+      tile.appendChild(media);
+      tile.appendChild(chrome);
+      grid.appendChild(tile);
+    }
+    body.appendChild(grid);
+    if (!("IntersectionObserver" in window)) {
+      const tiles = grid.querySelectorAll(".camera-tile");
+      for (let i = 0; i < Math.min(3, tiles.length); i++) {
+        const iframe = tiles[i].querySelector("iframe");
+        if (iframe) iframe.src = cameraTilePlayUrl(tiles[i]);
+      }
+      return;
+    }
+    camerasObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const tile = entry.target;
+        const iframe = tile.querySelector("iframe");
+        if (!iframe || !tile.dataset.streamUrl) continue;
+        const key = String(tile.dataset.name || tile.dataset.streamUrl);
+        if (entry.isIntersecting) {
+          const pending = camerasStopTimers.get(key);
+          if (pending) { clearTimeout(pending); camerasStopTimers.delete(key); }
+          if (iframe.src === "about:blank") iframe.src = cameraTilePlayUrl(tile);
+        } else if (!camerasStopTimers.has(key)) {
+          camerasStopTimers.set(key, setTimeout(() => {
+            camerasStopTimers.delete(key);
+            iframe.src = "about:blank";
+            if (tile.dataset.unmuted === "1") setCameraUnmuted(tile, false);
+          }, HYSTERESIS_MS));
+        }
+      }
+    }, { root: null, rootMargin: "0px", threshold: 0.15 });
+    for (const tile of grid.querySelectorAll(".camera-tile")) camerasObserver.observe(tile);
+  }
 
   // ---------- scheduler module (ships as mld-app-post3.js) ----------
   const SCHED_DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];

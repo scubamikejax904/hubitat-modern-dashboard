@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.81
+
+- **Fix:** move Cameras tab code (WebRTC embeds, mute/unmute, viewport gating) into
+  `mld-app-post3.js` so `mld-app-post2.js` stays safely under the 124 KB File Manager
+  limit — restores a working dashboard while keeping 0.2.79 camera features.
+- **Cameras:** mute button SVG constants moved to `mld-app-pre.js` to save chunk space.
+
 ## 0.2.80
 
 - **Cameras:** hide search bar on the Cameras tab via layout class (more reliable than
