@@ -1016,9 +1016,9 @@
   }
 
   function supportedFanModes(t) {
-    // null/undefined = attribute missing → defaults when device has fan mode.
-    // "" or [] = driver reported none → show no fan mode controls.
-    if (t?.supFM == null) return t?.hasFm ? TSTAT_DEFAULT_FAN_MODES : [];
+    // Match Hubitat dashboards: no supportedThermostatFanModes → no fan controls.
+    // null/undefined/"" all mean no supported fan modes.
+    if (t?.supFM == null) return [];
     return parseList(t.supFM);
   }
 

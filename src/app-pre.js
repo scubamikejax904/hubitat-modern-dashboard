@@ -549,7 +549,6 @@ const TSTAT_DIAL_SIZE = 280;
 const TSTAT_DIAL_R = 122;
 
 const TSTAT_DEFAULT_MODES = ["auto", "heat", "cool", "off"];
-const TSTAT_DEFAULT_FAN_MODES = ["auto", "circulate", "on"];
 const FAN_MODE_OPTS = [
   { key: "auto", label: "Auto", aria: "Fan runs automatically" },
   { key: "circulate", label: "Circulate", aria: "Fan circulates air" },

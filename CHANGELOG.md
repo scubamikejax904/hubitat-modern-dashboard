@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.90
+
+- Thermostat fan modes: hide fan controls when `supportedThermostatFanModes` is
+  missing or empty, matching Hubitat’s built-in dashboards (no default Auto /
+  Circulate / On list).
+
 ## 0.2.89
 
 - **Cameras:** even larger reorder controls (80px touch targets, wider overlay padding)
