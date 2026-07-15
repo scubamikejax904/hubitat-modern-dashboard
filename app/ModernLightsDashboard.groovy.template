@@ -112,7 +112,7 @@ def mainPage() {
                 multiple: true, required: false, showFilter: true, submitOnChange: true
         }
         section("Cameras") {
-            paragraph "<small>Select <b>go2rtc Camera</b> devices from the go2rtc Hubitat app. Requires <b>Enable tabs</b> in the dashboard. Live video is loaded from your LAN go2rtc server in the browser — use the local hub dashboard URL (not cloud.hubitat.com) unless your phone can reach go2rtc via VPN. Streams start only on the Cameras tab when each tile scrolls into view.</small>"
+            paragraph "<small>Select <b>go2rtc Camera</b> devices from the go2rtc Hubitat app. Requires <b>Enable tabs</b> in the dashboard. The <b>Cameras</b> tab appears only when you open the <b>local hub dashboard URL</b> (http://…) — not the cloud HTTPS link (go2rtc streams are HTTP on your LAN). Streams start only on the Cameras tab when each tile scrolls into view.</small>"
             input "cameras", "capability.imageCapture", title: "Cameras (go2rtc)",
                 multiple: true, required: false, showFilter: true, submitOnChange: true
         }

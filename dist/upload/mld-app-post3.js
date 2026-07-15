@@ -64,6 +64,7 @@
   }
 
   function refreshCamerasPopup() {
+    if (!M.isLocalOrigin()) return;
     const sig = camerasListSig();
     if (sig === camerasRenderedSig && M.tabViewEl?.querySelector(".cameras-grid")) return;
     renderCamerasPopup();
@@ -71,6 +72,7 @@
 
   function renderCamerasPopup() {
     stopCamerasStreams();
+    if (!M.isLocalOrigin()) return;
     const body = M.currentBody();
     M.setQuickBodyClass(body, "cameras-tab tab-body");
     body.innerHTML = "";

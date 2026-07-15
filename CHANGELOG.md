@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.82
+
+- **Cameras:** hide the Cameras tab unless the dashboard is opened via the local hub URL
+  (not cloud HTTPS), so go2rtc HTTP embeds never trigger mixed-content “Not secure” warnings.
+
 ## 0.2.81
 
 - **Fix:** move Cameras tab code (WebRTC embeds, mute/unmute, viewport gating) into

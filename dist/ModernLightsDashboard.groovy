@@ -1,4 +1,4 @@
-// Modern Dashboard v0.2.81
+// Modern Dashboard v0.2.82
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
@@ -42,7 +42,7 @@ def mainPage() {
             } else {
                 paragraph "<small><b>Hub-only:</b> UI and API run entirely on your hub — no Maker API or third-party cloud.</small>"
             }
-            paragraph "<small>Version 0.2.81 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
+            paragraph "<small>Version 0.2.82 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         section("Devices") {
             paragraph "<small>Select the devices you want on the dashboard. Rooms and layout are automatic based on your Hubitat room assignments.</small>"
@@ -112,7 +112,7 @@ def mainPage() {
                 multiple: true, required: false, showFilter: true, submitOnChange: true
         }
         section("Cameras") {
-            paragraph "<small>Select <b>go2rtc Camera</b> devices from the go2rtc Hubitat app. Requires <b>Enable tabs</b> in the dashboard. Live video is loaded from your LAN go2rtc server in the browser — use the local hub dashboard URL (not cloud.hubitat.com) unless your phone can reach go2rtc via VPN. Streams start only on the Cameras tab when each tile scrolls into view.</small>"
+            paragraph "<small>Select <b>go2rtc Camera</b> devices from the go2rtc Hubitat app. Requires <b>Enable tabs</b> in the dashboard. The <b>Cameras</b> tab appears only when you open the <b>local hub dashboard URL</b> (http://…) — not the cloud HTTPS link (go2rtc streams are HTTP on your LAN). Streams start only on the Cameras tab when each tile scrolls into view.</small>"
             input "cameras", "capability.imageCapture", title: "Cameras (go2rtc)",
                 multiple: true, required: false, showFilter: true, submitOnChange: true
         }

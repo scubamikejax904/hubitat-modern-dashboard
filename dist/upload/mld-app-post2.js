@@ -1665,7 +1665,7 @@
       case "sensors": return mergedSensorList().length > 0;
       case "thermostats": return M.thermostatsPopupEnabled && M.thermostats.length > 0;
       case "music": return M.music.length > 0;
-      case "cameras": return M.tabMode && M.cameras.length > 0;
+      case "cameras": return M.tabMode && M.isLocalOrigin() && M.cameras.length > 0;
       case "favorites": return M.getFavoriteEntries().length > 0;
       default: return false;
     }
@@ -1868,6 +1868,7 @@
   }
 
   function showTab(id) {
+    if (id === "cameras" && !M.isLocalOrigin()) id = "lights";
     if (M.colorSession) M.closeColorPopup(true);
     if (M.tstatSession) M.closeTstatPopup();
     if (M.musicMasterPopup && M.musicMasterPopup.classList.contains("open")) M.closeMusicMasterPopup();

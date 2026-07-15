@@ -8734,7 +8734,7 @@
       case "sensors": return mergedSensorList().length > 0;
       case "thermostats": return thermostatsPopupEnabled && thermostats.length > 0;
       case "music": return music.length > 0;
-      case "cameras": return tabMode && cameras.length > 0;
+      case "cameras": return tabMode && isLocalOrigin() && cameras.length > 0;
       case "favorites": return getFavoriteEntries().length > 0;
       default: return false;
     }
@@ -8937,6 +8937,7 @@
   }
 
   function showTab(id) {
+    if (id === "cameras" && !isLocalOrigin()) id = "lights";
     if (colorSession) closeColorPopup(true);
     if (tstatSession) closeTstatPopup();
     if (musicMasterPopup && musicMasterPopup.classList.contains("open")) closeMusicMasterPopup();
@@ -10263,6 +10264,7 @@
   }
 
   function refreshCamerasPopup() {
+    if (!isLocalOrigin()) return;
     const sig = camerasListSig();
     if (sig === camerasRenderedSig && tabViewEl?.querySelector(".cameras-grid")) return;
     renderCamerasPopup();
@@ -10270,6 +10272,7 @@
 
   function renderCamerasPopup() {
     stopCamerasStreams();
+    if (!isLocalOrigin()) return;
     const body = currentBody();
     setQuickBodyClass(body, "cameras-tab tab-body");
     body.innerHTML = "";
