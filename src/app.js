@@ -8838,6 +8838,7 @@
     popup.classList.add("open");
     popup.querySelector(".quick-close").focus();
     updateCurrentCategoryTitle();
+    updateExpandAllBtn();
   }
 
   function closeQuickPopup() {
@@ -8873,6 +8874,7 @@
     sensorFilterBtnEl = null;
     sensorFilterEmptyEl = null;
     updateCurrentCategoryTitle();
+    updateExpandAllBtn();
   }
 
   // ---------- tab mode helpers ----------
@@ -9371,8 +9373,18 @@
     return true;
   }
 
+  function hasCollapsibleRooms() {
+    const cat = inTabView() ? activeTab : quickPopupOpenType;
+    if (!cat || cat === "lights") return roomEls.size > 0;
+    if (cat === "sensors") return sensorRoomEls.size > 0;
+    return false;
+  }
+
   function updateExpandAllBtn() {
     if (!EXPAND_ALL_BTN) return;
+    const show = hasCollapsibleRooms();
+    EXPAND_ALL_BTN.hidden = !show;
+    if (!show) return;
     const useSensors = activeTab === "sensors" && sensorRoomEls.size > 0;
     const collapsed = useSensors ? allSensorRoomsCollapsed() : allRoomsCollapsed();
     const label = collapsed ? "Expand all rooms" : "Collapse all rooms";

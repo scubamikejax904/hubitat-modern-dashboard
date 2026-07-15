@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.77
+
+- **UI:** hide **Expand all rooms** when the current view has no collapsible room
+  sections (Lights tab or Sensors quick popup).
+
 ## 0.2.76
 
 - **Rooms:** companion app option to hide temperature and thermostat indicators on
