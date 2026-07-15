@@ -111,6 +111,11 @@ def mainPage() {
             input "valves", "capability.valve", title: "Valves (water shutoff, irrigation)",
                 multiple: true, required: false, showFilter: true, submitOnChange: true
         }
+        section("Cameras") {
+            paragraph "<small>Select <b>go2rtc Camera</b> devices from the go2rtc Hubitat app. Requires <b>Enable tabs</b> in the dashboard. Live video is loaded from your LAN go2rtc server in the browser — use the local hub dashboard URL (not cloud.hubitat.com) unless your phone can reach go2rtc via VPN. Streams start only on the Cameras tab when each tile scrolls into view.</small>"
+            input "cameras", "capability.imageCapture", title: "Cameras (go2rtc)",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+        }
         section("Options") {
             input "dashboardName", "string", title: "Dashboard name", defaultValue: "mDash", required: false
             input "pollSec", "number", title: "Refresh interval (seconds)", defaultValue: 5, required: false, range: "2..60"
@@ -223,6 +228,7 @@ def logInit() {
     if (ceilingFans) { log.info "Modern Dashboard: ${ceilingFans.size()} ceiling fan(s) authorized" }
     if (valves) { log.info "Modern Dashboard: ${valves.size()} valve(s) authorized" }
     if (garageDoors) { log.info "Modern Dashboard: ${garageDoors.size()} garage door(s) authorized" }
+    if (cameras) { log.info "Modern Dashboard: ${cameras.size()} camera(s) authorized" }
     if (state.accessToken == null) { state.accessToken = createAccessToken() }
     if (!assetsPresent()) { log.warn "Modern Dashboard: upload all mld-* dashboard files to File Manager (see app setup page)" }
 }
@@ -1059,6 +1065,19 @@ def renderData() {
         for (d in audioDevs) {
             if (!first) out << ","; first = false
             appendAudioDeviceJson(out, d, roomsList)
+        }
+    }
+    out << "],\"cameras\":["
+    first = true
+    if (cameras) {
+        for (d in cameras) {
+            def embedUrl = cameraStreamEmbedUrl(d)
+            if (!embedUrl) continue
+            if (!first) out << ","; first = false
+            out << "{\"i\":" << d.id
+            out << ",\"n\":" << jsonStr(d.displayName)
+            out << ",\"u\":" << jsonStr(embedUrl)
+            out << "}"
         }
     }
     out << "],\"locks\":["
@@ -2620,7 +2639,37 @@ def saveRoomOrderFromList(order) {
 // Nav order (state.navOrder — synced across devices)
 // ---------------------------------------------------------------------------
 def validNavKeySet() {
-    return ["lights", "locks", "scenes", "hub-mode", "security", "blinds", "outlets", "scheduling", "sensors", "thermostats", "music", "favorites"] as Set
+    return ["lights", "locks", "scenes", "hub-mode", "security", "blinds", "outlets", "scheduling", "sensors", "thermostats", "music", "cameras", "favorites"] as Set
+}
+
+def cameraStreamEmbedUrl(dev) {
+    def snap = safeCurrent(dev, "snapshotUrl")
+    if (snap == null) snap = safeCurrent(dev, "image")
+    if (snap == null) return null
+    def s = snap.toString().trim()
+    if (!s) return null
+    try {
+        def qIdx = s.indexOf("?")
+        def q = qIdx >= 0 ? s.substring(qIdx + 1) : ""
+        def streamName = null
+        for (part in q.split("&")) {
+            if (part.startsWith("src=")) {
+                streamName = URLDecoder.decode(part.substring(4), "UTF-8")
+                break
+            }
+        }
+        if (!streamName) return null
+        def base = qIdx >= 0 ? s.substring(0, qIdx) : s
+        if (base.endsWith("/api/frame.jpeg")) {
+            base = base.substring(0, base.length() - "/api/frame.jpeg".length())
+        } else {
+            base = base.replaceAll(/\\/api\\/frame\\.jpeg.*$/, "")
+        }
+        if (base.endsWith("/")) base = base.substring(0, base.length() - 1)
+        return base + "/stream.html?src=" + URLEncoder.encode(streamName, "UTF-8")
+    } catch (e) {
+        return null
+    }
 }
 
 def parseNavOrderState() {

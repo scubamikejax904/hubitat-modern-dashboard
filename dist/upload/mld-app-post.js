@@ -1152,6 +1152,7 @@
     if (!Array.isArray(M.valves)) M.valves = [];
     M.replaceList(M.valves, Array.isArray(d.valves) ? d.valves : []);
     M.replaceList(M.music, d.music);
+    M.replaceList(M.cameras, Array.isArray(d.cameras) ? d.cameras : []);
     if (Array.isArray(d.config?.favorites)) M.replaceList(M.favorites, d.config.favorites.map(Number));
     M.reapplyLockOptimistic();
     M.reapplyGarageOptimistic();

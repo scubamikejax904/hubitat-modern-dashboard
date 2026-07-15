@@ -1,4 +1,4 @@
-// Modern Dashboard v0.2.77
+// Modern Dashboard v0.2.78
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
@@ -42,7 +42,7 @@ def mainPage() {
             } else {
                 paragraph "<small><b>Hub-only:</b> UI and API run entirely on your hub — no Maker API or third-party cloud.</small>"
             }
-            paragraph "<small>Version 0.2.77 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
+            paragraph "<small>Version 0.2.78 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         section("Devices") {
             paragraph "<small>Select the devices you want on the dashboard. Rooms and layout are automatic based on your Hubitat room assignments.</small>"
@@ -109,6 +109,11 @@ def mainPage() {
             input "genericSensors", "capability.sensor", title: "Other / generic sensors",
                 multiple: true, required: false, showFilter: true, submitOnChange: true
             input "valves", "capability.valve", title: "Valves (water shutoff, irrigation)",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+        }
+        section("Cameras") {
+            paragraph "<small>Select <b>go2rtc Camera</b> devices from the go2rtc Hubitat app. Requires <b>Enable tabs</b> in the dashboard. Live video is loaded from your LAN go2rtc server in the browser — use the local hub dashboard URL (not cloud.hubitat.com) unless your phone can reach go2rtc via VPN. Streams start only on the Cameras tab when each tile scrolls into view.</small>"
+            input "cameras", "capability.imageCapture", title: "Cameras (go2rtc)",
                 multiple: true, required: false, showFilter: true, submitOnChange: true
         }
         section("Options") {
@@ -223,6 +228,7 @@ def logInit() {
     if (ceilingFans) { log.info "Modern Dashboard: ${ceilingFans.size()} ceiling fan(s) authorized" }
     if (valves) { log.info "Modern Dashboard: ${valves.size()} valve(s) authorized" }
     if (garageDoors) { log.info "Modern Dashboard: ${garageDoors.size()} garage door(s) authorized" }
+    if (cameras) { log.info "Modern Dashboard: ${cameras.size()} camera(s) authorized" }
     if (state.accessToken == null) { state.accessToken = createAccessToken() }
     if (!assetsPresent()) { log.warn "Modern Dashboard: upload all mld-* dashboard files to File Manager (see app setup page)" }
 }
@@ -1059,6 +1065,19 @@ def renderData() {
         for (d in audioDevs) {
             if (!first) out << ","; first = false
             appendAudioDeviceJson(out, d, roomsList)
+        }
+    }
+    out << "],\"cameras\":["
+    first = true
+    if (cameras) {
+        for (d in cameras) {
+            def embedUrl = cameraStreamEmbedUrl(d)
+            if (!embedUrl) continue
+            if (!first) out << ","; first = false
+            out << "{\"i\":" << d.id
+            out << ",\"n\":" << jsonStr(d.displayName)
+            out << ",\"u\":" << jsonStr(embedUrl)
+            out << "}"
         }
     }
     out << "],\"locks\":["
@@ -2620,7 +2639,37 @@ def saveRoomOrderFromList(order) {
 // Nav order (state.navOrder — synced across devices)
 // ---------------------------------------------------------------------------
 def validNavKeySet() {
-    return ["lights", "locks", "scenes", "hub-mode", "security", "blinds", "outlets", "scheduling", "sensors", "thermostats", "music", "favorites"] as Set
+    return ["lights", "locks", "scenes", "hub-mode", "security", "blinds", "outlets", "scheduling", "sensors", "thermostats", "music", "cameras", "favorites"] as Set
+}
+
+def cameraStreamEmbedUrl(dev) {
+    def snap = safeCurrent(dev, "snapshotUrl")
+    if (snap == null) snap = safeCurrent(dev, "image")
+    if (snap == null) return null
+    def s = snap.toString().trim()
+    if (!s) return null
+    try {
+        def qIdx = s.indexOf("?")
+        def q = qIdx >= 0 ? s.substring(qIdx + 1) : ""
+        def streamName = null
+        for (part in q.split("&")) {
+            if (part.startsWith("src=")) {
+                streamName = URLDecoder.decode(part.substring(4), "UTF-8")
+                break
+            }
+        }
+        if (!streamName) return null
+        def base = qIdx >= 0 ? s.substring(0, qIdx) : s
+        if (base.endsWith("/api/frame.jpeg")) {
+            base = base.substring(0, base.length() - "/api/frame.jpeg".length())
+        } else {
+            base = base.replaceAll(/\\/api\\/frame\\.jpeg.*$/, "")
+        }
+        if (base.endsWith("/")) base = base.substring(0, base.length() - 1)
+        return base + "/stream.html?src=" + URLEncoder.encode(streamName, "UTF-8")
+    } catch (e) {
+        return null
+    }
 }
 
 def parseNavOrderState() {

@@ -187,6 +187,13 @@ function buildMockData(count) {
     { i: 4004, n: "Office HomePod", r: 4, st: "playing", v: 28, tr: "Khruangbin — Texas Sun", m: "unmuted", trackIdx: 3, f: AUDIO_F_AIRPLAY },
     { i: 4005, n: "Patio Speaker", r: 7, st: "stopped", v: 0, tr: "", m: "muted", trackIdx: 2, f: AUDIO_F_FULL },
   ];
+  const cameras = [
+    { i: 4201, n: "Front Door", u: "http://127.0.0.1:1984/stream.html?src=front" },
+    { i: 4202, n: "Driveway", u: "http://127.0.0.1:1984/stream.html?src=driveway" },
+    { i: 4203, n: "Back Yard", u: "http://127.0.0.1:1984/stream.html?src=backyard" },
+    { i: 4204, n: "Garage", u: "http://127.0.0.1:1984/stream.html?src=garage" },
+    { i: 4205, n: "Side Gate", u: "http://127.0.0.1:1984/stream.html?src=sidegate" },
+  ];
   const windowShades = [
     { i: 5001, n: "Living Room Shade", r: 1, st: "open", pos: 100 },
     { i: 5002, n: "Master Bedroom Shade", r: 3, st: "closed", pos: 0 },
@@ -199,7 +206,7 @@ function buildMockData(count) {
   return { config: { pollIntervalMs: 5000, useWebSocket: false, dashboardName: "mDash", roomOrder: [], navOrder: [], favorites: [1, 5, 1001, 2103, 2201, 5101] }, rooms, devices, outlets: [
     { i: 601, n: "Kitchen Outlet", r: 2, s: 1 },
     { i: 602, n: "Office Outlet", r: 4, s: 0 },
-  ], thermostats, tempSensors, sensors, valves, locks, garageDoors, music, windowShades, ceilingFans, hubModes: ["Day", "Evening", "Night", "Away"], currentHubMode: "Day", hsmStatus: "disarmed", hsmAlert: "water", hsmAlertDesc: "Basement leak sensor", hsmEnabled: true, hsmPinEnabled: true, hsmPinRequired: true, thermostatsPopupEnabled: true, outletsSeparateTab: false, roomClimateEnabled: true, schedulerEnabled: true, schedUse24Hour: false, unlockPinEnabled: true, unlockPinRequired: true, dashboardPasswordEnabled: true, dashboardPasswordRequired: true, scenes: [{ id: 1, n: "Good Morning" }, { id: 2, n: "Movie Time" }, { id: 3, n: "Good Night" }, { id: 4, n: "Away" }], schedules: [], sunTimes: mockSunTimes() };
+  ], thermostats, tempSensors, sensors, valves, locks, garageDoors, music, cameras, windowShades, ceilingFans, hubModes: ["Day", "Evening", "Night", "Away"], currentHubMode: "Day", hsmStatus: "disarmed", hsmAlert: "water", hsmAlertDesc: "Basement leak sensor", hsmEnabled: true, hsmPinEnabled: true, hsmPinRequired: true, thermostatsPopupEnabled: true, outletsSeparateTab: false, roomClimateEnabled: true, schedulerEnabled: true, schedUse24Hour: false, unlockPinEnabled: true, unlockPinRequired: true, dashboardPasswordEnabled: true, dashboardPasswordRequired: true, scenes: [{ id: 1, n: "Good Morning" }, { id: 2, n: "Movie Time" }, { id: 3, n: "Good Night" }, { id: 4, n: "Away" }], schedules: [], sunTimes: mockSunTimes() };
 }
 
 function tstatOstateForMode(tm) {
@@ -767,7 +774,7 @@ const server = createServer(async (req, res) => {
       return res.end(JSON.stringify({ ok: true, order: validated }));
     }
   }
-  const VALID_NAV_KEYS = new Set(["lights", "locks", "scenes", "hub-mode", "security", "blinds", "scheduling", "sensors", "thermostats", "music", "favorites"]);
+  const VALID_NAV_KEYS = new Set(["lights", "locks", "scenes", "hub-mode", "security", "blinds", "scheduling", "sensors", "thermostats", "music", "cameras", "favorites"]);
   if (p === "/settings/nav-order" || p === "/nav-order") {
     const orderParam = url.searchParams.get("order");
     if (req.method === "GET" && orderParam) {

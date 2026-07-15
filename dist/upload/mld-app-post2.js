@@ -541,6 +541,105 @@
     }
   }
 
+  let camerasObserver = null;
+  const camerasStopTimers = new Map();
+  let camerasRenderedSig = "";
+
+  function camerasListSig() {
+    return M.cameras.map(c => `${c.i}:${c.n}:${c.u || ""}`).join("|");
+  }
+
+  function stopCamerasStreams() {
+    if (camerasObserver) {
+      camerasObserver.disconnect();
+      camerasObserver = null;
+    }
+    for (const t of camerasStopTimers.values()) clearTimeout(t);
+    camerasStopTimers.clear();
+    const grid = M.tabViewEl?.querySelector(".cameras-grid");
+    if (grid) {
+      for (const iframe of grid.querySelectorAll("iframe")) iframe.src = "about:blank";
+    }
+    camerasRenderedSig = "";
+  }
+
+  function refreshCamerasPopup() {
+    const sig = camerasListSig();
+    if (sig === camerasRenderedSig && M.tabViewEl?.querySelector(".cameras-grid")) return;
+    renderCamerasPopup();
+  }
+
+  function renderCamerasPopup() {
+    stopCamerasStreams();
+    const body = currentBody();
+    setQuickBodyClass(body, "cameras-tab tab-body");
+    body.innerHTML = "";
+    camerasRenderedSig = camerasListSig();
+    if (!M.cameras.length) {
+      body.textContent = "No cameras selected — add go2rtc Camera devices in the Hubitat app settings";
+      return;
+    }
+    const grid = ce("div", "cameras-grid");
+    const CAM_MUTE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5z" fill="currentColor"/><path d="m16 10 2 2m0 0 2 2m-2-2-2 2m2-2 2-2" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>';
+    const HYSTERESIS_MS = 200;
+    for (const cam of M.cameras) {
+      const tile = ce("article", "camera-tile");
+      tile.dataset.name = String(cam.n || "").toLowerCase();
+      tile.dataset.streamUrl = cam.u || "";
+      const media = ce("div", "camera-media");
+      const iframe = ce("iframe", "camera-iframe");
+      iframe.setAttribute("title", cam.n || "Camera");
+      iframe.setAttribute("allow", "autoplay; encrypted-media; fullscreen");
+      iframe.loading = "lazy";
+      iframe.src = "about:blank";
+      media.appendChild(iframe);
+      const chrome = ce("div", "camera-chrome");
+      const nameEl = ce("span", "camera-name");
+      nameEl.textContent = cam.n || "Camera";
+      const muteBtn = ce("button", "camera-mute-btn");
+      muteBtn.type = "button";
+      muteBtn.disabled = true;
+      muteBtn.setAttribute("aria-label", "Unmute (not available with iframe embed)");
+      muteBtn.title = "Unmute requires a future embed update";
+      muteBtn.innerHTML = CAM_MUTE_SVG;
+      chrome.appendChild(nameEl);
+      chrome.appendChild(muteBtn);
+      tile.appendChild(media);
+      tile.appendChild(chrome);
+      grid.appendChild(tile);
+    }
+    body.appendChild(grid);
+    if (!("IntersectionObserver" in window)) {
+      const tiles = grid.querySelectorAll(".camera-tile");
+      for (let i = 0; i < Math.min(3, tiles.length); i++) {
+        const iframe = tiles[i].querySelector("iframe");
+        const url = tiles[i].dataset.streamUrl;
+        if (iframe && url) iframe.src = url;
+      }
+      return;
+    }
+    camerasObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const tile = entry.target;
+        const iframe = tile.querySelector("iframe");
+        const url = tile.dataset.streamUrl;
+        if (!iframe || !url) continue;
+        const key = tile.dataset.name || url;
+        if (entry.isIntersecting) {
+          const pending = camerasStopTimers.get(key);
+          if (pending) { clearTimeout(pending); camerasStopTimers.delete(key); }
+          if (iframe.src === "about:blank" || !iframe.src.includes("stream.html")) iframe.src = url;
+        } else if (!camerasStopTimers.has(key)) {
+          camerasStopTimers.set(key, setTimeout(() => {
+            camerasStopTimers.delete(key);
+            iframe.src = "about:blank";
+          }, HYSTERESIS_MS));
+        }
+      }
+    }, { root: null, rootMargin: "0px", threshold: 0.15 });
+    for (const tile of grid.querySelectorAll(".camera-tile")) camerasObserver.observe(tile);
+  }
+
   function renderMusicPopup() {
     const popup = M.ensureQuickPopup();
     M.syncQuickPopupWidthForOpen(popup);
@@ -1665,6 +1764,7 @@
       case "sensors": return mergedSensorList().length > 0;
       case "thermostats": return M.thermostatsPopupEnabled && M.thermostats.length > 0;
       case "music": return M.music.length > 0;
+      case "cameras": return M.tabMode && M.cameras.length > 0;
       case "favorites": return M.getFavoriteEntries().length > 0;
       default: return false;
     }
@@ -1702,6 +1802,7 @@
     if (inTabView()) {
       switch (M.activeTab) {
         case "music": renderMusicPopup(); break;
+        case "cameras": refreshCamerasPopup(); break;
         case "favorites": refreshFavoritesPopup(); break;
         case "thermostats": refreshThermostatsPopup(); break;
         case "sensors": refreshSensorsPopup(); break;
@@ -1868,6 +1969,7 @@
     if (M.fanMasterPopup && M.fanMasterPopup.classList.contains("open")) M.closeFanMasterPopup();
     if (M.shadeMasterPopup && M.shadeMasterPopup.classList.contains("open")) M.closeShadeMasterPopup();
     if (M.quickPopup && M.quickPopup.classList.contains("open")) closeQuickPopup();
+    if (M.activeTab === "cameras" && id !== "cameras") stopCamerasStreams();
     const tabChanged = id !== M.activeTab;
     if (tabChanged && M.SEARCH_EL) {
       M.SEARCH_EL.value = "";
@@ -1895,6 +1997,7 @@
         case "sensors": renderSensorsPopup(); break;
         case "thermostats": renderThermostatsPopup(); break;
         case "music": renderMusicPopup(); break;
+        case "cameras": refreshCamerasPopup(); break;
         case "blinds": refreshBlindsPopup(); break;
         case "fans": refreshFansPopup(); break;
         case "outlets": renderOutletsPopup(); break;
@@ -1920,6 +2023,7 @@
     M.saveTabsPref(on);
     if (M.QUICK_LIGHTS_BTN) M.QUICK_LIGHTS_BTN.hidden = !on;
     if (!on) {
+      if (M.activeTab === "cameras") stopCamerasStreams();
       if (M.quickPopup && M.quickPopup.classList.contains("open")) closeQuickPopup();
       M.activeTab = "lights";
       if (M.ROOMS_EL) M.ROOMS_EL.hidden = false;
@@ -3121,5 +3225,5 @@
   })();
 
   if (globalThis.__MLD) globalThis.__MLD.updateQuickNavVisibility = updateQuickNavVisibility;
-  Object.assign(M, { makeShadeTile, updateShadeTile, updateFavoriteShadeTile, shadesListSignature, refreshBlindsPopup, renderBlindsPopup, toggleCeilingFan, stepCeilingFanSpeed, makeFanTile, updateFanTile, fansListSignature, refreshFansPopup, renderFansPopup, renderOutletsPopup, normalizeTempSensorForCard, syncDualSensorSources, applySensorLiveAttr, refreshSensorViews, makeMusicRow, updateFavoriteMusicRow, renderMusicPopup, renderHubModePopup, ensurePinPadPopup, showPinPadError, clearPinPadError, renderPinPadDots, appendPinDigit, backspacePinDigit, closePinPad, openPinPad, promptGarageOpenPin, promptUnlockPin, runHsmAction, appendHsmModeButtons, renderSecurityPopup, sendValveCmd, reconcileValve, sensorTypeOrder, sortSensorsInRoom, groupSensorsByRoom, groupRoomSensorsByType, mergedSensorList, sensorsPopupSignature, sensorTypesWithCounts, sensorMatchesFilter, syncSensorFilterBtn, syncSensorFilterChips, applySensorTypeFilter, buildSensorFilterBar, sensorBatteryPct, sensorBatteryLabel, sensorExFooter, applySensorCardState, makeSensorCard, makeFavoriteSensorCard, updateSensorCard, buildSensorRoomSection, renderSensorsPopup, refreshSensorsPopup, renderScenesPopup, favoritesPopupSignature, makeQuickTstatCard, updateQuickTstatCard, refreshFavoritesPopup, renderFavoritesPopup, thermostatsListSignature, refreshThermostatsPopup, renderThermostatsPopup, quickNavPopupHasContent, updateQuickNavVisibility, refreshQuickPopupIfOpen, openQuickPopup, closeQuickPopup, ensureTabView, setQuickBodyClass, currentBody, currentCategory, currentCategoryLabel, updateCurrentCategoryTitle, inTabView, updateTabActiveStates, showTab, closeCurrentView, setTabMode, resolveDrawerDom, setDrawerLabels, openDrawer, closeDrawer, toggleDrawer, setDrawerMode, closeConfirm, ensureConfirmPopup, confirmAction, tapAllOn, tapAllOff, collapsedIdSet, applyFilter, applyTabSearch, applySearch, sensorsCollapsedIdSet, sensorsCollapsedSet, persistSensorsCollapsed, allSensorRoomsCollapsed, expandAllSensorRooms, collapseAllSensorRooms, restoreSensorsCollapsed, collapsedSet, persistCollapsed, allRoomsCollapsed, hasCollapsibleRooms, updateExpandAllBtn, collapseAllRooms, expandAllRooms, restoreCollapsed, refresh, effectivePollInterval, startPolling, restartPolling, stopPolling, clearWsReconnectTimer, stopWS, pauseApp, resetUiOnResume, syncApp, resumeApp, startWS, scheduleReconnect, stopDashGateRecheck, syncDashboardAuthState, fetchAuthStatus, recheckDashboardAuthWhileGateOpen, startDashGateRecheck, unlockDashboard, ensureDashboardGatePopup, openDashboardGate, closeDashboardGate, promptDashboardPassword, ensureDashboardAccess });
+  Object.assign(M, { makeShadeTile, updateShadeTile, updateFavoriteShadeTile, shadesListSignature, refreshBlindsPopup, renderBlindsPopup, toggleCeilingFan, stepCeilingFanSpeed, makeFanTile, updateFanTile, fansListSignature, refreshFansPopup, renderFansPopup, renderOutletsPopup, normalizeTempSensorForCard, syncDualSensorSources, applySensorLiveAttr, refreshSensorViews, makeMusicRow, updateFavoriteMusicRow, camerasListSig, stopCamerasStreams, refreshCamerasPopup, renderCamerasPopup, renderMusicPopup, renderHubModePopup, ensurePinPadPopup, showPinPadError, clearPinPadError, renderPinPadDots, appendPinDigit, backspacePinDigit, closePinPad, openPinPad, promptGarageOpenPin, promptUnlockPin, runHsmAction, appendHsmModeButtons, renderSecurityPopup, sendValveCmd, reconcileValve, sensorTypeOrder, sortSensorsInRoom, groupSensorsByRoom, groupRoomSensorsByType, mergedSensorList, sensorsPopupSignature, sensorTypesWithCounts, sensorMatchesFilter, syncSensorFilterBtn, syncSensorFilterChips, applySensorTypeFilter, buildSensorFilterBar, sensorBatteryPct, sensorBatteryLabel, sensorExFooter, applySensorCardState, makeSensorCard, makeFavoriteSensorCard, updateSensorCard, buildSensorRoomSection, renderSensorsPopup, refreshSensorsPopup, renderScenesPopup, favoritesPopupSignature, makeQuickTstatCard, updateQuickTstatCard, refreshFavoritesPopup, renderFavoritesPopup, thermostatsListSignature, refreshThermostatsPopup, renderThermostatsPopup, quickNavPopupHasContent, updateQuickNavVisibility, refreshQuickPopupIfOpen, openQuickPopup, closeQuickPopup, ensureTabView, setQuickBodyClass, currentBody, currentCategory, currentCategoryLabel, updateCurrentCategoryTitle, inTabView, updateTabActiveStates, showTab, closeCurrentView, setTabMode, resolveDrawerDom, setDrawerLabels, openDrawer, closeDrawer, toggleDrawer, setDrawerMode, closeConfirm, ensureConfirmPopup, confirmAction, tapAllOn, tapAllOff, collapsedIdSet, applyFilter, applyTabSearch, applySearch, sensorsCollapsedIdSet, sensorsCollapsedSet, persistSensorsCollapsed, allSensorRoomsCollapsed, expandAllSensorRooms, collapseAllSensorRooms, restoreSensorsCollapsed, collapsedSet, persistCollapsed, allRoomsCollapsed, hasCollapsibleRooms, updateExpandAllBtn, collapseAllRooms, expandAllRooms, restoreCollapsed, refresh, effectivePollInterval, startPolling, restartPolling, stopPolling, clearWsReconnectTimer, stopWS, pauseApp, resetUiOnResume, syncApp, resumeApp, startWS, scheduleReconnect, stopDashGateRecheck, syncDashboardAuthState, fetchAuthStatus, recheckDashboardAuthWhileGateOpen, startDashGateRecheck, unlockDashboard, ensureDashboardGatePopup, openDashboardGate, closeDashboardGate, promptDashboardPassword, ensureDashboardAccess });
 })();

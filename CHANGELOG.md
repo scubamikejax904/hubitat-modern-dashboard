@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.78
+
+- **Cameras:** new Cameras tab (requires **Enable tabs**) for go2rtc Camera devices —
+  live streams load from your LAN go2rtc server when each tile scrolls into view, and
+  stop when off-screen or when leaving the tab.
+- **Cameras:** companion app picker and stream URL derivation from go2rtc snapshot URLs;
+  use the local hub dashboard URL (not cloud) unless the phone can reach go2rtc via VPN.
+
 ## 0.2.77
 
 - **UI:** hide **Expand all rooms** when the current view has no collapsible room
