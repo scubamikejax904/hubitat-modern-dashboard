@@ -10557,6 +10557,32 @@
     }
   }
 
+  function cameraTilePlayUrl(tile) {
+    if (!tile) return "";
+    return tile.dataset.hdActive === "1" ? (tile.dataset.streamUrlHi || tile.dataset.streamUrl) : tile.dataset.streamUrl;
+  }
+
+  function syncCameraHdBtn(tile) {
+    const hdBtn = tile?.querySelector(".camera-hd-btn");
+    if (!hdBtn) return;
+    const onHi = tile.dataset.hdActive === "1";
+    hdBtn.textContent = onHi ? "SD" : "HD";
+    hdBtn.setAttribute("aria-pressed", onHi ? "true" : "false");
+    hdBtn.classList.toggle("camera-hd-active", onHi);
+    hdBtn.setAttribute("aria-label", onHi ? "Switch to standard definition stream" : "Switch to high definition stream");
+  }
+
+  function toggleCameraHd(tile) {
+    if (!tile?.dataset.streamUrlHi || tile.dataset.streamUrlHi === tile.dataset.streamUrl) return;
+    const onHi = tile.dataset.hdActive === "1";
+    tile.dataset.hdActive = onHi ? "" : "1";
+    syncCameraHdBtn(tile);
+    const iframe = tile.querySelector("iframe");
+    const url = cameraTilePlayUrl(tile);
+    if (iframe && url) iframe.src = url;
+    hapticTap();
+  }
+
   function closeCameraExpand() {
     if (!cameraExpandOverlay) return;
     const tile = cameraExpandTile;
@@ -10671,12 +10697,11 @@
       if (hiUrl && !cameraReorderActive) {
         const hdBtn = ce("button", "camera-hd-btn");
         hdBtn.type = "button";
-        hdBtn.setAttribute("aria-label", "Open high definition stream");
-        hdBtn.textContent = "HD";
         hdBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          openCameraExpand(tile);
+          toggleCameraHd(tile);
         });
+        syncCameraHdBtn(tile);
         media.appendChild(hdBtn);
       }
       const reorderOverlay = ce("div", "camera-reorder-overlay");
@@ -10714,7 +10739,7 @@
       const tiles = grid.querySelectorAll(".camera-tile");
       for (let i = 0; i < Math.min(3, tiles.length); i++) {
         const iframe = tiles[i].querySelector("iframe");
-        const url = tiles[i].dataset.streamUrl;
+        const url = cameraTilePlayUrl(tiles[i]);
         if (iframe && url) iframe.src = url;
       }
       return;
@@ -10723,7 +10748,7 @@
       for (const entry of entries) {
         const tile = entry.target;
         const iframe = tile.querySelector("iframe");
-        const url = tile.dataset.streamUrl;
+        const url = cameraTilePlayUrl(tile);
         if (!iframe || !url) continue;
         const key = String(tile.dataset.name || url);
         if (cameraExpandTile === tile) continue;

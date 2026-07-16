@@ -1,8 +1,12 @@
 # Changelog
 
+## 0.2.92
+
+- **Cameras:** HD toggles high-res stream in the grid tile (no expand overlay); button nudged up and right.
+
 ## 0.2.91
 
-- **Cameras:** HD button on dual-stream tiles (top-right, inset from go2rtc unmute) opens high-res expand; grid iframe stays interactive.
+- **Cameras:** HD button on dual-stream tiles (initial in-place stream switch).
 
 ## 0.2.90
 

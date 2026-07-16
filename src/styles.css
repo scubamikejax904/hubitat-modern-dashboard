@@ -297,7 +297,7 @@ body {
   pointer-events: none;
 }
 .camera-hd-btn {
-  position: absolute; top: 0; right: 48px; z-index: 2;
+  position: absolute; top: -6px; right: 36px; z-index: 2;
   appearance: none; border: none; background: transparent;
   color: #fff; opacity: 0.6;
   font-size: 12px; font-weight: 700; letter-spacing: 0.05em; line-height: 1;
@@ -307,6 +307,7 @@ body {
   cursor: pointer; touch-action: manipulation;
 }
 .camera-hd-btn:active { opacity: 0.85; }
+.camera-hd-btn.camera-hd-active { opacity: 1; }
 .cameras-reorder-mode .camera-hd-btn { display: none; }
 .camera-expand-overlay {
   position: fixed; inset: 0; z-index: 10000;
