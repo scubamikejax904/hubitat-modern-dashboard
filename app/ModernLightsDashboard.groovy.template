@@ -72,8 +72,12 @@ def mainPage() {
                 if (missing) {
                     paragraph "<small><b>Still missing:</b> ${missing.join(', ')}</small>"
                 }
-                if (hubSecurity && (!hubUsername || !hubPassword)) {
-                    paragraph "<small>If Hub Login Security is on, expand <b>Hub file access</b> below and enter your hub login.</small>"
+                if (!hubSecurity) {
+                    paragraph "<small><b>Hub Login Security enabled?</b> Expand <b>Hub file access</b> below, turn on the toggle, and enter your hub admin username/password (not the dashboard password above).</small>"
+                } else if (!hubCredentials().user || !hubCredentials().pass) {
+                    paragraph "<small><b>Hub file access:</b> enter your hub admin username and password below, then press <b>Done</b> again.</small>"
+                } else {
+                    paragraph "<small><b>Hub file access:</b> login failed — verify hub admin username/password under <b>Hub file access</b> below.</small>"
                 }
             }
         }
@@ -199,12 +203,13 @@ def mainPage() {
                 }
             }
         }
-        section("Hub file access", hideable: true, hidden: true) {
-            paragraph "Only needed if <b>Settings → Hub Login Security</b> is enabled (blocks local file reads)."
+        section("Hub file access", hideable: true, hidden: !(hubSecurity || !assetsOk)) {
+            paragraph "Required when <b>Settings → Hub Login Security</b> is enabled. Use your <b>hub admin</b> login (Settings → Hub Login Security), not the optional dashboard password above."
             input "hubSecurity", "bool", title: "Hub Login Security is enabled", defaultValue: false, submitOnChange: true
             if (hubSecurity) {
                 input "hubUsername", "string", title: "Hub username", required: false
                 input "hubPassword", "password", title: "Hub password", required: false
+                paragraph "<small>Re-enter the password whenever you change other settings — Hubitat clears password fields on save.</small>"
             }
         }
     }
@@ -213,6 +218,7 @@ def mainPage() {
 def installed() {
     if (!state.accessToken) { createAccessToken() }
     logInit()
+    try { syncHubCredentials() } catch (e) { log.warn "Modern Dashboard: hub credential sync failed: ${e}" }
     try { initializeScheduler() } catch (e) { log.warn "Modern Dashboard: scheduler init failed: ${e}" }
     try { initializeHsm() } catch (e) { log.warn "Modern Dashboard: HSM init failed: ${e}" }
 }
@@ -220,6 +226,7 @@ def installed() {
 def updated() {
     logInit()
     try { clearLocalAssetCache() } catch (e) { log.warn "Modern Dashboard: asset cache clear failed: ${e}" }
+    try { syncHubCredentials() } catch (e) { log.warn "Modern Dashboard: hub credential sync failed: ${e}" }
     try { syncDashPasswordEpoch() } catch (e) { log.warn "Modern Dashboard: dash password sync failed: ${e}" }
     try { initializeScheduler() } catch (e) { log.warn "Modern Dashboard: scheduler init failed: ${e}" }
     try { initializeHsm() } catch (e) { log.warn "Modern Dashboard: HSM init failed: ${e}" }
@@ -789,33 +796,91 @@ def hubBaseUri() {
     return "http://${location.hub.localIP}:8080"
 }
 
+def hubCredentials() {
+    def user = hubUsername?.toString()?.trim() ?: state.hubUsername?.toString()?.trim() ?: ""
+    def pass = hubPassword?.toString() ?: state.hubPassword?.toString() ?: ""
+    return [user: user, pass: pass]
+}
+
+def syncHubCredentials() {
+    def user = hubUsername?.toString()?.trim()
+    if (user) state.hubUsername = user
+    def pass = hubPassword?.toString()
+    if (pass) state.hubPassword = pass
+    state.remove("hubAuthCookie")
+    state.remove("hubAuthCookieExpiresAt")
+}
+
 def hubRequestHeaders() {
     def cookie = hubAuthCookie()
     return cookie ? ["Cookie": cookie] : null
 }
 
-def hubAuthCookie() {
-    if (!hubSecurity || !hubUsername || !hubPassword) return null
+def hubAuthCookie(boolean forceRefresh = false) {
+    if (!hubSecurity) return null
+    def creds = hubCredentials()
+    if (!creds.user || !creds.pass) {
+        log.warn "hubAuthCookie: Hub Login Security is enabled but hub username/password are missing"
+        return null
+    }
+    def nowMs = now()
+    if (!forceRefresh && state.hubAuthCookie) {
+        try {
+            if (state.hubAuthCookieExpiresAt?.toLong() > nowMs) return state.hubAuthCookie.toString()
+        } catch (e) {}
+    }
     try {
         def cookie = null
+        def loginFailed = false
         httpPost([
             uri: hubBaseUri(),
             path: "/login",
             query: [loginRedirect: "/"],
-            body: [username: hubUsername, password: hubPassword, submit: "Login"],
+            body: [username: creds.user, password: creds.pass, submit: "Login"],
             textParser: true,
             ignoreSSLIssues: true
         ]) { resp ->
-            if (resp?.headers) {
+            def bodyText = resp?.data?.text?.toString() ?: ""
+            if (bodyText.contains("The login information you supplied was incorrect.")) {
+                loginFailed = true
+            } else if (resp?.headers) {
                 def setCookie = resp.headers["Set-Cookie"]
                 if (setCookie instanceof List) setCookie = setCookie[0]
                 if (setCookie) cookie = setCookie.toString().split(";")[0]
             }
         }
+        if (loginFailed || !cookie) {
+            state.remove("hubAuthCookie")
+            state.remove("hubAuthCookieExpiresAt")
+            log.error "hubAuthCookie: hub login failed — verify Hub file access username/password"
+            return null
+        }
+        state.hubAuthCookie = cookie
+        state.hubAuthCookieExpiresAt = nowMs + 1800000L
         return cookie
     } catch (e) {
         log.error "hubAuthCookie: ${e.message}"
         return null
+    }
+}
+
+def parseFileManagerJson(data) {
+    if (data == null) return null
+    if (data instanceof Map) return data
+    def text = data.toString()?.trim()
+    if (!text || text.startsWith("<")) return null
+    try {
+        return new groovy.json.JsonSlurper().parseText(text)
+    } catch (e) {
+        return null
+    }
+}
+
+def logHubFileAuthHint(String context) {
+    if (hubSecurity) {
+        log.error "${context}: hub returned a login page — verify Hub file access username/password"
+    } else {
+        log.error "${context}: hub returned a login page — enable Hub Login Security under Hub file access and enter hub admin credentials"
     }
 }
 
@@ -824,7 +889,6 @@ def listLocalFileNames() {
     try {
         def params = [
             uri: "${hubBaseUri()}/hub/fileManager/json",
-            contentType: "application/json",
             timeout: 15,
             ignoreSSLIssues: true
         ]
@@ -832,14 +896,22 @@ def listLocalFileNames() {
         if (headers) params.headers = headers
         httpGet(params) { resp ->
             def code = resp?.status ?: resp?.statusCode
-            if (code == 200 && resp?.data?.files) {
-                resp.data.files.each { f ->
+            def json = parseFileManagerJson(resp?.data)
+            if (code == 200 && json?.files) {
+                json.files.each { f ->
                     if (f.type == "file" && f.name) names << f.name.trim()
                 }
+            } else if (json == null && (code == 200 || code == 401 || code == 403)) {
+                logHubFileAuthHint("listLocalFileNames")
             }
         }
     } catch (e) {
-        log.error "listLocalFileNames: ${e.message}"
+        def msg = e.message?.toString() ?: "${e}"
+        if (msg.contains("'<',") || msg.toLowerCase().contains("lexing failed")) {
+            logHubFileAuthHint("listLocalFileNames")
+        } else {
+            log.error "listLocalFileNames: ${msg}"
+        }
     }
     return names
 }

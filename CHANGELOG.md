@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1
+
+- **Setup:** Hub file access credentials persist in app state (Hubitat clears password
+  fields on save); cached hub login cookie with clearer errors when File Manager reads
+  fail or hub admin login is wrong.
+- **Setup:** improved missing-file and Hub Login Security guidance on the companion app page.
+
 ## 0.3.0
 
 - **Thermostats:** All thermostats bulk control shows mode buttons even when drivers
