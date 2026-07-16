@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- **Thermostats:** All thermostats bulk control shows mode buttons even when drivers
+  omit `supportedThermostatModes`, so you can pick heat/cool before adjusting setpoints.
+  Room multi-thermostat groups stay setpoint-only.
+
 ## 0.2.99
 
 - **Performance:** defer `mld-app-post3.js` (Cameras + Scheduler) until after the first

@@ -1032,6 +1032,14 @@
     return parseList(t.supM);
   }
 
+  // All-thermostats bulk control: drivers may omit supportedThermostatModes, but we
+  // still need mode buttons so the user can pick heat/cool before setpoints work.
+  function tstatControlModes(t) {
+    const modes = supportedModes(t);
+    if (modes.length || !t?._central) return modes;
+    return TSTAT_DEFAULT_MODES;
+  }
+
   function supportedFanModes(t) {
     // Match Hubitat dashboards: no supportedThermostatFanModes → no fan controls.
     // null/undefined/"" all mean no supported fan modes.
@@ -2498,7 +2506,8 @@
     // disabled look when off or none selected for bulk
     const noneSelected = !!(tstatTargetPickerEnabled() && !tstatSession.ids?.length);
     popup._svg.classList.toggle("disabled", tm === "off" || noneSelected);
-    const noMode = !!(tstatTargetPickerEnabled() && tstatSession.ids?.length !== 1);
+    const noMode = !!(tstatSession?.roomGroup && tstatSession.ids?.length !== 1)
+      || !!(tstatSession?.central && !tm);
     const canAdjust = tm !== "off" && !noMode && !noneSelected;
     if (popup._minusBtn) popup._minusBtn.disabled = !canAdjust;
     if (popup._plusBtn) popup._plusBtn.disabled = !canAdjust;
@@ -2539,16 +2548,16 @@
     const t = activeTstat();
     if (!t) return;
     const noneSelected = !!(tstatTargetPickerEnabled() && !tstatSession.ids?.length);
-    // Multi-select bulk sessions must not invent a combined mode list — only show
-    // mode/fan controls when a single thermostat is the target.
-    const singleTarget = tstatSession.ids?.length === 1;
-    if (tstatTargetPickerEnabled() && !singleTarget) {
+    // Room groups with multiple targets: setpoints only — caps come from one device.
+    // All-thermostats bulk: show union mode/fan controls even when many are selected.
+    const roomMultiTarget = !!(tstatSession?.roomGroup && tstatSession.ids?.length !== 1);
+    if (roomMultiTarget) {
       popup._modeSection.style.display = "none";
       popup._fanModeSection.style.display = "none";
       popup._fanSpeedSection.style.display = "none";
       return;
     }
-    const supM = supportedModes(t);
+    const supM = tstatControlModes(t);
     const tm = String(t.tm || "").toLowerCase();
     renderTstatModeButtons(popup, supM, tm, noneSelected);
     popup._modeSection.style.display = supM.length ? "" : "none";
