@@ -204,6 +204,8 @@
   let hsmPinRequired = false;
   let thermostatsPopupEnabled = false;
   let outletsSeparateTab = false;
+  let hubModePopupEnabled = true;
+  let scenesPopupEnabled = true;
   let roomClimateEnabled = true;
   let schedulerEnabled = true;
   let unlockPinEnabled = false;
@@ -4046,7 +4048,6 @@
       try {
         if (document.fullscreenElement) return true;
       } catch {}
-      if (document.querySelector(".camera-expand-overlay")) return true;
       return !!document.querySelector(
         ".quick-popup.open, .ct-popup.open, .tstat-popup.open, .music-master-popup.open, .confirm-popup.open, .pin-pad-popup.open, .dash-gate-popup.open"
       );
@@ -5261,6 +5262,10 @@
 
   function enterReorderMode() {
     if (tabMode && activeTab === "cameras" && cameras.length) {
+      if (!isLocalOrigin()) {
+        flash("Camera reorder requires the local dashboard URL", true);
+        return;
+      }
       postCall("enterCameraReorderMode");
       return;
     }
@@ -5687,6 +5692,8 @@
     hsmPinRequired = !!d.hsmPinRequired;
     thermostatsPopupEnabled = d.thermostatsPopupEnabled !== false;
     outletsSeparateTab = !!d.outletsSeparateTab;
+    hubModePopupEnabled = d.hubModePopupEnabled !== false;
+    scenesPopupEnabled = d.scenesPopupEnabled !== false;
     roomClimateEnabled = d.roomClimateEnabled !== false;
     schedulerEnabled = d.schedulerEnabled !== false;
     unlockPinEnabled = !!d.unlockPinEnabled;
@@ -8871,8 +8878,8 @@
   function quickNavPopupHasContent(popup) {
     switch (popup) {
       case "locks": return locks.length > 0 || garageDoors.length > 0;
-      case "scenes": return scenes.length > 0;
-      case "hub-mode": return hubModes.length > 0;
+      case "scenes": return scenesPopupEnabled && scenes.length > 0;
+      case "hub-mode": return hubModePopupEnabled && hubModes.length > 0;
       case "security": return hsmEnabled;
       case "blinds": return windowShades.length > 0;
       case "fans": return ceilingFans.length > 0;
@@ -10366,8 +10373,6 @@
   let camerasObserver = null;
   const camerasStopTimers = new Map();
   let camerasRenderedSig = "";
-  let cameraExpandOverlay = null;
-  let cameraExpandTile = null;
   let cameraReorderActive = false;
   let cameraReorderSnapshot = null;
   let cameraReorderDraftOrder = null;
@@ -10532,6 +10537,10 @@
   }
 
   function enterCameraReorderMode() {
+    if (!isLocalOrigin()) {
+      flash("Camera reorder requires the local dashboard URL", true);
+      return;
+    }
     cameraReorderSnapshot = cfg.cameraOrder?.length ? cfg.cameraOrder.map(Number) : null;
     cameraReorderDraftOrder = null;
     cameraReorderEls.clear();
@@ -10638,64 +10647,7 @@
     hapticTap();
   }
 
-  function closeCameraExpand() {
-    if (!cameraExpandOverlay) return;
-    const tile = cameraExpandTile;
-    const overlay = cameraExpandOverlay;
-    cameraExpandOverlay = null;
-    cameraExpandTile = null;
-    const iframe = overlay.querySelector(".camera-iframe");
-    if (iframe) iframe.src = "about:blank";
-    overlay.remove();
-    if (tile) {
-      const lowIframe = tile.querySelector("iframe");
-      const url = tile.dataset.streamUrl;
-      if (lowIframe && url && isBlankIframe(lowIframe)) {
-        const rect = tile.getBoundingClientRect();
-        const vis = rect.top < window.innerHeight && rect.bottom > 0;
-        if (vis) lowIframe.src = url;
-      }
-    }
-  }
-
-  function openCameraExpand(tile) {
-    if (cameraReorderActive) return;
-    if (!tile || cameraExpandTile === tile) {
-      closeCameraExpand();
-      return;
-    }
-    closeCameraExpand();
-    const hiUrl = tile.dataset.streamUrlHi || tile.dataset.streamUrl;
-    if (!hiUrl) return;
-    const name = tile.querySelector(".camera-name")?.textContent || "Camera";
-    cameraExpandTile = tile;
-    const lowIframe = tile.querySelector("iframe");
-    if (lowIframe) lowIframe.src = "about:blank";
-    const overlay = ce("div", "camera-expand-overlay");
-    const panel = ce("div", "camera-expand-panel");
-    const closeBtn = ce("button", "camera-expand-close");
-    closeBtn.type = "button";
-    closeBtn.setAttribute("aria-label", "Close");
-    closeBtn.textContent = "\u00d7";
-    const media = ce("div", "camera-expand-media");
-    const iframe = ce("iframe", "camera-iframe");
-    iframe.setAttribute("title", name);
-    iframe.setAttribute("allow", "autoplay; encrypted-media; fullscreen");
-    iframe.src = hiUrl;
-    const nameEl = ce("span", "camera-name");
-    nameEl.textContent = name;
-    media.appendChild(iframe);
-    media.appendChild(nameEl);
-    panel.appendChild(closeBtn);
-    panel.appendChild(media);
-    overlay.appendChild(panel);
-    appendPopup(overlay);
-    bindPopupDismiss(overlay, panel, closeBtn, closeCameraExpand);
-    cameraExpandOverlay = overlay;
-  }
-
   function stopCamerasStreams() {
-    closeCameraExpand();
     if (camerasObserver) {
       camerasObserver.disconnect();
       camerasObserver = null;
@@ -10709,11 +10661,38 @@
     camerasRenderedSig = "";
   }
 
+  function camerasRenderedSigKey() {
+    return camerasListSig() + (isLocalOrigin() ? ":local" : ":remote");
+  }
+
+  function renderCamerasMessage(body, heading, message) {
+    const wrap = ce("div", "cameras-empty");
+    const h = ce("h2");
+    h.textContent = heading;
+    const p = ce("p");
+    p.textContent = message;
+    wrap.appendChild(h);
+    wrap.appendChild(p);
+    body.appendChild(wrap);
+  }
+
+  function armCameraNameHide(tile) {
+    if (cameraReorderActive) return;
+    const nameEl = tile?.querySelector(".camera-name");
+    if (!nameEl) return;
+    if (nameEl._nameHideTimer) clearTimeout(nameEl._nameHideTimer);
+    nameEl.classList.remove("camera-name-hidden");
+    nameEl._nameHideTimer = setTimeout(() => {
+      nameEl.classList.add("camera-name-hidden");
+      nameEl._nameHideTimer = null;
+    }, 3000);
+  }
+
   function refreshCamerasPopup() {
     if (!isLocalOrigin()) return;
     if (cameraReorderActive) return;
-    const sig = camerasListSig();
-    if (sig === camerasRenderedSig && tabViewEl?.querySelector(".cameras-grid")) return;
+    const sig = camerasRenderedSigKey();
+    if (sig === camerasRenderedSig && tabViewEl?.querySelector(".cameras-grid, .cameras-empty")) return;
     renderCamerasPopup();
   }
 
@@ -10723,13 +10702,15 @@
     const body = currentBody();
     setQuickBodyClass(body, "cameras-tab tab-body");
     body.innerHTML = "";
-    camerasRenderedSig = camerasListSig();
+    camerasRenderedSig = camerasRenderedSigKey();
     if (!cameras.length) {
-      body.textContent = "No cameras selected — add go2rtc Camera devices in the Hubitat app settings";
+      renderCamerasMessage(body, "No cameras", "Add go2rtc Camera devices in the Hubitat app settings.");
       return;
     }
     const grid = ce("div", "cameras-grid");
-    grid.dataset.cols = String(cfg.camerasCols === 2 || cfg.camerasCols === 3 ? cfg.camerasCols : 1);
+    grid.dataset.cols = cameraReorderActive
+      ? "1"
+      : String(cfg.camerasCols === 2 || cfg.camerasCols === 3 ? cfg.camerasCols : 1);
     const HYSTERESIS_MS = 200;
     cameraReorderEls.clear();
     for (const cam of cameras) {
@@ -10738,8 +10719,10 @@
       tile.dataset.name = String(cam.n || "").toLowerCase();
       const lowUrl = cameraEmbedUrl(cam.u || "");
       const hiUrl = cam.uh ? cameraEmbedUrl(cam.uh) : "";
+      const streamAvailable = !!lowUrl;
       tile.dataset.streamUrl = lowUrl;
       tile.dataset.streamUrlHi = hiUrl || lowUrl;
+      if (!streamAvailable) tile.classList.add("camera-tile-unavailable");
       const media = ce("div", "camera-media");
       const iframe = ce("iframe", "camera-iframe");
       iframe.setAttribute("title", cam.n || "Camera");
@@ -10747,10 +10730,15 @@
       iframe.loading = "lazy";
       iframe.src = "about:blank";
       media.appendChild(iframe);
+      if (!streamAvailable) {
+        const unavail = ce("div", "camera-unavailable");
+        unavail.textContent = "Stream unavailable";
+        media.appendChild(unavail);
+      }
       const nameEl = ce("span", "camera-name");
       nameEl.textContent = cam.n || "Camera";
       media.appendChild(nameEl);
-      if (hiUrl && !cameraReorderActive) {
+      if (hiUrl && streamAvailable && !cameraReorderActive) {
         const hdBtn = ce("button", "camera-hd-btn");
         hdBtn.type = "button";
         hdBtn.addEventListener("click", (e) => {
@@ -10793,10 +10781,11 @@
     }
     if (!("IntersectionObserver" in window)) {
       const tiles = grid.querySelectorAll(".camera-tile");
-      for (let i = 0; i < Math.min(3, tiles.length); i++) {
+      for (let i = 0; i < tiles.length; i++) {
         const iframe = tiles[i].querySelector("iframe");
         const url = cameraTilePlayUrl(tiles[i]);
-        if (iframe && url) iframe.src = url;
+        if (i < 3 && iframe && url) iframe.src = url;
+        armCameraNameHide(tiles[i]);
       }
       return;
     }
@@ -10805,14 +10794,15 @@
         const tile = entry.target;
         const iframe = tile.querySelector("iframe");
         const url = cameraTilePlayUrl(tile);
-        if (!iframe || !url) continue;
-        const key = String(tile.dataset.name || url);
-        if (cameraExpandTile === tile) continue;
+        const key = String(tile.dataset.name || url || tile.dataset.camId || "");
         if (entry.isIntersecting) {
-          const pending = camerasStopTimers.get(key);
-          if (pending) { clearTimeout(pending); camerasStopTimers.delete(key); }
-          if (isBlankIframe(iframe)) iframe.src = url;
-        } else if (!camerasStopTimers.has(key)) {
+          if (iframe && url) {
+            const pending = camerasStopTimers.get(key);
+            if (pending) { clearTimeout(pending); camerasStopTimers.delete(key); }
+            if (isBlankIframe(iframe)) iframe.src = url;
+          }
+          armCameraNameHide(tile);
+        } else if (iframe && url && !camerasStopTimers.has(key)) {
           camerasStopTimers.set(key, setTimeout(() => {
             camerasStopTimers.delete(key);
             iframe.src = "about:blank";

@@ -19,7 +19,7 @@ experience works at home and away.
 
 Supports lights (dimmers, switches, CT, RGB), motorized shades, ceiling fans,
 thermostats, locks, HSM, Hubitat scenes, hub mode, music/media players, sensors,
-and a built-in scheduler for lights, outlets, thermostats, and hub mode.
+live camera views (go2rtc, local URL only), and a built-in scheduler for lights, outlets, thermostats, and hub mode.
 Designed to show ~130 lights on one page, within Hubitat's 128 KB cloud response
 cap.
 
@@ -36,6 +36,7 @@ cap.
   - [Hubitat Safety Monitor (HSM)](#hubitat-safety-monitor-hsm)
   - [Hub mode & scenes](#hub-mode--scenes)
   - [Music & media](#music--media)
+  - [Cameras](#cameras)
   - [Sensors](#sensors)
   - [Scheduler](#scheduler)
   - [Favorites](#favorites)
@@ -205,7 +206,7 @@ via `supportedFanSpeeds`).
 
 ### Locks & garage doors
 
-Select lock devices and garage door openers in the **Locks / garage doors** app
+Select lock devices and garage door openers in the **Locks & garage** app
 preferences section. The **Locks** quick-nav popup lists all selected locks and
 garage doors with lock/unlock or open/close controls.
 
@@ -247,9 +248,35 @@ The **Music** quick-nav popup lists all configured players. The top-bar **All
 music** button appears when multiple players are selected. An animated equalizer
 on the album icon indicates playback (respects reduced-motion preferences).
 
+### Cameras
+
+A simple **live-view grid** for **go2rtc Camera** devices from the go2rtc
+Hubitat app. This is not a full NVR — use your go2rtc or camera app for
+recordings, PTZ, and other advanced features.
+
+**Requirements**
+
+| Requirement | Why |
+| ----------- | --- |
+| **Category tabs** enabled (overflow menu ⋯) | Cameras is a tab, not a quick-nav popup |
+| **Local hub URL** (`http://<hub-ip>:8080/...`) | go2rtc streams are HTTP on your LAN; the tab is hidden on the cloud HTTPS URL to avoid mixed-content errors |
+| Cameras selected in app preferences | **Cameras (go2rtc)** picker — grouped main + sub stream devices |
+
+**Controls**
+
+| Action | How |
+| ------ | --- |
+| Watch live stream | Open the **Cameras** tab; streams start when a tile scrolls into view |
+| Switch to HD | Tap **HD** on a tile (when a main/high stream is available) |
+| Reorder cameras | Overflow menu → **Reorder**; drag or use arrows; order syncs to the hub |
+| Change layout | Overflow menu → **1 / 2 / 3** columns (saved per browser) |
+
+Streams stop when a tile scrolls off screen or when you leave the Cameras tab,
+to keep the hub and network load low.
+
 ### Sensors
 
-Most sensors are **read-only** on the dashboard. Select them in the **Other sensors**
+Most sensors are **read-only** on the dashboard. Select them in the **Sensors**
 section of app preferences (motion, contact, water, presence, humidity,
 illuminance, smoke/CO, valves) plus **Temperature sensors** for display-only temperature.
 
@@ -353,6 +380,9 @@ The app page shows two URLs:
 
 Both URLs include the OAuth `access_token` and serve the same dashboard. API
 calls use relative paths, so they stay on whichever origin you opened.
+
+The **Cameras** tab is available only on the **local** URL (see
+[Cameras](#cameras)).
 
 **Switching modes**
 
@@ -597,21 +627,25 @@ All settings below are in **Apps → Modern Dashboard** (the installed app insta
 
 | Section | Setting | Default | Notes |
 | ------- | ------- | ------- | ----- |
-| Devices | Lights, switches, outlets, thermostats, sensors, locks, garage doors, shades, music, speakers | — | See [device selection](#device-selection) |
-| Options | Dashboard name | `mDash` | Browser tab and PWA title |
-| Options | Refresh interval | 5 s (2–60) | `/data` poll interval |
-| Options | Enable eventsocket | On | LAN WebSocket; see [WebSocket](#real-time-updates-websocket) |
-| Scheduler | 24-hour time display | Off | Display only; stored times are 24h |
+| Lights & outlets | Lights, outlets, separate Outlets tab | — | See [device selection](#device-selection) |
+| Climate | Thermostats, temperature sensors, room cards, quick menu | — | See [device selection](#device-selection) |
+| Shades, fans & media | Shades, blinds, fans, music, speakers | — | See [device selection](#device-selection) |
+| Locks & garage | Locks, garage doors, unlock PIN | — | See [device selection](#device-selection) |
+| Sensors | Motion, contact, water, presence, etc. | — | See [device selection](#device-selection) |
+| Cameras | go2rtc cameras | — | See [device selection](#device-selection) |
+| Dashboard options | Dashboard name | `mDash` | Browser tab and PWA title |
+| Dashboard options | Refresh interval | 5 s (2–60) | `/data` poll interval |
+| Dashboard options | Enable eventsocket | On | LAN WebSocket; see [WebSocket](#real-time-updates-websocket) |
+| Dashboard options | Hub mode / scenes quick menu | On | Hides quick-nav only |
+| Dashboard options | Scheduler | On | Hide stops schedules from running |
+| Dashboard options | 24-hour time display | Off | Display only; stored times are 24h |
 | Light control | Disable metering | Off | When off, commands are staggered |
 | Light control | Metering delay | 75 ms | 0–2000 ms between light commands |
 | Light control | On/off optimization | Off | Skip on/off if device already in target state |
 | Light control | Activation optimization | Off | Skip level/CT/RGB on snapshot restore if already correct |
-| Dashboard access | Dashboard password | Off | Password required to open dashboard (7-day sliding session) |
-| Locks | Unlock PIN | Off | PIN required to unlock / open garage from dashboard |
-| Thermostats | Show in quick menu | On | Hide thermostats nav icon when off |
-| Thermostats / temp sensors | Show on room cards | On | Hide climate widget on Lights tab when off |
-| Security | HSM enabled | Off | Show Security quick-nav icon |
-| Security | HSM PIN | Off | PIN required to arm/disarm |
+| Security & access | Dashboard password | Off | Password required to open dashboard (7-day sliding session) |
+| Security & access | HSM enabled | Off | Show Security quick-nav icon |
+| Security & access | HSM PIN | Off | PIN required to arm/disarm |
 | Hub file access | Username / password | — | Only if Hub Login Security blocks file reads |
 
 ### Device selection
@@ -628,6 +662,7 @@ All settings below are in **Apps → Modern Dashboard** (the installed app insta
 | Shades (Switch Level) | — | — | Blinds popup; All blinds bulk — pick shades only; list also includes normal dimmers |
 | Ceiling fans | — | — | Fans popup; All fans bulk |
 | Music / speakers | — | — | Music popup |
+| Cameras (go2rtc) | — | — | Cameras tab (local URL only; requires category tabs) |
 | Motion, contact, water, etc. | — | — | Sensors popup |
 | Valves | — | — | Sensors popup (open/close) |
 | Hub scenes | — | — | Scenes popup (all hub scenes) |

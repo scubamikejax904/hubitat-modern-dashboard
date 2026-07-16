@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.94
+
+- **Companion app:** reorganized preferences on a single page — dashboard links near the top, device pickers split into Lights & outlets, Climate, Shades/fans/media, Locks & garage, Sensors, and Cameras; Options, hub mode/scenes, and scheduler merged under Dashboard options; password and HSM merged under Security & access; About and Light control collapsed by default.
+- **Quick nav:** optional toggles to hide **Hub mode** and **Scenes** from the dashboard quick menu.
+- **Cameras:** camera reorder requires the local dashboard URL; removed unused full-screen expand overlay (HD toggle remains in-grid).
+
 ## 0.2.93
 
 - **Cameras:** overflow layout picker (1 / 2 / 3 columns) on the Cameras tab; preference saved per device.

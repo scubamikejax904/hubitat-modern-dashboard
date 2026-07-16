@@ -767,6 +767,10 @@
 
   function enterReorderMode() {
     if (M.tabMode && M.activeTab === "cameras" && M.cameras.length) {
+      if (!M.isLocalOrigin()) {
+        M.flash("Camera reorder requires the local dashboard URL", true);
+        return;
+      }
       M.postCall("enterCameraReorderMode");
       return;
     }
@@ -1193,6 +1197,8 @@
     M.hsmPinRequired = !!d.hsmPinRequired;
     M.thermostatsPopupEnabled = d.thermostatsPopupEnabled !== false;
     M.outletsSeparateTab = !!d.outletsSeparateTab;
+    M.hubModePopupEnabled = d.hubModePopupEnabled !== false;
+    M.scenesPopupEnabled = d.scenesPopupEnabled !== false;
     M.roomClimateEnabled = d.roomClimateEnabled !== false;
     M.schedulerEnabled = d.schedulerEnabled !== false;
     M.unlockPinEnabled = !!d.unlockPinEnabled;

@@ -2578,7 +2578,6 @@
       try {
         if (document.fullscreenElement) return true;
       } catch {}
-      if (document.querySelector(".camera-expand-overlay")) return true;
       return !!document.querySelector(
         ".quick-popup.open, .ct-popup.open, .tstat-popup.open, .music-master-popup.open, .confirm-popup.open, .pin-pad-popup.open, .dash-gate-popup.open"
       );

@@ -9,8 +9,6 @@
   let camerasObserver = null;
   const camerasStopTimers = new Map();
   let camerasRenderedSig = "";
-  let cameraExpandOverlay = null;
-  let cameraExpandTile = null;
   let cameraReorderActive = false;
   let cameraReorderSnapshot = null;
   let cameraReorderDraftOrder = null;
@@ -175,6 +173,10 @@
   }
 
   function enterCameraReorderMode() {
+    if (!M.isLocalOrigin()) {
+      M.flash("Camera reorder requires the local dashboard URL", true);
+      return;
+    }
     cameraReorderSnapshot = M.cfg.cameraOrder?.length ? M.cfg.cameraOrder.map(Number) : null;
     cameraReorderDraftOrder = null;
     cameraReorderEls.clear();
@@ -281,64 +283,7 @@
     M.hapticTap();
   }
 
-  function closeCameraExpand() {
-    if (!cameraExpandOverlay) return;
-    const tile = cameraExpandTile;
-    const overlay = cameraExpandOverlay;
-    cameraExpandOverlay = null;
-    cameraExpandTile = null;
-    const iframe = overlay.querySelector(".camera-iframe");
-    if (iframe) iframe.src = "about:blank";
-    overlay.remove();
-    if (tile) {
-      const lowIframe = tile.querySelector("iframe");
-      const url = tile.dataset.streamUrl;
-      if (lowIframe && url && isBlankIframe(lowIframe)) {
-        const rect = tile.getBoundingClientRect();
-        const vis = rect.top < window.innerHeight && rect.bottom > 0;
-        if (vis) lowIframe.src = url;
-      }
-    }
-  }
-
-  function openCameraExpand(tile) {
-    if (cameraReorderActive) return;
-    if (!tile || cameraExpandTile === tile) {
-      closeCameraExpand();
-      return;
-    }
-    closeCameraExpand();
-    const hiUrl = tile.dataset.streamUrlHi || tile.dataset.streamUrl;
-    if (!hiUrl) return;
-    const name = tile.querySelector(".camera-name")?.textContent || "Camera";
-    cameraExpandTile = tile;
-    const lowIframe = tile.querySelector("iframe");
-    if (lowIframe) lowIframe.src = "about:blank";
-    const overlay = ce("div", "camera-expand-overlay");
-    const panel = ce("div", "camera-expand-panel");
-    const closeBtn = ce("button", "camera-expand-close");
-    closeBtn.type = "button";
-    closeBtn.setAttribute("aria-label", "Close");
-    closeBtn.textContent = "\u00d7";
-    const media = ce("div", "camera-expand-media");
-    const iframe = ce("iframe", "camera-iframe");
-    iframe.setAttribute("title", name);
-    iframe.setAttribute("allow", "autoplay; encrypted-media; fullscreen");
-    iframe.src = hiUrl;
-    const nameEl = ce("span", "camera-name");
-    nameEl.textContent = name;
-    media.appendChild(iframe);
-    media.appendChild(nameEl);
-    panel.appendChild(closeBtn);
-    panel.appendChild(media);
-    overlay.appendChild(panel);
-    M.appendPopup(overlay);
-    M.bindPopupDismiss(overlay, panel, closeBtn, closeCameraExpand);
-    cameraExpandOverlay = overlay;
-  }
-
   function stopCamerasStreams() {
-    closeCameraExpand();
     if (camerasObserver) {
       camerasObserver.disconnect();
       camerasObserver = null;
@@ -352,11 +297,38 @@
     camerasRenderedSig = "";
   }
 
+  function camerasRenderedSigKey() {
+    return camerasListSig() + (M.isLocalOrigin() ? ":local" : ":remote");
+  }
+
+  function renderCamerasMessage(body, heading, message) {
+    const wrap = ce("div", "cameras-empty");
+    const h = ce("h2");
+    h.textContent = heading;
+    const p = ce("p");
+    p.textContent = message;
+    wrap.appendChild(h);
+    wrap.appendChild(p);
+    body.appendChild(wrap);
+  }
+
+  function armCameraNameHide(tile) {
+    if (cameraReorderActive) return;
+    const nameEl = tile?.querySelector(".camera-name");
+    if (!nameEl) return;
+    if (nameEl._nameHideTimer) clearTimeout(nameEl._nameHideTimer);
+    nameEl.classList.remove("camera-name-hidden");
+    nameEl._nameHideTimer = setTimeout(() => {
+      nameEl.classList.add("camera-name-hidden");
+      nameEl._nameHideTimer = null;
+    }, 3000);
+  }
+
   function refreshCamerasPopup() {
     if (!M.isLocalOrigin()) return;
     if (cameraReorderActive) return;
-    const sig = camerasListSig();
-    if (sig === camerasRenderedSig && M.tabViewEl?.querySelector(".cameras-grid")) return;
+    const sig = camerasRenderedSigKey();
+    if (sig === camerasRenderedSig && M.tabViewEl?.querySelector(".cameras-grid, .cameras-empty")) return;
     renderCamerasPopup();
   }
 
@@ -366,13 +338,15 @@
     const body = M.currentBody();
     M.setQuickBodyClass(body, "cameras-tab tab-body");
     body.innerHTML = "";
-    camerasRenderedSig = camerasListSig();
+    camerasRenderedSig = camerasRenderedSigKey();
     if (!M.cameras.length) {
-      body.textContent = "No cameras selected — add go2rtc Camera devices in the Hubitat app settings";
+      renderCamerasMessage(body, "No cameras", "Add go2rtc Camera devices in the Hubitat app settings.");
       return;
     }
     const grid = ce("div", "cameras-grid");
-    grid.dataset.cols = String(M.cfg.camerasCols === 2 || M.cfg.camerasCols === 3 ? M.cfg.camerasCols : 1);
+    grid.dataset.cols = cameraReorderActive
+      ? "1"
+      : String(M.cfg.camerasCols === 2 || M.cfg.camerasCols === 3 ? M.cfg.camerasCols : 1);
     const HYSTERESIS_MS = 200;
     cameraReorderEls.clear();
     for (const cam of M.cameras) {
@@ -381,8 +355,10 @@
       tile.dataset.name = String(cam.n || "").toLowerCase();
       const lowUrl = cameraEmbedUrl(cam.u || "");
       const hiUrl = cam.uh ? cameraEmbedUrl(cam.uh) : "";
+      const streamAvailable = !!lowUrl;
       tile.dataset.streamUrl = lowUrl;
       tile.dataset.streamUrlHi = hiUrl || lowUrl;
+      if (!streamAvailable) tile.classList.add("camera-tile-unavailable");
       const media = ce("div", "camera-media");
       const iframe = ce("iframe", "camera-iframe");
       iframe.setAttribute("title", cam.n || "Camera");
@@ -390,10 +366,15 @@
       iframe.loading = "lazy";
       iframe.src = "about:blank";
       media.appendChild(iframe);
+      if (!streamAvailable) {
+        const unavail = ce("div", "camera-unavailable");
+        unavail.textContent = "Stream unavailable";
+        media.appendChild(unavail);
+      }
       const nameEl = ce("span", "camera-name");
       nameEl.textContent = cam.n || "Camera";
       media.appendChild(nameEl);
-      if (hiUrl && !cameraReorderActive) {
+      if (hiUrl && streamAvailable && !cameraReorderActive) {
         const hdBtn = ce("button", "camera-hd-btn");
         hdBtn.type = "button";
         hdBtn.addEventListener("click", (e) => {
@@ -436,10 +417,11 @@
     }
     if (!("IntersectionObserver" in window)) {
       const tiles = grid.querySelectorAll(".camera-tile");
-      for (let i = 0; i < Math.min(3, tiles.length); i++) {
+      for (let i = 0; i < tiles.length; i++) {
         const iframe = tiles[i].querySelector("iframe");
         const url = cameraTilePlayUrl(tiles[i]);
-        if (iframe && url) iframe.src = url;
+        if (i < 3 && iframe && url) iframe.src = url;
+        armCameraNameHide(tiles[i]);
       }
       return;
     }
@@ -448,14 +430,15 @@
         const tile = entry.target;
         const iframe = tile.querySelector("iframe");
         const url = cameraTilePlayUrl(tile);
-        if (!iframe || !url) continue;
-        const key = String(tile.dataset.name || url);
-        if (cameraExpandTile === tile) continue;
+        const key = String(tile.dataset.name || url || tile.dataset.camId || "");
         if (entry.isIntersecting) {
-          const pending = camerasStopTimers.get(key);
-          if (pending) { clearTimeout(pending); camerasStopTimers.delete(key); }
-          if (isBlankIframe(iframe)) iframe.src = url;
-        } else if (!camerasStopTimers.has(key)) {
+          if (iframe && url) {
+            const pending = camerasStopTimers.get(key);
+            if (pending) { clearTimeout(pending); camerasStopTimers.delete(key); }
+            if (isBlankIframe(iframe)) iframe.src = url;
+          }
+          armCameraNameHide(tile);
+        } else if (iframe && url && !camerasStopTimers.has(key)) {
           camerasStopTimers.set(key, setTimeout(() => {
             camerasStopTimers.delete(key);
             iframe.src = "about:blank";
@@ -2020,5 +2003,5 @@
   Object.assign(globalThis.__MLD, { applySchedulesFromData, schedulerHasContent, renderSchedulerView });
   globalThis.__MLD.updateQuickNavVisibility?.();
 
-  Object.assign(M, { isCameraReorderActive, currentCameraOrderFromDom, updateCameraDraftOrderFromDom, updateCameraMoveButtons, moveCamera, attachCameraReorder, enterCameraReorderMode, exitCameraReorderMode, finishCameraReorderMode, cancelCameraReorderMode, camerasListSig, isBlankIframe, cameraEmbedUrl, cameraTilePlayUrl, syncCameraHdBtn, toggleCameraHd, closeCameraExpand, openCameraExpand, stopCamerasStreams, refreshCamerasPopup, renderCamerasPopup, applySchedulesFromData, schedulerViewIsActive, schedulerHasContent, schedParseTime24, schedFormatTime24, schedTime24To12, schedTime12To24, schedFmtClockTime, schedFmtDateTimeLocal, schedCreateScrollWheel, schedOpenTimeWheelSheet, schedBindStepHold, schedAppendTimeStep, schedAppendTimeColumn, schedAppendClockPicker, fmtSchedTime, newSchedDraft, schedApi, renderSchedulerView, renderSchedulerActive, renderSchedList, renderSchedRow, renderSchedWorkflow, schedNavRow, schedBindPickRow, schedBindPickRoom, renderSchedStep1, validateStep1, renderSchedModeTriggerPicker, renderSchedModeCondition, schedOffsetLabel, renderSchedWhenPicker, renderSchedOffsetPicker, renderSchedSunPreview, renderSchedTimePicker, renderSchedDayPicker, defaultOnceAt, renderSchedOncePicker, renderSchedStep2, schedMountDeviceActionsSection, renderSchedStep3, renderSchedOnOffDeviceAction, renderSchedLightAction, renderSchedThermostatAction, renderSchedHubModeAction, autoSchedName, saveSchedule });
+  Object.assign(M, { isCameraReorderActive, currentCameraOrderFromDom, updateCameraDraftOrderFromDom, updateCameraMoveButtons, moveCamera, attachCameraReorder, enterCameraReorderMode, exitCameraReorderMode, finishCameraReorderMode, cancelCameraReorderMode, camerasListSig, isBlankIframe, cameraEmbedUrl, cameraTilePlayUrl, syncCameraHdBtn, toggleCameraHd, stopCamerasStreams, camerasRenderedSigKey, renderCamerasMessage, armCameraNameHide, refreshCamerasPopup, renderCamerasPopup, applySchedulesFromData, schedulerViewIsActive, schedulerHasContent, schedParseTime24, schedFormatTime24, schedTime24To12, schedTime12To24, schedFmtClockTime, schedFmtDateTimeLocal, schedCreateScrollWheel, schedOpenTimeWheelSheet, schedBindStepHold, schedAppendTimeStep, schedAppendTimeColumn, schedAppendClockPicker, fmtSchedTime, newSchedDraft, schedApi, renderSchedulerView, renderSchedulerActive, renderSchedList, renderSchedRow, renderSchedWorkflow, schedNavRow, schedBindPickRow, schedBindPickRoom, renderSchedStep1, validateStep1, renderSchedModeTriggerPicker, renderSchedModeCondition, schedOffsetLabel, renderSchedWhenPicker, renderSchedOffsetPicker, renderSchedSunPreview, renderSchedTimePicker, renderSchedDayPicker, defaultOnceAt, renderSchedOncePicker, renderSchedStep2, schedMountDeviceActionsSection, renderSchedStep3, renderSchedOnOffDeviceAction, renderSchedLightAction, renderSchedThermostatAction, renderSchedHubModeAction, autoSchedName, saveSchedule });
 })();

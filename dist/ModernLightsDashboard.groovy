@@ -1,4 +1,4 @@
-// Modern Dashboard v0.2.93
+// Modern Dashboard v0.2.94
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
@@ -32,7 +32,7 @@ def mainPage() {
     def localUrl = dashboardUrl(true)
     def cloudUrl = dashboardUrl(false)
     dynamicPage(name: "mainPage", uninstall: true, install: true) {
-        section("About Modern Dashboard", hideable: true, hidden: false) {
+        section("About Modern Dashboard", hideable: true, hidden: true) {
             paragraph "<small><b>Control-first:</b> optimized for acting on devices — bulk room/house lights, multi-thermostat control — not just viewing status.</small>"
             paragraph "<small><b>Minimal effort:</b> select your devices below — the dashboard groups them by Hubitat room and lays them out automatically. Customization is optional.</small>"
             paragraph "<small><b>PWA:</b> use the cloud link below to install on your phone's home screen (standalone app icon).</small>"
@@ -42,135 +42,7 @@ def mainPage() {
             } else {
                 paragraph "<small><b>Hub-only:</b> UI and API run entirely on your hub — no Maker API or third-party cloud.</small>"
             }
-            paragraph "<small>Version 0.2.93 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
-        }
-        section("Devices") {
-            paragraph "<small>Select the devices you want on the dashboard. Rooms and layout are automatic based on your Hubitat room assignments.</small>"
-            input "lights", "capability.switch", title: "Select your light devices (switches and dimmers)",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "outletSwitches", "capability.switch", title: "Outlets",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "outletsSeparateTab", "bool", title: "Show outlets in separate Outlets tab", defaultValue: false, submitOnChange: true
-            paragraph "<small>Outlets may also appear in the lights list above. When <b>separate Outlets tab</b> is off, outlet tiles appear in room cards on the Lights view. When on, they appear under the Outlets quick-nav tab instead. Room On/Off never controls outlets.</small>"
-            input "thermostats", "capability.thermostat", title: "Select your thermostats",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "thermostatsPopupEnabled", "bool", title: "Show thermostats in dashboard quick menu", defaultValue: true, submitOnChange: true
-            paragraph "<small>When <b>quick menu</b> is off, thermostats only appear in each room card on the Lights tab (unless <b>room cards</b> climate display is off).</small>"
-            input "tempSensors", "capability.temperatureMeasurement", title: "Temperature sensors (display only)",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "roomClimateEnabled", "bool", title: "Show temperature and thermostat on room cards",
-                defaultValue: true, submitOnChange: true
-            paragraph "<small>When off, room cards on the Lights tab no longer show the climate widget. Thermostats and temperature sensors remain available in their quick-nav tabs when those are enabled.</small>"
-            input "windowShades", "capability.windowShade", title: "Shades & blinds (Window Shade drivers)",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "windowBlinds", "capability.windowBlind", title: "Blinds (Window Blind drivers)",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "windowShadesLevel", "capability.switchLevel", title: "Shades & blinds (dimmer / Switch Level drivers)",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            paragraph "<small>Use the first two lists for drivers that advertise <b>Window Shade</b> or <b>Window Blind</b>. Many shade/blind drivers (including Hubitat's Virtual Shade and some community motors) only advertise <b>Switch Level</b> like a dimmer — pick those in the third list. <b>Limitation:</b> Hubitat filters by capability only, so the Switch Level list also includes ordinary lights and dimmers. Select <b>only</b> devices that are actually shades or blinds there — put real lights under Lights above. Position uses <code>setPosition</code> when available, otherwise <code>setLevel</code>; open/close fall back to on/off.</small>"
-            input "ceilingFans", "capability.fanControl", title: "Ceiling fans",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            paragraph "<small>Fans use Hubitat <b>FanControl</b> speeds (typically low/medium/high for AC fans, or a device-reported list for DC fans). On restores the last speed on the hub.</small>"
-            input "musicPlayers", "capability.musicPlayer", title: "Music / media players (Sonos, Echo Speaks, AirPlay, …)",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "audioSpeakers", "capability.audioVolume", title: "Additional speakers (Chromecast, Google Home, …)",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-        }
-        section("Locks / garage doors") {
-            paragraph "<small>Select locks and garage door openers to show in the Locks dashboard popup.</small>"
-            input "locks", "capability.lock", title: "Locks",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "garageDoors", "capability.garageDoorControl", title: "Garage door openers",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "unlockPinEnabled", "bool", title: "Require PIN to unlock doors / open garage doors from dashboard", defaultValue: false, submitOnChange: true
-            if (unlockPinEnabled) {
-                input "unlockPin", "password", title: "Unlock PIN", required: false
-                paragraph "<small>PIN is validated by this app before sending unlock and garage-open commands. Locking and closing garage doors do not require a PIN.</small>"
-            }
-        }
-        section("Other sensors") {
-            paragraph "<small>Select sensors to show in the Sensors popup. Multi-sensors may also be selected as temperature sensors or other dashboard devices. Temperature + humidity or illuminance selections merge into one Temperature tile; temperature + generic keeps the generic primary. Alert types (motion, contact, shock, etc.) stay primary with other readings in the footer. Motion, contact, shock, leak, smoke, and presence tiles show when the device last reported activity.</small>"
-            input "motionSensors", "capability.motionSensor", title: "Motion sensors",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "shockSensors", "capability.accelerationSensor", title: "Shock / glass-break sensors",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "contactSensors", "capability.contactSensor", title: "Contact / door / window sensors",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "waterSensors", "capability.waterSensor", title: "Water / leak sensors",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "presenceSensors", "capability.presenceSensor", title: "Presence sensors",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "humiditySensors", "capability.relativeHumidityMeasurement", title: "Humidity sensors",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "illuminanceSensors", "capability.illuminanceMeasurement", title: "Illuminance / light sensors",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "smokeSensors", "capability.smokeDetector", title: "Smoke / CO detectors",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "genericSensors", "capability.sensor", title: "Other / generic sensors",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-            input "valves", "capability.valve", title: "Valves (water shutoff, irrigation)",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-        }
-        section("Cameras") {
-            paragraph "<small>Select <b>go2rtc Camera</b> devices from the go2rtc Hubitat app (grouped main + sub streams). Requires <b>Enable tabs</b>. The <b>Cameras</b> tab appears only on the <b>local hub dashboard URL</b> (http://…). Grid tiles use the sub stream when available; tap a tile for full-screen main stream. Reorder cameras from the overflow menu on the Cameras tab.</small>"
-            input "cameras", "capability.imageCapture", title: "Cameras (go2rtc)",
-                multiple: true, required: false, showFilter: true, submitOnChange: true
-        }
-        section("Options") {
-            input "dashboardName", "string", title: "Dashboard name", defaultValue: "mDash", required: false
-            input "pollSec", "number", title: "Refresh interval (seconds)", defaultValue: 5, required: false, range: "2..60"
-            input "enableWs", "bool", title: "Enable real-time updates on local network (eventsocket)", defaultValue: true, required: false
-        }
-        section("Scheduler") {
-            input "schedulerDisabled", "bool",
-                title: "Hide scheduler (also stops schedules from running)",
-                defaultValue: false, submitOnChange: true
-            paragraph "<small>When checked, the Scheduler tab is hidden and no schedules run. Saved schedules are kept if you turn it back on.</small>"
-            if (schedulerDisabled != true) {
-                input "schedulerUse24Hour", "bool", title: "Use 24-hour time in scheduler", defaultValue: false
-                paragraph "<small>When off, scheduler times display with AM/PM. Times are always stored in 24-hour form for reliable scheduling.</small>"
-            }
-        }
-        section("Light control") {
-            paragraph "<small>Applies to snapshot restore, All on/off, and room on/off. Metering is on by default.</small>"
-            input "lightControlDisableMetering", "bool",
-                title: "Disable metering", defaultValue: false, submitOnChange: true
-            if (lightControlDisableMetering != true) {
-                input "lightControlMeterDelayMs", "number",
-                    title: "Metering delay (milliseconds)", defaultValue: 75, required: false, range: "0..2000"
-                paragraph "<small>Metering delay: wait between commands to each device. May help avoid problems if devices respond poorly due to too many successive commands on the network.</small>"
-            }
-            input "lightControlOnOffOptimization", "bool",
-                title: "Enable on/off optimization", defaultValue: false
-            paragraph "<small>Enable on/off optimization: will not send on or off commands to devices that already report being in the desired state. May reduce network traffic, but may cause unexpected results if devices do not accurately report state to the hub.</small>"
-            input "lightControlActivationOptimization", "bool",
-                title: "Enable activation optimization", defaultValue: false
-            paragraph "<small>Enable activation optimization (snapshot restore only): skip level, color, and color temperature commands when the device already reports the expected state.</small>"
-        }
-        section("Dashboard access") {
-            input "dashboardPasswordEnabled", "bool", title: "Require password to open dashboard", defaultValue: false, submitOnChange: true
-            if (dashboardPasswordEnabled) {
-                input "dashboardPassword", "password", title: "Dashboard password", required: false
-                paragraph "<small>Visitors must enter this password before the dashboard loads. The unlock lasts seven days while the dashboard is used; after a week of inactivity the password is required again.</small>"
-            }
-        }
-        section("Security (HSM)") {
-            input "hsmEnabled", "bool", title: "Enable HSM security control", defaultValue: false, submitOnChange: true
-            if (hsmEnabled) {
-                input "hsmPinEnabled", "bool", title: "Require PIN to arm/disarm from dashboard", defaultValue: false, submitOnChange: true
-                if (hsmPinEnabled) {
-                    input "hsmPin", "password", title: "HSM PIN", required: false
-                    paragraph "<small>PIN is validated by this app before sending arm/disarm commands to Hubitat Safety Monitor.</small>"
-                }
-            }
-        }
-        section("Hub file access", hideable: true, hidden: true) {
-            paragraph "Only needed if <b>Settings → Hub Login Security</b> is enabled (blocks local file reads)."
-            input "hubSecurity", "bool", title: "Hub Login Security is enabled", defaultValue: false, submitOnChange: true
-            if (hubSecurity) {
-                input "hubUsername", "string", title: "Hub username", required: false
-                input "hubPassword", "password", title: "Hub password", required: false
-            }
+            paragraph "<small>Version 0.2.94 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         if (assetsOk) {
             section("Dashboard links") {
@@ -193,8 +65,136 @@ def mainPage() {
                     paragraph "<small><b>Still missing:</b> ${missing.join(', ')}</small>"
                 }
                 if (hubSecurity && (!hubUsername || !hubPassword)) {
-                    paragraph "<small>If Hub Login Security is on, expand <b>Hub file access</b> above and enter your hub login.</small>"
+                    paragraph "<small>If Hub Login Security is on, expand <b>Hub file access</b> below and enter your hub login.</small>"
                 }
+            }
+        }
+        section("Lights & outlets") {
+            paragraph "<small>Rooms and layout are automatic based on your Hubitat room assignments.</small>"
+            input "lights", "capability.switch", title: "Select your light devices (switches and dimmers)",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "outletSwitches", "capability.switch", title: "Outlets",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "outletsSeparateTab", "bool", title: "Show outlets in separate Outlets tab", defaultValue: false, submitOnChange: true
+            paragraph "<small>Outlets may also appear in the lights list. With <b>separate Outlets tab</b> off, outlets show in room cards; when on, they move to the Outlets quick-nav tab. Room On/Off never controls outlets.</small>"
+        }
+        section("Climate") {
+            input "thermostats", "capability.thermostat", title: "Select your thermostats",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "thermostatsPopupEnabled", "bool", title: "Show thermostats in dashboard quick menu", defaultValue: true, submitOnChange: true
+            input "tempSensors", "capability.temperatureMeasurement", title: "Temperature sensors (display only)",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "roomClimateEnabled", "bool", title: "Show temperature and thermostat on room cards",
+                defaultValue: true, submitOnChange: true
+            paragraph "<small>When <b>quick menu</b> or <b>room cards</b> is off, thermostats and temperature sensors remain available in their other views.</small>"
+        }
+        section("Shades, fans & media") {
+            input "windowShades", "capability.windowShade", title: "Shades & blinds (Window Shade drivers)",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "windowBlinds", "capability.windowBlind", title: "Blinds (Window Blind drivers)",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "windowShadesLevel", "capability.switchLevel", title: "Shades & blinds (dimmer / Switch Level drivers)",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            paragraph "<small>Use the first two lists for <b>Window Shade</b> / <b>Window Blind</b> drivers. Many motors only advertise <b>Switch Level</b> — pick those in the third list. That list also includes ordinary lights; select shades only and put real lights under Lights.</small>"
+            input "ceilingFans", "capability.fanControl", title: "Ceiling fans",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "musicPlayers", "capability.musicPlayer", title: "Music / media players (Sonos, Echo Speaks, AirPlay, …)",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "audioSpeakers", "capability.audioVolume", title: "Additional speakers (Chromecast, Google Home, …)",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+        }
+        section("Locks & garage") {
+            paragraph "<small>Locks and garage doors appear in the Locks dashboard popup.</small>"
+            input "locks", "capability.lock", title: "Locks",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "garageDoors", "capability.garageDoorControl", title: "Garage door openers",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "unlockPinEnabled", "bool", title: "Require PIN to unlock doors / open garage doors from dashboard", defaultValue: false, submitOnChange: true
+            if (unlockPinEnabled) {
+                input "unlockPin", "password", title: "Unlock PIN", required: false
+                paragraph "<small>PIN is validated before unlock and garage-open commands. Locking and closing do not require a PIN.</small>"
+            }
+        }
+        section("Sensors") {
+            paragraph "<small>Sensors appear in the Sensors popup. Multi-sensors may overlap with other pickers; temperature + humidity or illuminance merge into one tile. Alert types (motion, contact, etc.) stay primary with other readings in the footer.</small>"
+            input "motionSensors", "capability.motionSensor", title: "Motion sensors",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "shockSensors", "capability.accelerationSensor", title: "Shock / glass-break sensors",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "contactSensors", "capability.contactSensor", title: "Contact / door / window sensors",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "waterSensors", "capability.waterSensor", title: "Water / leak sensors",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "presenceSensors", "capability.presenceSensor", title: "Presence sensors",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "humiditySensors", "capability.relativeHumidityMeasurement", title: "Humidity sensors",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "illuminanceSensors", "capability.illuminanceMeasurement", title: "Illuminance / light sensors",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "smokeSensors", "capability.smokeDetector", title: "Smoke / CO detectors",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "genericSensors", "capability.sensor", title: "Other / generic sensors",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            input "valves", "capability.valve", title: "Valves (water shutoff, irrigation)",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+        }
+        section("Cameras") {
+            paragraph "<small>Select <b>go2rtc Camera</b> devices. Requires <b>Enable tabs</b> and the <b>local hub dashboard URL</b>. Grid tiles use the sub stream; tap <b>HD</b> for the main stream.</small>"
+            input "cameras", "capability.imageCapture", title: "Cameras (go2rtc)",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+        }
+        section("Dashboard options") {
+            input "dashboardName", "string", title: "Dashboard name", defaultValue: "mDash", required: false
+            input "pollSec", "number", title: "Refresh interval (seconds)", defaultValue: 5, required: false, range: "2..60"
+            input "enableWs", "bool", title: "Enable real-time updates on local network (eventsocket)", defaultValue: true, required: false
+            input "hubModePopupEnabled", "bool", title: "Show hub mode in dashboard quick menu", defaultValue: true, submitOnChange: true
+            input "scenesPopupEnabled", "bool", title: "Show scenes in dashboard quick menu", defaultValue: true, submitOnChange: true
+            paragraph "<small>Hub mode and scene toggles only hide quick-nav buttons; scheduler and other features still use them.</small>"
+            input "schedulerDisabled", "bool",
+                title: "Hide scheduler (also stops schedules from running)",
+                defaultValue: false, submitOnChange: true
+            if (schedulerDisabled != true) {
+                input "schedulerUse24Hour", "bool", title: "Use 24-hour time in scheduler", defaultValue: false
+            }
+            paragraph "<small>When scheduler is hidden, no schedules run. Saved schedules are kept if you turn it back on.</small>"
+        }
+        section("Light control", hideable: true, hidden: true) {
+            paragraph "<small>Applies to snapshot restore, All on/off, and room on/off. Metering is on by default.</small>"
+            input "lightControlDisableMetering", "bool",
+                title: "Disable metering", defaultValue: false, submitOnChange: true
+            if (lightControlDisableMetering != true) {
+                input "lightControlMeterDelayMs", "number",
+                    title: "Metering delay (milliseconds)", defaultValue: 75, required: false, range: "0..2000"
+                paragraph "<small>Wait between commands to each device. May help if devices respond poorly to rapid successive commands.</small>"
+            }
+            input "lightControlOnOffOptimization", "bool",
+                title: "Enable on/off optimization", defaultValue: false
+            paragraph "<small>Skip on/off commands when the device already reports the desired state. May reduce traffic but can misbehave if state is stale.</small>"
+            input "lightControlActivationOptimization", "bool",
+                title: "Enable activation optimization", defaultValue: false
+            paragraph "<small>Snapshot restore only: skip level, color, and color temperature when the device already matches.</small>"
+        }
+        section("Security & access") {
+            input "dashboardPasswordEnabled", "bool", title: "Require password to open dashboard", defaultValue: false, submitOnChange: true
+            if (dashboardPasswordEnabled) {
+                input "dashboardPassword", "password", title: "Dashboard password", required: false
+                paragraph "<small>Visitors must enter this password before the dashboard loads. Unlock lasts seven days while the dashboard is used.</small>"
+            }
+            input "hsmEnabled", "bool", title: "Enable HSM security control", defaultValue: false, submitOnChange: true
+            if (hsmEnabled) {
+                input "hsmPinEnabled", "bool", title: "Require PIN to arm/disarm from dashboard", defaultValue: false, submitOnChange: true
+                if (hsmPinEnabled) {
+                    input "hsmPin", "password", title: "HSM PIN", required: false
+                    paragraph "<small>PIN is validated before arm/disarm commands to Hubitat Safety Monitor.</small>"
+                }
+            }
+        }
+        section("Hub file access", hideable: true, hidden: true) {
+            paragraph "Only needed if <b>Settings → Hub Login Security</b> is enabled (blocks local file reads)."
+            input "hubSecurity", "bool", title: "Hub Login Security is enabled", defaultValue: false, submitOnChange: true
+            if (hubSecurity) {
+                input "hubUsername", "string", title: "Hub username", required: false
+                input "hubPassword", "password", title: "Hub password", required: false
             }
         }
     }
@@ -1251,6 +1251,8 @@ def renderData() {
     out << ",\"hsmPinRequired\":" << (hsmEnabled == true && hsmPinEnabled == true && hsmPin?.toString()?.trim() ? "true" : "false")
     out << ",\"thermostatsPopupEnabled\":" << (thermostatsPopupEnabled == true ? "true" : "false")
     out << ",\"outletsSeparateTab\":" << (outletsSeparateTab == true ? "true" : "false")
+    out << ",\"hubModePopupEnabled\":" << (hubModePopupEnabled == null ? "true" : (hubModePopupEnabled == true ? "true" : "false"))
+    out << ",\"scenesPopupEnabled\":" << (scenesPopupEnabled == null ? "true" : (scenesPopupEnabled == true ? "true" : "false"))
     out << ",\"roomClimateEnabled\":" << (roomClimateEnabled == null ? "true" : (roomClimateEnabled == true ? "true" : "false"))
     out << ",\"schedulerEnabled\":" << (schedulerIsEnabled() ? "true" : "false")
     out << ",\"schedUse24Hour\":" << (schedulerUse24Hour == true ? "true" : "false")

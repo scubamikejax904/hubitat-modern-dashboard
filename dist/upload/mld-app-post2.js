@@ -1655,8 +1655,8 @@
   function quickNavPopupHasContent(popup) {
     switch (popup) {
       case "locks": return M.locks.length > 0 || M.garageDoors.length > 0;
-      case "scenes": return M.scenes.length > 0;
-      case "hub-mode": return M.hubModes.length > 0;
+      case "scenes": return M.scenesPopupEnabled && M.scenes.length > 0;
+      case "hub-mode": return M.hubModePopupEnabled && M.hubModes.length > 0;
       case "security": return M.hsmEnabled;
       case "blinds": return M.windowShades.length > 0;
       case "fans": return M.ceilingFans.length > 0;
