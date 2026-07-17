@@ -9062,19 +9062,27 @@
       const idx = profile.allowed.indexOf(cur);
       const next = profile.allowed[(idx + 1) % profile.allowed.length];
       sizeLabel.textContent = favoriteSizeShortLabel(cur);
-      sizeHint.textContent = "→ " + favoriteSizeShortLabel(next);
+      sizeHint.textContent = profile.allowed.length > 1
+        ? "Size → " + favoriteSizeShortLabel(next)
+        : "Size";
       sizeBtn.setAttribute("aria-label", "Tile size " + favoriteSizeLongLabel(cur) + ". Tap for " + favoriteSizeLongLabel(next) + ".");
       sizeBtn.disabled = profile.allowed.length <= 1;
     }
-    sizeBtn.addEventListener("click", (e) => {
+    sizeBtn.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
-      if (reorderBusy) return;
+    });
+    sizeBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (reorderBusy || sizeBtn.disabled) return;
       const cur = wrap.dataset.favSize;
       const idx = profile.allowed.indexOf(cur);
       const next = profile.allowed[(idx + 1) % profile.allowed.length];
+      if (!next || next === cur) return;
       cycleFavoriteSize(favId, next, wrap, tile, entry);
       syncSizeBtn();
       sizeBtn.focus();
+      hapticTap();
       flash("Size: " + favoriteSizeLongLabel(next));
     });
     syncSizeBtn();
@@ -9160,7 +9168,7 @@
     if (REORDER_CANCEL_BTN) REORDER_CANCEL_BTN.hidden = false;
     renderFavoritesPopup();
     updateFavoritesMoveButtons();
-    flash("Drag handles to reorder favorites");
+    flash("Drag to reorder · tap Size to resize");
   }
 
   function exitFavoritesReorderMode(resumePoll) {

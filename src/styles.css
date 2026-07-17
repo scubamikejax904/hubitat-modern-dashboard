@@ -283,9 +283,9 @@ body {
   max-height: none;
   overflow: visible;
 }
-.tab-view.quick-body-favorites .quick-fav-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
+/* Favorites column count comes from the .quick-body-favorites rules below
+   (including mobile breakpoints). Do not force 4 columns here — that beat
+   the max-width media queries and crushed tiles on phones. */
 .tab-view.cameras-tab { padding: 0 0 calc(env(safe-area-inset-bottom)); }
 .cameras-empty {
   text-align: center; color: var(--text-faint); padding: 48px 20px;
@@ -372,9 +372,7 @@ body {
 .fav-reorder-item {
   position: relative;
   min-width: 0;
-}
-.fav-reorder-item.fav-reorder-full {
-  grid-column: 1 / -1;
+  overflow: visible;
 }
 .fav-reorder-content {
   min-width: 0;
@@ -383,13 +381,15 @@ body {
   display: none;
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 5;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 10px 12px;
   pointer-events: none;
-  background: linear-gradient(to bottom, rgba(0,0,0,.55), rgba(0,0,0,.12) 42%, rgba(0,0,0,.55));
+  background: linear-gradient(to bottom, rgba(0,0,0,.62), rgba(0,0,0,.18) 42%, rgba(0,0,0,.62));
   border-radius: inherit;
+  box-sizing: border-box;
 }
 .fav-drag-handle {
   display: none;
@@ -401,11 +401,12 @@ body {
   border-radius: 14px;
   cursor: grab;
   touch-action: none;
-  min-width: 56px;
-  min-height: 56px;
+  min-width: 48px;
+  min-height: 48px;
   align-items: center;
   justify-content: center;
   pointer-events: auto;
+  flex-shrink: 0;
 }
 .fav-drag-handle svg { width: 22px; height: 22px; fill: currentColor; }
 .fav-drag-handle:active { cursor: grabbing; }
@@ -422,8 +423,8 @@ body {
   color: #fff;
   border-radius: 14px;
   padding: 0;
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -435,18 +436,18 @@ body {
 .fav-move-btn:disabled { opacity: 0.35; cursor: default; }
 .fav-size-btn {
   appearance: none;
-  border: 1px solid rgba(255,255,255,.25);
-  background: rgba(0,0,0,.45);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.35));
+  background: color-mix(in srgb, var(--accent) 35%, rgba(0,0,0,.55));
   color: #fff;
   border-radius: 14px;
   padding: 0 10px;
-  min-width: 56px;
-  min-height: 44px;
-  font-size: 11px;
+  min-width: 64px;
+  min-height: 48px;
+  font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
-  line-height: 1.1;
+  line-height: 1.15;
   cursor: pointer;
   touch-action: manipulation;
   pointer-events: auto;
@@ -455,37 +456,54 @@ body {
   align-items: center;
   justify-content: center;
   gap: 2px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.25);
 }
-.fav-size-btn .fav-size-btn-label { font-size: 9px; opacity: 0.8; font-weight: 700; }
+.fav-size-btn .fav-size-btn-label { font-size: 10px; opacity: 0.9; font-weight: 700; }
 .fav-size-btn:active:not(:disabled) { transform: scale(.94); }
+.fav-size-btn:disabled { opacity: 0.4; cursor: default; }
 .favorites-reorder-mode .fav-size-btn { display: flex; }
 .favorites-reorder-mode .fav-reorder-overlay { display: flex; }
 
-/* On small tiles, stack overlay controls in a 2x2 grid so each stays >=44px. */
-.favorites-reorder-mode .fav-size-compact .fav-reorder-overlay,
-.favorites-reorder-mode .fav-size-standard .fav-reorder-overlay {
-  flex-direction: column;
+/* Compact/standard tiles: 2×2 control grid so Size stays tappable. */
+.favorites-reorder-mode .fav-size-compact > .fav-reorder-overlay,
+.favorites-reorder-mode .fav-size-standard > .fav-reorder-overlay {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
   align-items: stretch;
-  justify-content: center;
-  gap: 8px;
+  justify-items: stretch;
+  gap: 6px;
   padding: 8px;
 }
-.favorites-reorder-mode .fav-size-compact .fav-drag-handle,
-.favorites-reorder-mode .fav-size-standard .fav-drag-handle,
-.favorites-reorder-mode .fav-size-compact .fav-size-btn,
-.favorites-reorder-mode .fav-size-standard .fav-size-btn,
-.favorites-reorder-mode .fav-size-compact .fav-move-btns,
-.favorites-reorder-mode .fav-size-standard .fav-move-btns {
-  width: auto; min-width: 0; min-height: 44px; height: 44px;
+.favorites-reorder-mode .fav-size-compact > .fav-reorder-overlay .fav-drag-handle,
+.favorites-reorder-mode .fav-size-standard > .fav-reorder-overlay .fav-drag-handle {
+  grid-column: 1; grid-row: 1;
+  width: 100%; min-width: 0; min-height: 44px; height: auto;
 }
-.favorites-reorder-mode .fav-size-compact .fav-move-btn,
-.favorites-reorder-mode .fav-size-standard .fav-move-btn {
-  width: 100%; height: 44px;
+.favorites-reorder-mode .fav-size-compact > .fav-reorder-overlay .fav-size-btn,
+.favorites-reorder-mode .fav-size-standard > .fav-reorder-overlay .fav-size-btn {
+  grid-column: 2; grid-row: 1;
+  width: 100%; min-width: 0; min-height: 44px; height: auto;
+}
+.favorites-reorder-mode .fav-size-compact > .fav-reorder-overlay .fav-move-btns,
+.favorites-reorder-mode .fav-size-standard > .fav-reorder-overlay .fav-move-btns {
+  grid-column: 1 / -1; grid-row: 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  height: auto;
+}
+.favorites-reorder-mode .fav-size-compact > .fav-reorder-overlay .fav-move-btn,
+.favorites-reorder-mode .fav-size-standard > .fav-reorder-overlay .fav-move-btn {
+  width: 100%; height: 44px; min-height: 44px;
 }
 .favorites-reorder-mode .fav-drag-handle,
 .favorites-reorder-mode .fav-move-btns { display: flex; }
 .favorites-reorder-mode .fav-reorder-item {
-  outline: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
   border-radius: 16px;
 }
 .favorites-reorder-mode .fav-reorder-content { pointer-events: none; }
@@ -2010,11 +2028,14 @@ body {
    Only the Favorites body uses the preset grid. Thermostats tab and other
    .quick-fav-grid consumers keep the auto-fill behavior above.
 
-   Column spans define width; aspect-ratio defines preferred height from the
-   resolved column width (robust regardless of container height). Content may
-   grow a card beyond the preferred shape so essential controls never clip. */
-.quick-body-favorites .quick-fav-grid {
+   Geometry (column/row span) applies only to direct grid children so nested
+   tiles that also carry .fav-size-* for content-fit rules do not fight the
+   layout. Height comes from content with soft min-heights — never a hard
+   aspect-ratio that crushes mobile tiles. */
+.quick-body-favorites .quick-fav-grid,
+.tab-view.quick-body-favorites .quick-fav-grid {
   --fav-gap: 12px;
+  --fav-cols: 4;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-auto-rows: auto;
   grid-auto-flow: row;
@@ -2027,37 +2048,77 @@ body {
   grid-column: auto;
   grid-row: auto;
 }
-.quick-body-favorites .fav-size-full    { grid-column: span 4; grid-row: span 1; aspect-ratio: 4 / 1; }
-.quick-body-favorites .fav-size-square  { grid-column: span 2; grid-row: span 1; aspect-ratio: 1 / 1; }
-.quick-body-favorites .fav-size-wide    { grid-column: span 2; grid-row: span 1; aspect-ratio: 2 / 1; }
-.quick-body-favorites .fav-size-standard { grid-column: span 1; grid-row: span 1; aspect-ratio: 1 / 1; }
-.quick-body-favorites .fav-size-compact  { grid-column: span 1; grid-row: span 1; aspect-ratio: 2 / 1; }
 
-/* Two-column layout: popup width and narrow tab widths. */
+/* Direct children only — tiles in normal mode, wrappers in reorder mode. */
+.quick-body-favorites .quick-fav-grid > .fav-size-full {
+  grid-column: span 4;
+  min-height: 96px;
+}
+.quick-body-favorites .quick-fav-grid > .fav-size-square {
+  grid-column: span 2;
+  min-height: 168px;
+}
+.quick-body-favorites .quick-fav-grid > .fav-size-wide {
+  grid-column: span 2;
+  min-height: 96px;
+}
+.quick-body-favorites .quick-fav-grid > .fav-size-standard {
+  grid-column: span 1;
+  min-height: 132px;
+}
+.quick-body-favorites .quick-fav-grid > .fav-size-compact {
+  grid-column: span 1;
+  min-height: 64px;
+}
+
+/* Two-column layout: phones and narrow tab/popup widths. */
 @media (max-width: 539px) {
-  .quick-body-favorites .quick-fav-grid {
+  .quick-body-favorites .quick-fav-grid,
+  .tab-view.quick-body-favorites .quick-fav-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .quick-body-favorites .fav-size-full    { grid-column: span 2; grid-row: span 1; aspect-ratio: 2 / 1; }
-  .quick-body-favorites .fav-size-square  { grid-column: span 2; grid-row: span 1; aspect-ratio: 1 / 1; }
-  .quick-body-favorites .fav-size-wide    { grid-column: span 2; grid-row: span 1; aspect-ratio: 2 / 1; }
-  .quick-body-favorites .fav-size-standard { grid-column: span 1; grid-row: span 1; aspect-ratio: 1 / 1; }
-  .quick-body-favorites .fav-size-compact  { grid-column: span 1; grid-row: span 1; aspect-ratio: 2 / 1; }
+  .quick-body-favorites .quick-fav-grid > .fav-size-full {
+    grid-column: span 2;
+    min-height: 96px;
+  }
+  .quick-body-favorites .quick-fav-grid > .fav-size-square {
+    grid-column: span 2;
+    min-height: 160px;
+  }
+  .quick-body-favorites .quick-fav-grid > .fav-size-wide {
+    grid-column: span 2;
+    min-height: 88px;
+  }
+  .quick-body-favorites .quick-fav-grid > .fav-size-standard {
+    grid-column: span 1;
+    min-height: 120px;
+  }
+  .quick-body-favorites .quick-fav-grid > .fav-size-compact {
+    grid-column: span 1;
+    min-height: 56px;
+  }
 }
 /* Single column on the smallest phones. */
 @media (max-width: 359px) {
-  .quick-body-favorites .quick-fav-grid {
+  .quick-body-favorites .quick-fav-grid,
+  .tab-view.quick-body-favorites .quick-fav-grid {
     grid-template-columns: 1fr;
   }
-  .quick-body-favorites .fav-size-full    { grid-column: span 1; grid-row: span 1; aspect-ratio: 3 / 1; min-height: 84px; }
-  .quick-body-favorites .fav-size-square  { grid-column: span 1; grid-row: span 1; aspect-ratio: 1 / 1; }
-  .quick-body-favorites .fav-size-wide    { grid-column: span 1; grid-row: span 1; aspect-ratio: 2 / 1; min-height: 84px; }
-  .quick-body-favorites .fav-size-standard { grid-column: span 1; grid-row: span 1; aspect-ratio: 1 / 1; }
-  .quick-body-favorites .fav-size-compact  { grid-column: span 1; grid-row: span 1; aspect-ratio: 3 / 1; min-height: 64px; }
+  .quick-body-favorites .quick-fav-grid > .fav-size-full,
+  .quick-body-favorites .quick-fav-grid > .fav-size-square,
+  .quick-body-favorites .quick-fav-grid > .fav-size-wide,
+  .quick-body-favorites .quick-fav-grid > .fav-size-standard,
+  .quick-body-favorites .quick-fav-grid > .fav-size-compact {
+    grid-column: span 1;
+  }
+  .quick-body-favorites .quick-fav-grid > .fav-size-full { min-height: 88px; }
+  .quick-body-favorites .quick-fav-grid > .fav-size-square { min-height: 148px; }
+  .quick-body-favorites .quick-fav-grid > .fav-size-wide { min-height: 84px; }
+  .quick-body-favorites .quick-fav-grid > .fav-size-standard { min-height: 112px; }
+  .quick-body-favorites .quick-fav-grid > .fav-size-compact { min-height: 52px; }
 }
 
-/* Cards fill their grid area; content may grow beyond the preset shape
-   rather than clipping essential controls. */
+/* Cards fill their grid area; content may grow beyond the preferred min-height. */
 .quick-body-favorites .quick-fav-card,
 .quick-body-favorites .quick-lock-row,
 .quick-body-favorites .shade-tile,
@@ -2073,9 +2134,10 @@ body {
 .quick-body-favorites .fav-reorder-item {
   display: flex;
   flex-direction: column;
+  align-self: stretch;
 }
 .quick-body-favorites .fav-reorder-content {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   width: 100%;
 }
@@ -2088,6 +2150,7 @@ body {
   justify-content: center;
   gap: 10px;
   grid-template-columns: none;
+  min-height: 0;
 }
 .quick-body-favorites .quick-fav-tstat-name { text-align: center; }
 .quick-body-favorites .quick-fav-tstat-info { align-items: center; width: 100%; }

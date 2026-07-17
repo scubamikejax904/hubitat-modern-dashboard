@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.4
+
+- **Favorites:** responsive tile-size layout on phones — 2-column and single-column
+  breakpoints, content-based heights instead of crushed aspect ratios.
+- **Favorites:** clearer reorder overlay — Size button uses a 2×2 control grid on
+  standard/compact tiles, improved tap handling, and updated on-screen hints.
+
 ## 0.3.3
 
 - **Favorites:** customizable tile size per favorite — in Reorder mode, tap the size
