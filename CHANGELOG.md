@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.2
+
+- **Favorites:** reorder favorite tiles from the Favorites tab via overflow menu
+  → Reorder. Drag handles and move buttons update the saved favorites order;
+  compact tiles reflow responsively while wide favorites stay full-width.
+- **Dashboard options:** choose which category tab opens on first load (Lights by
+  default; falls back to Lights when the chosen tab has no content).
+- **Setup:** hub file login uses `127.0.0.1` (HPM pattern) with clearer log messages
+  for rejected login vs missing session cookie.
+
 ## 0.3.1
 
 - **Setup:** Hub file access credentials persist in app state (Hubitat clears password

@@ -366,6 +366,98 @@ body {
 .camera-tile.camera-dragging { position: fixed; z-index: 10001; opacity: 0.92; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
 .camera-drag-placeholder { width: 100%; aspect-ratio: 16 / 9; background: rgba(255,255,255,.06); border: 1px dashed rgba(255,255,255,.2); }
 
+.fav-reorder-item {
+  position: relative;
+  min-width: 0;
+}
+.fav-reorder-item.fav-reorder-full {
+  grid-column: 1 / -1;
+}
+.fav-reorder-content {
+  min-width: 0;
+}
+.fav-reorder-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(0,0,0,.55), rgba(0,0,0,.12) 42%, rgba(0,0,0,.55));
+  border-radius: inherit;
+}
+.fav-drag-handle {
+  display: none;
+  appearance: none;
+  border: none;
+  background: rgba(0,0,0,.35);
+  color: #fff;
+  padding: 12px;
+  border-radius: 14px;
+  cursor: grab;
+  touch-action: none;
+  min-width: 56px;
+  min-height: 56px;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+.fav-drag-handle svg { width: 22px; height: 22px; fill: currentColor; }
+.fav-drag-handle:active { cursor: grabbing; }
+.fav-move-btns {
+  display: none;
+  flex-shrink: 0;
+  gap: 8px;
+  pointer-events: auto;
+}
+.fav-move-btn {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(0,0,0,.45);
+  color: #fff;
+  border-radius: 14px;
+  padding: 0;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.fav-move-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.fav-move-btn:active:not(:disabled) { transform: scale(.94); }
+.fav-move-btn:disabled { opacity: 0.35; cursor: default; }
+.favorites-reorder-mode .fav-reorder-overlay { display: flex; }
+.favorites-reorder-mode .fav-drag-handle,
+.favorites-reorder-mode .fav-move-btns { display: flex; }
+.favorites-reorder-mode .fav-reorder-item {
+  outline: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 16px;
+}
+.favorites-reorder-mode .fav-reorder-content { pointer-events: none; }
+.fav-reorder-item.fav-dragging {
+  position: fixed;
+  z-index: 10001;
+  opacity: 0.92;
+  box-shadow: 0 12px 40px rgba(0,0,0,.45);
+}
+.fav-drag-placeholder {
+  background: rgba(255,255,255,.06);
+  border: 1px dashed rgba(255,255,255,.2);
+  border-radius: 16px;
+  box-sizing: border-box;
+}
+.fav-drag-placeholder-full { grid-column: 1 / -1; width: 100%; }
+.fav-drag-placeholder-cell { justify-self: stretch; }
+
+.reorder-mode.favorites-reorder-mode .quick-nav { display: none !important; }
+.reorder-mode.favorites-reorder-mode .room-drag-handle,
+.reorder-mode.favorites-reorder-mode .room-move-btns,
+.reorder-mode.favorites-reorder-mode .nav-drag-handle { display: none !important; }
+
 .quick-panel .quick-fav-grid,
 .quick-panel .sensor-grid {
   max-height: none;

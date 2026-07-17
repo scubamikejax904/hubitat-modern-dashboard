@@ -76,8 +76,10 @@ def mainPage() {
                     paragraph "<small><b>Hub Login Security enabled?</b> Expand <b>Hub file access</b> below, turn on the toggle, and enter your hub admin username/password (not the dashboard password above).</small>"
                 } else if (!hubCredentials().user || !hubCredentials().pass) {
                     paragraph "<small><b>Hub file access:</b> enter your hub admin username and password below, then press <b>Done</b> again.</small>"
-                } else {
-                    paragraph "<small><b>Hub file access:</b> login failed — verify hub admin username/password under <b>Hub file access</b> below.</small>"
+                } else if (state.hubLoginLastOutcome == "rejected") {
+                    paragraph "<small><b>Hub file access:</b> hub rejected the login — re-check admin username/password under <b>Hub file access</b> (from <b>Settings → Hub Login Security</b>), re-enter the password, and press <b>Done</b>.</small>"
+                } else if (!names) {
+                    paragraph "<small><b>Hub file access:</b> could not list File Manager files. Upload the <code>mld-*</code> files above. If Hubitat Logs show <code>hub login rejected</code>, re-check credentials; otherwise re-enter the password and press <b>Done</b>.</small>"
                 }
             }
         }
@@ -159,6 +161,21 @@ def mainPage() {
             input "dashboardName", "string", title: "Dashboard name", defaultValue: "mDash", required: false
             input "pollSec", "number", title: "Refresh interval (seconds)", defaultValue: 5, required: false, range: "2..60"
             input "enableWs", "bool", title: "Enable real-time updates on local network (eventsocket)", defaultValue: true, required: false
+            input "defaultTab", "enum", title: "Default tab when dashboard loads",
+                options: [
+                    ["lights": "Lights"],
+                    ["favorites": "Favorites"],
+                    ["sensors": "Sensors"],
+                    ["thermostats": "Thermostats"],
+                    ["music": "Music"],
+                    ["cameras": "Cameras"],
+                    ["blinds": "Blinds"],
+                    ["fans": "Fans"],
+                    ["outlets": "Outlets"],
+                    ["scheduling": "Scheduler"]
+                ],
+                defaultValue: "lights", required: false
+            paragraph "<small>Applies when Category tabs is enabled on the dashboard. Falls back to Lights if the chosen tab has no content (or Cameras when not on the local URL).</small>"
             input "hubModePopupEnabled", "bool", title: "Show hub mode in dashboard quick menu", defaultValue: true, submitOnChange: true
             input "scenesPopupEnabled", "bool", title: "Show scenes in dashboard quick menu", defaultValue: true, submitOnChange: true
             paragraph "<small>Hub mode and scene toggles only hide quick-nav buttons; scheduler and other features still use them.</small>"
@@ -796,6 +813,10 @@ def hubBaseUri() {
     return "http://${location.hub.localIP}:8080"
 }
 
+def hubLoginUri() {
+    return "http://127.0.0.1:8080"
+}
+
 def hubCredentials() {
     def user = hubUsername?.toString()?.trim() ?: state.hubUsername?.toString()?.trim() ?: ""
     def pass = hubPassword?.toString() ?: state.hubPassword?.toString() ?: ""
@@ -809,6 +830,21 @@ def syncHubCredentials() {
     if (pass) state.hubPassword = pass
     state.remove("hubAuthCookie")
     state.remove("hubAuthCookieExpiresAt")
+}
+
+def extractHubSessionCookie(resp) {
+    try {
+        def setCookie = resp?.headers?.'Set-Cookie'
+        if (!setCookie && resp?.headers) setCookie = resp.headers["Set-Cookie"]
+        if (!setCookie) return null
+        def raw = (setCookie instanceof List) ? setCookie.join(", ") : setCookie.toString()
+        def m = raw =~ /HUBSESSION=[^;,\s]+/
+        if (m.find()) return m.group(0)
+        def first = raw.split(";")[0]?.trim()
+        return first ?: null
+    } catch (e) {
+        return null
+    }
 }
 
 def hubRequestHeaders() {
@@ -831,9 +867,9 @@ def hubAuthCookie(boolean forceRefresh = false) {
     }
     try {
         def cookie = null
-        def loginFailed = false
+        def loginRejected = false
         httpPost([
-            uri: hubBaseUri(),
+            uri: hubLoginUri(),
             path: "/login",
             query: [loginRedirect: "/"],
             body: [username: creds.user, password: creds.pass, submit: "Login"],
@@ -842,19 +878,27 @@ def hubAuthCookie(boolean forceRefresh = false) {
         ]) { resp ->
             def bodyText = resp?.data?.text?.toString() ?: ""
             if (bodyText.contains("The login information you supplied was incorrect.")) {
-                loginFailed = true
-            } else if (resp?.headers) {
-                def setCookie = resp.headers["Set-Cookie"]
-                if (setCookie instanceof List) setCookie = setCookie[0]
-                if (setCookie) cookie = setCookie.toString().split(";")[0]
+                loginRejected = true
+            } else {
+                cookie = extractHubSessionCookie(resp)
             }
         }
-        if (loginFailed || !cookie) {
+        if (loginRejected) {
+            state.hubLoginLastOutcome = "rejected"
             state.remove("hubAuthCookie")
             state.remove("hubAuthCookieExpiresAt")
-            log.error "hubAuthCookie: hub login failed — verify Hub file access username/password"
+            state.remove("hubPassword")
+            log.error "hubAuthCookie: hub login rejected — verify Hub file access username/password"
             return null
         }
+        if (!cookie) {
+            state.hubLoginLastOutcome = "no_cookie"
+            state.remove("hubAuthCookie")
+            state.remove("hubAuthCookieExpiresAt")
+            log.error "hubAuthCookie: hub login succeeded but no session cookie — retry or check hub firmware"
+            return null
+        }
+        state.hubLoginLastOutcome = "ok"
         state.hubAuthCookie = cookie
         state.hubAuthCookieExpiresAt = nowMs + 1800000L
         return cookie
@@ -1184,6 +1228,7 @@ def renderData() {
     out << "\"pollIntervalMs\":" << (pollSec ? (pollSec.toInteger() * 1000) : 5000)
     out << ",\"useWebSocket\":" << (enableWs == null ? true : enableWs)
     out << ",\"dashboardName\":" << jsonStr((dashboardName?.trim()) ?: "mDash")
+    out << ",\"defaultTab\":" << jsonStr(normalizedDefaultTab())
     out << ",\"localUrl\":" << jsonStr(dashboardUrl(true))
     out << ",\"cloudUrl\":" << jsonStr(dashboardUrl(false))
     out << roomOrderJsonFragment()
@@ -1714,6 +1759,15 @@ def appendSensorJson(out, d, entry, roomsList) {
 
 def resolvedDashboardName() {
     return (dashboardName?.trim()) ?: "mDash"
+}
+
+def normalizedDefaultTab() {
+    def allowed = [
+        "lights", "favorites", "sensors", "thermostats", "music",
+        "cameras", "blinds", "fans", "outlets", "scheduling"
+    ] as Set
+    def v = defaultTab?.toString()?.trim()
+    return (v && allowed.contains(v)) ? v : "lights"
 }
 
 def htmlEsc(s) {

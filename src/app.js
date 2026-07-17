@@ -112,7 +112,7 @@
     try { localStorage.setItem(CAMERAS_COLS_STORAGE_KEY, String(cols)); } catch {}
   }
 
-  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", roomOrder: null, navOrder: null, cameraOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), camerasCols: loadCamerasColsPref(), localUrl: "", cloudUrl: "" };
+  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", defaultTab: "lights", roomOrder: null, navOrder: null, cameraOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), camerasCols: loadCamerasColsPref(), localUrl: "", cloudUrl: "" };
 
   let localModeBannerEl = null;
   let localBannerDismissed = false;
@@ -235,6 +235,7 @@
   const TAB_LABELS = { lights: "Lights", favorites: "Favorites", sensors: "Sensors", thermostats: "Thermostats", music: "Music", cameras: "Cameras", blinds: "Blinds", fans: "Fans", outlets: "Outlets", scheduling: "Scheduler" };
   let tabMode = cfg.enableTabs;
   let activeTab = "lights";
+  let defaultTabApplied = false;
   let tabViewEl = null;
   const QUICK_LIGHTS_BTN = document.getElementById("quick-lights");
   let favTstatModeMenu = null;
@@ -1347,6 +1348,10 @@
       if (d.config.pollIntervalMs) cfg.pollIntervalMs = d.config.pollIntervalMs;
       if (typeof d.config.useWebSocket === "boolean") cfg.useWebSocket = d.config.useWebSocket;
       if (d.config.dashboardName != null) postCall("applyDashboardName", d.config.dashboardName);
+      if (d.config.defaultTab != null) {
+        const s = String(d.config.defaultTab || "").trim();
+        cfg.defaultTab = (s === "lights" || TAB_CATEGORIES.has(s)) ? s : "lights";
+      }
       if (!reorderMode && Array.isArray(d.config.roomOrder)) {
         cfg.roomOrder = d.config.roomOrder.length ? d.config.roomOrder : null;
       }
@@ -5207,6 +5212,10 @@
   }
 
   async function toggleFavorite(id) {
+    if (postCall("isFavoritesReorderActive")) {
+      flash("Finish reordering favorites first", true);
+      return;
+    }
     const numId = Number(id);
     if (!isFavoriteableDeviceId(numId)) return;
     const idx = favorites.indexOf(numId);
@@ -5278,6 +5287,10 @@
       postCall("enterCameraReorderMode");
       return;
     }
+    if (tabMode && activeTab === "favorites") {
+      postCall("enterFavoritesReorderMode");
+      return;
+    }
     reorderSnapshot = cfg.roomOrder?.length ? cfg.roomOrder.slice() : null;
     reorderDraftOrder = currentRoomOrderFromDom();
     navReorderSnapshot = cfg.navOrder?.length ? cfg.navOrder.slice() : null;
@@ -5325,6 +5338,10 @@
       await postCall("finishCameraReorderMode");
       return;
     }
+    if (postCall("isFavoritesReorderActive")) {
+      await postCall("finishFavoritesReorderMode");
+      return;
+    }
     const order = reorderDraftOrder ?? currentRoomOrderFromDom();
     const navOrder = navReorderDraftOrder ?? currentNavOrderFromDom();
     const [roomsSaved, navSaved] = await Promise.all([
@@ -5342,6 +5359,10 @@
   function cancelReorderMode() {
     if (postCall("isCameraReorderActive")) {
       postCall("cancelCameraReorderMode");
+      return;
+    }
+    if (postCall("isFavoritesReorderActive")) {
+      postCall("cancelFavoritesReorderMode");
       return;
     }
     cfg.roomOrder = reorderSnapshot ? reorderSnapshot.slice() : null;
@@ -5716,7 +5737,9 @@
     replaceList(valves, Array.isArray(d.valves) ? d.valves : []);
     replaceList(music, d.music);
     replaceList(cameras, sortCamerasByOrder(Array.isArray(d.cameras) ? d.cameras : [], cfg.cameraOrder));
-    if (Array.isArray(d.config?.favorites)) replaceList(favorites, d.config.favorites.map(Number));
+    if (Array.isArray(d.config?.favorites) && !postCall("isFavoritesReorderActive")) {
+      replaceList(favorites, d.config.favorites.map(Number));
+    }
     reapplyLockOptimistic();
     reapplyGarageOptimistic();
     reapplyShadeOptimistic();
@@ -8662,6 +8685,386 @@
     return getFavoriteEntries().map((e) => e.type + ":" + e.dev.i).join(",");
   }
 
+  let favoritesReorderActive = false;
+  let favoritesReorderSnapshot = null;
+  let favoritesReorderDraftOrder = null;
+  let favoritesReorderSaving = false;
+  const favoritesReorderEls = new Map();
+  let favDragCleanup = null;
+  let favAutoScrollRaf = null;
+
+  function isFavoritesReorderActive() {
+    return favoritesReorderActive;
+  }
+
+  function favoriteEntrySpan(type) {
+    return (type === "thermostat" || type === "lock" || type === "garage" || type === "shade" || type === "fan" || type === "music")
+      ? "full"
+      : "cell";
+  }
+
+  function makeFavoriteEntryElement(entry) {
+    if (entry.type === "light") return makeTile(entry.dev, "favorites");
+    if (entry.type === "outlet") return makeOutletTile(entry.dev, "favorites");
+    if (entry.type === "thermostat") return makeQuickTstatCard(entry.dev, favTstatMap);
+    if (entry.type === "sensor") return makeFavoriteSensorCard(entry.dev);
+    if (entry.type === "music") return makeMusicRow(entry.dev, "favorites");
+    if (entry.type === "lock") return makeLockRow(entry.dev, "favorites");
+    if (entry.type === "garage") return makeGarageRow(entry.dev, "favorites");
+    if (entry.type === "shade") return makeShadeTile(entry.dev, "favorites");
+    if (entry.type === "fan") return makeFanTile(entry.dev, "favorites");
+    return null;
+  }
+
+  function currentFavoritesOrderFromDom() {
+    const grid = currentBody()?.querySelector(".quick-fav-grid");
+    if (!grid) return favorites.map(Number);
+    return Array.from(grid.querySelectorAll(".fav-reorder-item"))
+      .map((el) => Number(el.dataset.favId))
+      .filter((id) => Number.isFinite(id));
+  }
+
+  function updateFavoritesDraftOrderFromDom() {
+    favoritesReorderDraftOrder = currentFavoritesOrderFromDom();
+  }
+
+  function updateFavoritesMoveButtons() {
+    if (!favoritesReorderActive) return;
+    const grid = currentBody()?.querySelector(".quick-fav-grid");
+    if (!grid) return;
+    const items = Array.from(grid.querySelectorAll(".fav-reorder-item"));
+    items.forEach((item, i) => {
+      const rec = favoritesReorderEls.get(Number(item.dataset.favId));
+      if (!rec?.moveEarlier || !rec?.moveLater) return;
+      rec.moveEarlier.disabled = i === 0;
+      rec.moveLater.disabled = i === items.length - 1;
+    });
+  }
+
+  function moveFavorite(favId, delta) {
+    const grid = currentBody()?.querySelector(".quick-fav-grid");
+    if (!grid) return;
+    const items = Array.from(grid.querySelectorAll(".fav-reorder-item"));
+    const idx = items.findIndex((el) => Number(el.dataset.favId) === favId);
+    if (idx < 0) return;
+    const newIdx = idx + delta;
+    if (newIdx < 0 || newIdx >= items.length) return;
+    const item = items[idx];
+    const sibling = items[newIdx];
+    if (delta < 0) grid.insertBefore(item, sibling);
+    else grid.insertBefore(sibling, item);
+    updateFavoritesDraftOrderFromDom();
+    updateFavoritesMoveButtons();
+    hapticTap();
+  }
+
+  function stopFavAutoScroll() {
+    if (favAutoScrollRaf) {
+      cancelAnimationFrame(favAutoScrollRaf);
+      favAutoScrollRaf = null;
+    }
+  }
+
+  function startFavAutoScroll(getClientY) {
+    stopFavAutoScroll();
+    const edge = 48;
+    const step = 12;
+    const tick = () => {
+      const y = getClientY();
+      if (typeof y === "number") {
+        if (y < edge) window.scrollBy(0, -step);
+        else if (y > window.innerHeight - edge) window.scrollBy(0, step);
+      }
+      favAutoScrollRaf = requestAnimationFrame(tick);
+    };
+    favAutoScrollRaf = requestAnimationFrame(tick);
+  }
+
+  function cleanupFavDragState() {
+    stopFavAutoScroll();
+    if (typeof favDragCleanup === "function") {
+      favDragCleanup();
+      favDragCleanup = null;
+    }
+    const grid = currentBody()?.querySelector(".quick-fav-grid");
+    if (!grid) return;
+    for (const item of grid.querySelectorAll(".fav-reorder-item.fav-dragging")) {
+      item.classList.remove("fav-dragging");
+      item.style.width = "";
+      item.style.left = "";
+      item.style.top = "";
+    }
+    grid.querySelectorAll(".fav-drag-placeholder").forEach((el) => el.remove());
+  }
+
+  function attachFavoriteReorder(wrapper, handle) {
+    let active = false;
+    let dragging = false;
+    let pointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let floatOffsetX = 0;
+    let floatOffsetY = 0;
+    let placeholder = null;
+    let lastClientX = 0;
+    let lastClientY = 0;
+    const grid = () => currentBody()?.querySelector(".quick-fav-grid");
+
+    function visibleItems() {
+      const el = grid();
+      if (!el) return [];
+      return Array.from(el.querySelectorAll(".fav-reorder-item:not(.fav-dragging):not(.search-hidden)"));
+    }
+
+    function movePlaceholderForPoint(x, y) {
+      if (!placeholder) return;
+      const el = grid();
+      if (!el) return;
+      const items = visibleItems();
+      let insertBefore = null;
+      for (const item of items) {
+        const rect = item.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        const midX = rect.left + rect.width / 2;
+        if (y < midY || (y >= rect.top && y <= rect.bottom && x < midX)) {
+          insertBefore = item;
+          break;
+        }
+      }
+      if (insertBefore) el.insertBefore(placeholder, insertBefore);
+      else el.appendChild(placeholder);
+    }
+
+    function positionFloat(clientX, clientY) {
+      wrapper.style.left = (clientX - floatOffsetX) + "px";
+      wrapper.style.top = (clientY - floatOffsetY) + "px";
+    }
+
+    function beginDrag(e) {
+      dragging = true;
+      reorderBusy = true;
+      const rect = wrapper.getBoundingClientRect();
+      floatOffsetX = e.clientX - rect.left;
+      floatOffsetY = e.clientY - rect.top;
+      const span = wrapper.dataset.favSpan || "cell";
+      placeholder = ce("div", "fav-drag-placeholder" + (span === "full" ? " fav-drag-placeholder-full" : " fav-drag-placeholder-cell"));
+      placeholder.style.height = rect.height + "px";
+      if (span === "cell") placeholder.style.width = rect.width + "px";
+      wrapper.parentNode.insertBefore(placeholder, wrapper);
+      wrapper.classList.add("fav-dragging");
+      wrapper.style.width = rect.width + "px";
+      wrapper.style.left = rect.left + "px";
+      wrapper.style.top = rect.top + "px";
+      positionFloat(e.clientX, e.clientY);
+      movePlaceholderForPoint(e.clientX, e.clientY);
+      wrapper.setAttribute("aria-grabbed", "true");
+      startFavAutoScroll(() => lastClientY);
+    }
+
+    function commitDrag() {
+      const el = grid();
+      if (placeholder?.parentNode && el) {
+        el.insertBefore(wrapper, placeholder);
+        placeholder.remove();
+      }
+      wrapper.classList.remove("fav-dragging");
+      wrapper.style.width = "";
+      wrapper.style.left = "";
+      wrapper.style.top = "";
+      wrapper.removeAttribute("aria-grabbed");
+      placeholder = null;
+      stopFavAutoScroll();
+      updateFavoritesDraftOrderFromDom();
+      updateFavoritesMoveButtons();
+    }
+
+    function cleanupListeners() {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("resize", onResize);
+      stopFavAutoScroll();
+    }
+
+    function onResize() {
+      if (!dragging) return;
+      commitDrag();
+      active = false;
+      dragging = false;
+      reorderBusy = false;
+      cleanupListeners();
+    }
+
+    function onMove(e) {
+      if (!active) return;
+      lastClientX = e.clientX;
+      lastClientY = e.clientY;
+      if (!dragging) {
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        if (Math.hypot(dx, dy) < REORDER_DRAG_THRESHOLD) return;
+        beginDrag(e);
+      }
+      e.preventDefault();
+      positionFloat(e.clientX, e.clientY);
+      movePlaceholderForPoint(e.clientX, e.clientY);
+    }
+
+    function onUp() {
+      if (!active) return;
+      if (dragging) commitDrag();
+      active = false;
+      dragging = false;
+      reorderBusy = false;
+      cleanupListeners();
+      favDragCleanup = null;
+      try { handle.releasePointerCapture(pointerId); } catch {}
+    }
+
+    handle.addEventListener("pointerdown", (e) => {
+      if (!favoritesReorderActive) return;
+      e.preventDefault();
+      e.stopPropagation();
+      active = true;
+      pointerId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      lastClientX = e.clientX;
+      lastClientY = e.clientY;
+      handle.setPointerCapture(pointerId);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+      window.addEventListener("resize", onResize);
+      favDragCleanup = () => {
+        cleanupListeners();
+        if (dragging) commitDrag();
+        active = false;
+        dragging = false;
+        reorderBusy = false;
+      };
+    });
+  }
+
+  function wrapFavoriteForReorder(grid, entry) {
+    const tile = makeFavoriteEntryElement(entry);
+    if (!tile) return;
+    const favId = Number(entry.dev.i);
+    const span = favoriteEntrySpan(entry.type);
+    const wrap = ce("div", "fav-reorder-item");
+    wrap.dataset.favId = String(favId);
+    wrap.dataset.favSpan = span;
+    wrap.dataset.name = String(entry.dev.n || "").toLowerCase();
+    if (span === "full") wrap.classList.add("fav-reorder-full");
+    tile.classList.add("fav-reorder-content");
+    wrap.appendChild(tile);
+
+    const overlay = ce("div", "fav-reorder-overlay");
+    const dragHandle = ce("button", "fav-drag-handle");
+    dragHandle.type = "button";
+    dragHandle.setAttribute("aria-label", "Drag to reorder");
+    dragHandle.innerHTML = DRAG_HANDLE_SVG;
+    const moveBtns = ce("div", "fav-move-btns");
+    const moveEarlier = ce("button", "fav-move-btn");
+    moveEarlier.type = "button";
+    moveEarlier.setAttribute("aria-label", "Move favorite earlier");
+    moveEarlier.innerHTML = MOVE_UP_SVG;
+    moveEarlier.addEventListener("click", (e) => {
+      e.stopPropagation();
+      moveFavorite(favId, -1);
+      moveEarlier.focus();
+    });
+    const moveLater = ce("button", "fav-move-btn");
+    moveLater.type = "button";
+    moveLater.setAttribute("aria-label", "Move favorite later");
+    moveLater.innerHTML = MOVE_DOWN_SVG;
+    moveLater.addEventListener("click", (e) => {
+      e.stopPropagation();
+      moveFavorite(favId, 1);
+      moveLater.focus();
+    });
+    moveBtns.appendChild(moveEarlier);
+    moveBtns.appendChild(moveLater);
+    overlay.appendChild(dragHandle);
+    overlay.appendChild(moveBtns);
+    wrap.appendChild(overlay);
+    attachFavoriteReorder(wrap, dragHandle);
+    favoritesReorderEls.set(favId, { moveEarlier, moveLater });
+    grid.appendChild(wrap);
+  }
+
+  function enterFavoritesReorderMode() {
+    if (!tabMode || activeTab !== "favorites") return;
+    const entries = getFavoriteEntries();
+    if (entries.length < 2) {
+      flash("Add at least two favorites to reorder");
+      return;
+    }
+    favoritesReorderSnapshot = favorites.slice();
+    favoritesReorderDraftOrder = null;
+    favoritesReorderEls.clear();
+    stopPolling();
+    reorderMode = true;
+    favoritesReorderActive = true;
+    APP_EL?.classList.add("reorder-mode", "favorites-reorder-mode");
+    postCall("closeTopbarOverflowMenu");
+    closeFavoriteTstatModeMenu();
+    if (SEARCH_EL) {
+      SEARCH_EL.value = "";
+      applySearch();
+    }
+    if (REORDER_DONE_BTN) REORDER_DONE_BTN.hidden = false;
+    if (REORDER_CANCEL_BTN) REORDER_CANCEL_BTN.hidden = false;
+    renderFavoritesPopup();
+    updateFavoritesMoveButtons();
+    flash("Drag handles to reorder favorites");
+  }
+
+  function exitFavoritesReorderMode(resumePoll) {
+    cleanupFavDragState();
+    favoritesReorderActive = false;
+    favoritesReorderDraftOrder = null;
+    favoritesReorderSnapshot = null;
+    favoritesReorderEls.clear();
+    favoritesReorderSaving = false;
+    reorderMode = false;
+    reorderBusy = false;
+    APP_EL?.classList.remove("reorder-mode", "favorites-reorder-mode");
+    if (REORDER_DONE_BTN) {
+      REORDER_DONE_BTN.hidden = true;
+      REORDER_DONE_BTN.disabled = false;
+    }
+    if (REORDER_CANCEL_BTN) REORDER_CANCEL_BTN.hidden = true;
+    renderFavoritesPopup();
+    if (resumePoll) {
+      startPolling();
+      refresh();
+    }
+  }
+
+  async function finishFavoritesReorderMode() {
+    if (favoritesReorderSaving) return false;
+    cleanupFavDragState();
+    const order = currentFavoritesOrderFromDom();
+    favoritesReorderSaving = true;
+    if (REORDER_DONE_BTN) REORDER_DONE_BTN.disabled = true;
+    const saved = await saveFavorites(order);
+    favoritesReorderSaving = false;
+    if (REORDER_DONE_BTN) REORDER_DONE_BTN.disabled = false;
+    if (!saved) return false;
+    replaceList(favorites, order);
+    lastDataSig = "";
+    exitFavoritesReorderMode(true);
+    flash("Order saved");
+    return true;
+  }
+
+  function cancelFavoritesReorderMode() {
+    if (favoritesReorderSnapshot) replaceList(favorites, favoritesReorderSnapshot);
+    lastDataSig = "";
+    exitFavoritesReorderMode(false);
+  }
+
   function makeQuickTstatCard(t, map) {
     const tm = String(t.tm || "").toLowerCase();
     const card = ce("div", "quick-fav-card quick-fav-tstat mode-" + (tm || "off"));
@@ -8765,6 +9168,7 @@
 
   function refreshFavoritesPopup() {
     if (currentCategory() !== "favorites") return;
+    if (favoritesReorderActive) return;
     const sig = favoritesPopupSignature();
     const body = currentBody();
     if (!body.querySelector(".quick-fav-grid") || sig !== favPopupSig) {
@@ -8801,8 +9205,10 @@
 
   function renderFavoritesPopup() {
     closeFavoriteTstatModeMenu();
-    const popup = ensureQuickPopup();
-    syncQuickPopupWidthForOpen(popup);
+    if (!tabMode || activeTab !== "favorites") {
+      const popup = ensureQuickPopup();
+      syncQuickPopupWidthForOpen(popup);
+    }
     const body = currentBody();
     setQuickBodyClass(body, "quick-body quick-body-favorites");
     body.innerHTML = "";
@@ -8815,6 +9221,7 @@
     favGarageMap.clear();
     favShadeMap.clear();
     favFanMap.clear();
+    favoritesReorderEls.clear();
     const entries = getFavoriteEntries();
     favPopupSig = favoritesPopupSignature();
     if (!entries.length) {
@@ -8823,27 +9230,14 @@
     }
     const grid = ce("div", "quick-fav-grid");
     for (const entry of entries) {
-      if (entry.type === "light") {
-        grid.appendChild(makeTile(entry.dev, "favorites"));
-      } else if (entry.type === "outlet") {
-        grid.appendChild(makeOutletTile(entry.dev, "favorites"));
-      } else if (entry.type === "thermostat") {
-        grid.appendChild(makeQuickTstatCard(entry.dev, favTstatMap));
-      } else if (entry.type === "sensor") {
-        grid.appendChild(makeFavoriteSensorCard(entry.dev));
-      } else if (entry.type === "music") {
-        grid.appendChild(makeMusicRow(entry.dev, "favorites"));
-      } else if (entry.type === "lock") {
-        grid.appendChild(makeLockRow(entry.dev, "favorites"));
-      } else if (entry.type === "garage") {
-        grid.appendChild(makeGarageRow(entry.dev, "favorites"));
-      } else if (entry.type === "shade") {
-        grid.appendChild(makeShadeTile(entry.dev, "favorites"));
-      } else if (entry.type === "fan") {
-        grid.appendChild(makeFanTile(entry.dev, "favorites"));
+      if (favoritesReorderActive) wrapFavoriteForReorder(grid, entry);
+      else {
+        const tile = makeFavoriteEntryElement(entry);
+        if (tile) grid.appendChild(tile);
       }
     }
     body.appendChild(grid);
+    if (favoritesReorderActive) updateFavoritesMoveButtons();
     updateStates();
   }
 
@@ -9094,6 +9488,20 @@
       const btn = document.getElementById("quick-" + popup);
       if (btn) btn.classList.toggle("is-tab-active", tabMode && activeTab === popup);
     }
+  }
+
+  function normalizeDefaultTabId(id) {
+    const s = String(id || "").trim();
+    if (s === "lights" || TAB_CATEGORIES.has(s)) return s;
+    return "lights";
+  }
+
+  function applyDefaultTabIfNeeded() {
+    if (defaultTabApplied || !tabMode) return;
+    defaultTabApplied = true;
+    const id = normalizeDefaultTabId(cfg.defaultTab);
+    if (id === "lights") return;
+    if (quickNavPopupHasContent(id)) showTab(id);
   }
 
   function syncCamerasViewClass(on) {
@@ -10446,6 +10854,7 @@
       setupDashSessionActivityRenewal();
     }
     render(d);
+    applyDefaultTabIfNeeded();
     retainPost3PendingData(d);
     void loadPost3AfterFirstRender();
     initAndroidLocalImmersive();

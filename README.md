@@ -340,7 +340,9 @@ as 24h for reliable firing).
 Tap the star on a supported device tile (lights, shades, locks, garage doors, music, sensors,
 etc.) to add it to favorites. The list is stored on the hub and syncs across
 devices. Open the **Favorites** quick-nav icon for a cross-category view of
-starred devices.
+starred devices. On the Favorites tab, use overflow menu (⋯) → **Reorder** to
+drag tiles or use the move buttons; compact tiles reflow responsively, while
+thermostats and other wide favorites stay full-width rows.
 
 ### Search, collapse & reorder
 
@@ -356,6 +358,8 @@ top-bar expand/collapse-all button toggles every room.
   **Done** to save to the hub (syncs across devices).
 - **Quick-nav icons:** drag category icons (locks, scenes, scheduler, etc.) to
   reorder. Search is hidden while reordering.
+- **Favorites tab:** drag handles and move buttons reorder favorite tiles;
+  order syncs across devices.
 
 ### UI preferences
 
@@ -617,8 +621,13 @@ No manual OAuth toggle or File Manager upload is needed when installing via HPM.
 ### Hub Login Security
 
 If **Settings → Hub Login Security** is enabled, expand **Hub file access** in
-the app preferences and enter your hub username/password so the SmartApp can read
-File Manager assets.
+the app preferences, turn on the toggle, and enter your **hub admin** username and
+password (from **Settings → Hub Login Security** — not the optional dashboard
+password under Security & access). The SmartApp logs in via `127.0.0.1` and reads
+File Manager assets over your LAN IP with the session cookie.
+
+Re-enter the hub password whenever you change other app settings — Hubitat clears
+password fields on save.
 
 ## App preferences (hub)
 
@@ -633,6 +642,7 @@ All settings below are in **Apps → Modern Dashboard** (the installed app insta
 | Sensors | Motion, contact, water, presence, etc. | — | See [device selection](#device-selection) |
 | Cameras | go2rtc cameras | — | See [device selection](#device-selection) |
 | Dashboard options | Dashboard name | `mDash` | Browser tab and PWA title |
+| Dashboard options | Default tab | Lights | Opening tab when Category tabs is on; falls back to Lights if empty |
 | Dashboard options | Refresh interval | 5 s (2–60) | `/data` poll interval |
 | Dashboard options | Enable eventsocket | On | LAN WebSocket; see [WebSocket](#real-time-updates-websocket) |
 | Dashboard options | Hub mode / scenes quick menu | On | Hides quick-nav only |
