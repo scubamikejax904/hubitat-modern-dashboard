@@ -2262,14 +2262,14 @@ body {
   pointer-events: none;
 }
 .quick-body-favorites .quick-lock-row .quick-lock-art svg {
-  width: 34px;
-  height: 34px;
+  width: 48px;
+  height: 48px;
   display: block;
   color: var(--accent);
 }
 .quick-body-favorites .fav-size-square.quick-lock-row .quick-lock-art svg {
-  width: 30px;
-  height: 30px;
+  width: 42px;
+  height: 42px;
 }
 .quick-body-favorites .fav-size-square.quick-lock-row .tile-fav {
   width: 24px;
@@ -2283,13 +2283,10 @@ body {
   margin-top: auto;
 }
 .quick-body-favorites .fav-size-square.quick-lock-row .quick-lock-btn {
-  min-height: 32px;
+  min-height: 36px;
   font-size: 12px;
   padding: 0 8px;
-  gap: 0;
-}
-.quick-body-favorites .fav-size-square.quick-lock-row .quick-lock-btn-label {
-  display: none;
+  gap: 6px;
 }
 .quick-body-favorites .fav-size-square.quick-lock-row .quick-lock-btn svg {
   width: 16px;

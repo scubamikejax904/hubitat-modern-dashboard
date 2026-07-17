@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.10
+
+- **Favorites:** larger lock icons on favorite tiles; square preset shows Lock/Unlock
+  labels again with slightly taller buttons.
+
 ## 0.3.9
 
 - **Favorites:** lock tiles use blue open/closed lock icons that update with state;
