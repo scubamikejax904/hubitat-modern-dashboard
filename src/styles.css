@@ -2118,6 +2118,49 @@ body {
   .quick-body-favorites .quick-fav-grid > .fav-size-compact { min-height: 52px; }
 }
 
+/* Reorder mode: clip content to preset height so size cycles preview immediately
+   (especially on mobile where many presets share the same column span). */
+.favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item {
+  overflow: hidden;
+  align-self: start;
+  justify-self: stretch;
+  transition: grid-column 0.18s var(--ease), min-height 0.18s var(--ease), height 0.18s var(--ease);
+}
+.favorites-reorder-mode .quick-body-favorites .fav-reorder-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.favorites-reorder-mode .quick-body-favorites .fav-reorder-content .quick-fav-card,
+.favorites-reorder-mode .quick-body-favorites .fav-reorder-content .tile,
+.favorites-reorder-mode .quick-body-favorites .fav-reorder-content .sensor-card,
+.favorites-reorder-mode .quick-body-favorites .fav-reorder-content .shade-tile,
+.favorites-reorder-mode .quick-body-favorites .fav-reorder-content .fan-tile,
+.favorites-reorder-mode .quick-body-favorites .fav-reorder-content .music-row,
+.favorites-reorder-mode .quick-body-favorites .fav-reorder-content .quick-lock-row {
+  min-height: 0;
+  height: 100%;
+}
+.favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-full { min-height: 96px; height: 96px; }
+.favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-square { min-height: 168px; height: 168px; }
+.favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-wide { min-height: 96px; height: 96px; }
+.favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-standard { min-height: 132px; height: 132px; }
+.favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-compact { min-height: 64px; height: 64px; }
+@media (max-width: 539px) {
+  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-full { min-height: 96px; height: 96px; }
+  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-square { min-height: 160px; height: 160px; }
+  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-wide { min-height: 88px; height: 88px; }
+  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-standard { min-height: 120px; height: 120px; }
+  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-compact { min-height: 56px; height: 56px; }
+}
+@media (max-width: 359px) {
+  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-full { min-height: 88px; height: 88px; }
+  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-square { min-height: 148px; height: 148px; }
+  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-wide { min-height: 84px; height: 84px; }
+  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-standard { min-height: 112px; height: 112px; }
+  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-compact { min-height: 52px; height: 52px; }
+}
+
 /* Cards fill their grid area; content may grow beyond the preferred min-height. */
 .quick-body-favorites .quick-fav-card,
 .quick-body-favorites .quick-lock-row,
@@ -2169,9 +2212,68 @@ body {
 .quick-body-favorites .fav-size-square .quick-fav-tstat-name,
 .quick-body-favorites .fav-size-wide .quick-fav-tstat-name { text-align: center; }
 
-/* ---- Lock / garage: stack actions under status in square ---- */
+/* ---- Lock / garage: square stacks status + vertical actions; wide is horizontal ---- */
 .quick-body-favorites .fav-size-square.quick-lock-row {
-  justify-content: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  min-height: 0;
+  height: 100%;
+}
+.quick-body-favorites .fav-size-square.quick-lock-row .quick-fav-row-head {
+  width: 100%;
+  flex: 0 0 auto;
+}
+.quick-body-favorites .fav-size-square.quick-lock-row .quick-fav-name {
+  text-align: center;
+  width: 100%;
+}
+.quick-body-favorites .fav-size-square.quick-lock-row .quick-fav-meta {
+  text-align: center;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.quick-body-favorites .fav-size-square.quick-lock-row .quick-lock-actions {
+  flex-direction: column;
+  width: 100%;
+  gap: 6px;
+  margin-top: auto;
+}
+.quick-body-favorites .fav-size-square.quick-lock-row .quick-lock-btn {
+  min-height: 36px;
+  font-size: 13px;
+}
+.quick-body-favorites .fav-size-wide.quick-lock-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.quick-body-favorites .fav-size-wide.quick-lock-row .quick-fav-row-head {
+  flex: 1;
+  min-width: 0;
+}
+.quick-body-favorites .fav-size-wide.quick-lock-row .quick-lock-actions {
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  width: auto;
+}
+.quick-body-favorites .fav-size-wide.quick-lock-row .quick-lock-btn {
+  min-width: 92px;
+  min-height: 36px;
+  flex: none;
+}
+.quick-body-favorites .fav-reorder-item.fav-size-square .quick-lock-row {
+  justify-content: space-between;
+  height: 100%;
+}
+.quick-body-favorites .fav-reorder-item.fav-size-square .quick-lock-row .quick-lock-actions {
+  flex-direction: column;
+  margin-top: auto;
 }
 
 /* ---- Shade: hide slider in wide to keep buttons; stack in square ---- */

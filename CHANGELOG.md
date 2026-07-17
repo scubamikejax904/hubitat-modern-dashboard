@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.6
+
+- **Favorites:** tile sizes load immediately from a local cache on open, then sync
+  with the hub when `/data` arrives — no flash of default sizes on refresh.
+- **Favorites:** reorder mode shows live size previews when cycling presets,
+  including on phone resize/rotation.
+- **Favorites:** lock and garage door tiles lay out correctly in square and wide
+  size presets.
+
 ## 0.3.5
 
 - **Fix:** favorites tile sizes could fail to save — the JS chunk rewriter now

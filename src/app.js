@@ -34,6 +34,7 @@
   const TABS_STORAGE_KEY = "mld_tabs";
   const DRAWER_STORAGE_KEY = "mld_drawer";
   const CAMERAS_COLS_STORAGE_KEY = "mld_cameras_cols";
+  const FAVORITE_SIZES_STORAGE_KEY = "mld_favorite_sizes";
   const LOCAL_URL_STORAGE_KEY = "mld_localUrl";
   const CLOUD_URL_STORAGE_KEY = "mld_cloudUrl";
   const PREFER_CLOUD_STORAGE_KEY = "mld_preferCloud";
@@ -110,6 +111,47 @@
 
   function saveCamerasColsPref(cols) {
     try { localStorage.setItem(CAMERAS_COLS_STORAGE_KEY, String(cols)); } catch {}
+  }
+
+  const FAVORITE_SIZE_PRESET_SET = new Set(["full", "square", "wide", "standard", "compact"]);
+
+  function loadFavoriteSizesCache() {
+    try {
+      const raw = localStorage.getItem(FAVORITE_SIZES_STORAGE_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return {};
+      const out = {};
+      for (const k of Object.keys(parsed)) {
+        const id = Number(k);
+        const size = String(parsed[k]);
+        if (Number.isFinite(id) && FAVORITE_SIZE_PRESET_SET.has(size)) out[id] = size;
+      }
+      return out;
+    } catch {}
+    return {};
+  }
+
+  function saveFavoriteSizesCache(sizes) {
+    try {
+      if (!sizes || !Object.keys(sizes).length) {
+        localStorage.removeItem(FAVORITE_SIZES_STORAGE_KEY);
+        return;
+      }
+      const out = {};
+      for (const k of Object.keys(sizes)) out[String(k)] = sizes[k];
+      localStorage.setItem(FAVORITE_SIZES_STORAGE_KEY, JSON.stringify(out));
+    } catch {}
+  }
+
+  function primeFavoriteSizesFromConfig(favoriteIds, sizesObj) {
+    if (!sizesObj || typeof sizesObj !== "object" || !Array.isArray(favoriteIds)) return;
+    const favSet = new Set(favoriteIds.map(Number));
+    for (const k of Object.keys(sizesObj)) {
+      const id = Number(k);
+      const size = String(sizesObj[k]);
+      if (favSet.has(id) && FAVORITE_SIZE_PRESET_SET.has(size)) favoriteSizes[id] = size;
+    }
   }
 
   let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", defaultTab: "lights", roomOrder: null, navOrder: null, cameraOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), camerasCols: loadCamerasColsPref(), localUrl: "", cloudUrl: "" };
@@ -194,7 +236,7 @@
   let music = [];
   let cameras = [];
   let favorites = [];
-  let favoriteSizes = {}; // id -> preset string (only non-default entries kept)
+  let favoriteSizes = loadFavoriteSizesCache(); // id -> preset string (only non-default entries kept)
   let favoritesReorderSnapshotSizes = null;
   let snapshots = {};
   let roomGestureLockCount = 0;
@@ -1366,6 +1408,9 @@
       }
       if (d.config.localUrl != null) cfg.localUrl = String(d.config.localUrl || "");
       if (d.config.cloudUrl != null) cfg.cloudUrl = String(d.config.cloudUrl || "");
+      if (Array.isArray(d.config.favorites) && d.config.favoriteSizes) {
+        primeFavoriteSizesFromConfig(d.config.favorites, d.config.favoriteSizes);
+      }
     }
     if (globalThis.__MLD) {
       const schedHook = globalThis.__MLD["applySchedules" + "FromData"];
@@ -4865,6 +4910,7 @@
             if (body?.sizes && typeof body.sizes === "object") {
               favoriteSizes = {};
               for (const k of Object.keys(body.sizes)) favoriteSizes[Number(k)] = String(body.sizes[k]);
+              saveFavoriteSizesCache(favoriteSizes);
             }
           } catch {}
           return true;
@@ -5238,6 +5284,7 @@
     if (wasFav) favorites.splice(idx, 1);
     else favorites.push(numId);
     if (wasFav) delete favoriteSizes[numId];
+    saveFavoriteSizesCache(favoriteSizes);
     updateAllFavButtons();
     updateQuickNavVisibility();
     if (currentCategory() === "favorites") renderFavoritesPopup();
@@ -5250,6 +5297,7 @@
       if (wasFav) favorites.push(numId);
       else favorites.splice(favorites.indexOf(numId), 1);
       favoriteSizes = prevSizes;
+      saveFavoriteSizesCache(favoriteSizes);
       updateAllFavButtons();
       updateQuickNavVisibility();
       if (currentCategory() === "favorites") renderFavoritesPopup();
@@ -5776,20 +5824,7 @@
     replaceList(thermostats, d.thermostats);
     replaceList(tempSensors, d.tempSensors);
     replaceList(sensors, d.sensors);
-    if (d.config?.favoriteSizes && typeof d.config.favoriteSizes === "object" && !postCall("isFavoritesReorderActive")) {
-      const next = {};
-      const favSet = new Set(favorites);
-      for (const k of Object.keys(d.config.favoriteSizes)) {
-        const id = Number(k);
-        if (!favSet.has(id)) continue;
-        const size = String(d.config.favoriteSizes[k]);
-        const entry = getFavoriteEntries().find((e) => Number(e.dev.i) === id);
-        if (!entry) continue;
-        const profile = favoriteSizeProfile(entry);
-        if (size !== profile.default && profile.allowed.includes(size)) next[id] = size;
-      }
-      favoriteSizes = next;
-    }
+    const favSizesChanged = applyFavoriteSizesFromConfig(d);
     snapshots = d.snapshots && typeof d.snapshots === "object" ? d.snapshots : {};
     rebuildDevicesByRoom();
     rebuildOutletsByRoom();
@@ -5827,6 +5862,7 @@
     updateClimateWidgets();
     applySearch();
     refreshQuickPopupIfOpen();
+    if (favSizesChanged && currentCategory() === "favorites") renderFavoritesPopup();
     restoreUiScroll(scrollSnap);
   }
 
@@ -7165,7 +7201,7 @@
 
   function makeGarageRow(door, context) {
     const inFav = context === "favorites";
-    const row = ce("div", "quick-lock-row" + (inFav ? " quick-fav-span" : ""));
+    const row = ce("div", "quick-lock-row");
     row.dataset.name = String(door.n || "").toLowerCase();
     const head = ce("div", "quick-fav-row-head");
     const info = ce("div", "quick-lock-info");
@@ -7212,7 +7248,7 @@
 
   function makeLockRow(lock, context) {
     const inFav = context === "favorites";
-    const row = ce("div", "quick-lock-row" + (inFav ? " quick-fav-span" : ""));
+    const row = ce("div", "quick-lock-row");
     row.dataset.name = String(lock.n || "").toLowerCase();
     const head = ce("div", "quick-fav-row-head");
     const info = ce("div", "quick-lock-info");
@@ -7319,6 +7355,33 @@
       if (size !== profile.default && profile.allowed.includes(size)) out[id] = size;
     }
     return out;
+  }
+
+  function applyFavoriteSizesFromConfig(d) {
+    if (!d.config?.favoriteSizes || typeof d.config.favoriteSizes !== "object") return false;
+    if (postCall("isFavoritesReorderActive")) return false;
+    const prevSig = Object.keys(favoriteSizes).sort((a, b) => a - b)
+      .map((id) => id + ":" + favoriteSizes[id]).join(",");
+    const next = {};
+    const favSet = new Set(favorites);
+    for (const k of Object.keys(d.config.favoriteSizes)) {
+      const id = Number(k);
+      if (!favSet.has(id)) continue;
+      const size = String(d.config.favoriteSizes[k]);
+      const entry = getFavoriteEntries().find((e) => Number(e.dev.i) === id);
+      if (entry) {
+        const profile = favoriteSizeProfile(entry);
+        if (size !== profile.default && profile.allowed.includes(size)) next[id] = size;
+      } else if (FAVORITE_SIZE_PRESET_SET.has(size)) {
+        // Device metadata can lag on the first paint — keep the server size until the entry resolves.
+        next[id] = size;
+      }
+    }
+    favoriteSizes = next;
+    const nextSig = Object.keys(next).sort((a, b) => a - b)
+      .map((id) => id + ":" + next[id]).join(",");
+    if (prevSig !== nextSig) saveFavoriteSizesCache(favoriteSizes);
+    return prevSig !== nextSig;
   }
 
   // __MLD_SPLIT2__
@@ -8750,6 +8813,16 @@
     return entries.map((e) => e.type + ":" + e.dev.i).join(",") + "|" + sizes;
   }
 
+  function favoritesGridSizesMatch(entries, grid) {
+    const kids = grid.children;
+    if (kids.length !== entries.length) return false;
+    for (let i = 0; i < entries.length; i++) {
+      const want = "fav-size-" + resolveFavoriteSize(entries[i]);
+      if (!kids[i].classList.contains(want)) return false;
+    }
+    return true;
+  }
+
   let favoritesReorderActive = false;
   let favoritesReorderSnapshot = null;
   let favoritesReorderDraftOrder = null;
@@ -8757,6 +8830,59 @@
   const favoritesReorderEls = new Map();
   let favDragCleanup = null;
   let favAutoScrollRaf = null;
+  let favReorderResizeListener = null;
+
+  function favoriteReorderGridSpan(size) {
+    if (window.matchMedia("(max-width: 359px)").matches) return 1;
+    if (window.matchMedia("(max-width: 539px)").matches) {
+      return size === "standard" || size === "compact" ? 1 : 2;
+    }
+    if (size === "full") return 4;
+    if (size === "square" || size === "wide") return 2;
+    return 1;
+  }
+
+  function favoriteReorderPreviewHeight(size) {
+    if (window.matchMedia("(max-width: 359px)").matches) {
+      return { full: 88, square: 148, wide: 84, standard: 112, compact: 52 }[size] || 112;
+    }
+    if (window.matchMedia("(max-width: 539px)").matches) {
+      return { full: 96, square: 160, wide: 88, standard: 120, compact: 56 }[size] || 120;
+    }
+    return { full: 96, square: 168, wide: 96, standard: 132, compact: 64 }[size] || 132;
+  }
+
+  function applyFavoriteReorderPreview(wrap, size) {
+    if (!wrap || !size) return;
+    const span = favoriteReorderGridSpan(size);
+    const height = favoriteReorderPreviewHeight(size);
+    wrap.style.gridColumn = "span " + span;
+    wrap.style.height = height + "px";
+    wrap.style.minHeight = height + "px";
+    const grid = wrap.parentElement;
+    if (grid) void grid.offsetHeight;
+  }
+
+  function refreshAllFavReorderPreviews() {
+    if (!favoritesReorderActive) return;
+    const grid = currentBody()?.querySelector(".quick-fav-grid");
+    if (!grid) return;
+    for (const wrap of grid.querySelectorAll(".fav-reorder-item")) {
+      applyFavoriteReorderPreview(wrap, wrap.dataset.favSize || "standard");
+    }
+  }
+
+  function bindFavReorderResizeListener() {
+    if (favReorderResizeListener) return;
+    favReorderResizeListener = () => refreshAllFavReorderPreviews();
+    window.addEventListener("resize", favReorderResizeListener, { passive: true });
+  }
+
+  function unbindFavReorderResizeListener() {
+    if (!favReorderResizeListener) return;
+    window.removeEventListener("resize", favReorderResizeListener);
+    favReorderResizeListener = null;
+  }
 
   function isFavoritesReorderActive() {
     return favoritesReorderActive;
@@ -8933,6 +9059,7 @@
       floatOffsetY = e.clientY - rect.top;
       const size = wrapper.dataset.favSize || "standard";
       placeholder = ce("div", "fav-drag-placeholder fav-size-" + size);
+      placeholder.style.gridColumn = "span " + favoriteReorderGridSpan(size);
       placeholder.style.height = rect.height + "px";
       wrapper.parentNode.insertBefore(placeholder, wrapper);
       wrapper.classList.add("fav-dragging");
@@ -9114,6 +9241,7 @@
     wrap.appendChild(overlay);
     attachFavoriteReorder(wrap, dragHandle);
     favoritesReorderEls.set(favId, { moveEarlier, moveLater, sizeBtn, syncSizeBtn });
+    applyFavoriteReorderPreview(wrap, size);
     grid.appendChild(wrap);
   }
 
@@ -9129,6 +9257,7 @@
     const profile = favoriteSizeProfile(entry);
     if (next === profile.default) delete favoriteSizes[favId];
     else favoriteSizes[favId] = next;
+    applyFavoriteReorderPreview(wrap, next);
     updateFavoritesDraftOrderFromDom();
   }
 
@@ -9168,11 +9297,14 @@
     if (REORDER_CANCEL_BTN) REORDER_CANCEL_BTN.hidden = false;
     renderFavoritesPopup();
     updateFavoritesMoveButtons();
+    refreshAllFavReorderPreviews();
+    bindFavReorderResizeListener();
     flash("Drag to reorder · tap Size to resize");
   }
 
   function exitFavoritesReorderMode(resumePoll) {
     cleanupFavDragState();
+    unbindFavReorderResizeListener();
     favoritesReorderActive = false;
     favoritesReorderDraftOrder = null;
     favoritesReorderSnapshot = null;
@@ -9207,6 +9339,7 @@
     if (!saved) return false;
     replaceList(favorites, order);
     favoriteSizes = sizes;
+    saveFavoriteSizesCache(favoriteSizes);
     lastDataSig = "";
     exitFavoritesReorderMode(true);
     flash("Order & sizes saved");
@@ -9325,9 +9458,11 @@
   function refreshFavoritesPopup() {
     if (currentCategory() !== "favorites") return;
     if (favoritesReorderActive) return;
+    const entries = getFavoriteEntries();
     const sig = favoritesPopupSignature();
     const body = currentBody();
-    if (!body.querySelector(".quick-fav-grid") || sig !== favPopupSig) {
+    const grid = body.querySelector(".quick-fav-grid");
+    if (!grid || sig !== favPopupSig || !favoritesGridSizesMatch(entries, grid)) {
       renderFavoritesPopup();
       return;
     }
@@ -9379,8 +9514,8 @@
     favFanMap.clear();
     favoritesReorderEls.clear();
     const entries = getFavoriteEntries();
-    favPopupSig = favoritesPopupSignature();
     if (!entries.length) {
+      favPopupSig = favoritesPopupSignature();
       body.textContent = "Tap the star on any device to add it here";
       return;
     }
@@ -9395,6 +9530,7 @@
     body.appendChild(grid);
     if (favoritesReorderActive) updateFavoritesMoveButtons();
     updateStates();
+    favPopupSig = favoritesPopupSignature();
   }
 
   function thermostatsListSignature() {
