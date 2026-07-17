@@ -986,15 +986,18 @@ const server = createServer(async (req, res) => {
     const idsParam = url.searchParams.get("ids");
     const validIds = new Set([
       ...state.devices.map(d => d.i),
+      ...(state.outlets || []).map(o => o.i),
       ...(state.thermostats || []).map(t => t.i),
       ...(state.tempSensors || []).map(s => s.i),
       ...(state.sensors || []).map(s => s.i),
       ...(state.valves || []).map(v => v.i),
       ...(state.music || []).map(m => m.i),
       ...(state.locks || []).map(l => l.i),
+      ...(state.garageDoors || []).map(g => g.i),
       ...(state.windowShades || []).map(s => s.i),
       ...(state.ceilingFans || []).map(f => f.i),
     ]);
+    const validSizes = new Set(["full", "square", "wide", "standard", "compact"]);
     const validateIds = (raw) => {
       const validated = [];
       const seen = new Set();
@@ -1006,11 +1009,29 @@ const server = createServer(async (req, res) => {
       }
       return validated;
     };
+    const normalizeSizes = (ids, sizes) => {
+      const out = {};
+      const idSet = new Set(ids.map(String));
+      if (sizes && typeof sizes === "object") {
+        for (const [k, v] of Object.entries(sizes)) {
+          if (!idSet.has(String(k))) continue;
+          if (!validSizes.has(String(v))) continue;
+          out[String(k)] = String(v);
+        }
+      } else {
+        const prev = state.config.favoriteSizes || {};
+        for (const [k, v] of Object.entries(prev)) {
+          if (idSet.has(String(k))) out[String(k)] = String(v);
+        }
+      }
+      return out;
+    };
     if (req.method === "GET" && idsParam != null) {
       const ids = validateIds(idsParam.split(",").map(s => s.trim()).filter(Boolean));
       state.config.favorites = ids;
+      state.config.favoriteSizes = normalizeSizes(ids, null);
       res.writeHead(200, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify({ ok: true, ids }));
+      return res.end(JSON.stringify({ ok: true, ids, sizes: state.config.favoriteSizes }));
     }
     if (req.method === "POST") {
       let body;
@@ -1020,8 +1041,9 @@ const server = createServer(async (req, res) => {
       }
       const ids = validateIds(body?.ids || []);
       state.config.favorites = ids;
+      state.config.favoriteSizes = normalizeSizes(ids, body?.sizes);
       res.writeHead(200, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify({ ok: true, ids }));
+      return res.end(JSON.stringify({ ok: true, ids, sizes: state.config.favoriteSizes }));
     }
   }
   // ---------- scheduler mock ----------

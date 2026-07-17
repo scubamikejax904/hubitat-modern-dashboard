@@ -1,4 +1,4 @@
-// Modern Dashboard v0.3.2
+// Modern Dashboard v0.3.3
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
@@ -16,7 +16,7 @@ import groovy.transform.Field
 @Field private static String LOCAL_ASSET_CACHE_VERSION = ""
 @Field private static int LOCAL_ASSET_CACHE_BYTES = 0
 @Field private static final int LOCAL_ASSET_CACHE_MAX_BYTES = 768 * 1024
-@Field private static final String MLD_DEPLOYED_VERSION = "0.3.2"
+@Field private static final String MLD_DEPLOYED_VERSION = "0.3.3"
 
 definition(
     name: "Modern Dashboard",
@@ -50,7 +50,7 @@ def mainPage() {
             } else {
                 paragraph "<small><b>Hub-only:</b> UI and API run entirely on your hub — no Maker API or third-party cloud.</small>"
             }
-            paragraph "<small>Version 0.3.2 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
+            paragraph "<small>Version 0.3.3 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         if (assetsOk) {
             section("Dashboard links") {
@@ -3311,12 +3311,38 @@ def favoritesJsonFragment() {
         out << id
     }
     out << "]"
+    out << favoriteSizesJsonFragment()
+    return out.toString()
+}
+
+def parseFavoriteSizesState() {
+    if (!state.favoriteSizesJson) return [:]
+    try {
+        def parsed = new groovy.json.JsonSlurper().parseText(state.favoriteSizesJson.toString())
+        if (parsed instanceof Map) return parsed
+        return [:]
+    } catch (e) {
+        return [:]
+    }
+}
+
+def favoriteSizesJsonFragment() {
+    def sizes = parseFavoriteSizesState()
+    def out = new StringBuilder()
+    out << ",\"favoriteSizes\":{"
+    boolean first = true
+    for (entry in sizes) {
+        if (!first) out << ","; first = false
+        out << jsonStr(String.valueOf(entry.key)) << ":" << jsonStr(String.valueOf(entry.value))
+    }
+    out << "}"
     return out.toString()
 }
 
 def validFavoriteIdSet() {
     def set = new HashSet()
     lights?.each { set.add(it.id.toString()) }
+    outletSwitches?.each { set.add(it.id.toString()) }
     thermostats?.each { set.add(it.id.toString()) }
     tempSensors?.each { set.add(it.id.toString()) }
     allSensorDevices()?.each { set.add(it.device.id.toString()) }
@@ -3784,10 +3810,14 @@ def saveFavorites() {
     if (!(ids instanceof List)) {
         return renderJsonNoStore( '{"ok":false,"error":"missing ids"}', 400)
     }
-    return saveFavoritesFromList(ids)
+    def sizes = body?.sizes
+    if (sizes != null && !(sizes instanceof Map)) {
+        return renderJsonNoStore( '{"ok":false,"error":"invalid sizes"}', 400)
+    }
+    return saveFavoritesFromList(ids, sizes)
 }
 
-def saveFavoritesFromList(ids) {
+def saveFavoritesFromList(ids, sizes = null) {
     if (!guardDashboardAccess()) return renderAuthRequired()
     def valid = validFavoriteIdSet()
     def validated = []
@@ -3803,6 +3833,30 @@ def saveFavoritesFromList(ids) {
         validated << key.toLong()
     }
     state.favorites = validated.join(",")
+
+    // Persist only non-default, valid preset sizes for retained favorites.
+    def validSizes = new HashSet(["full", "square", "wide", "standard", "compact"])
+    def validatedSet = new HashSet(validated.collect { it.toString() })
+    def nextSizes = [:]
+    if (sizes != null) {
+        for (entry in sizes) {
+            def idKey = String.valueOf(entry.key)
+            def val = String.valueOf(entry.value)
+            if (!validatedSet.contains(idKey)) continue
+            if (!validSizes.contains(val)) continue
+            nextSizes[idKey] = val
+        }
+        state.favoriteSizesJson = groovy.json.JsonOutput.toJson(nextSizes)
+    } else {
+        // Older client (GET fallback or omitted sizes): preserve retained, prune removed.
+        def prev = parseFavoriteSizesState()
+        for (entry in prev) {
+            def idKey = String.valueOf(entry.key)
+            if (validatedSet.contains(idKey)) nextSizes[idKey] = String.valueOf(entry.value)
+        }
+        state.favoriteSizesJson = groovy.json.JsonOutput.toJson(nextSizes)
+    }
+
     def out = new StringBuilder()
     out << "{\"ok\":true,\"ids\":["
     boolean first = true
@@ -3810,7 +3864,9 @@ def saveFavoritesFromList(ids) {
         if (!first) out << ","; first = false
         out << id
     }
-    out << "]}"
+    out << "],\"sizes\":"
+    out << (state.favoriteSizesJson ? state.favoriteSizesJson.toString() : "{}")
+    out << "}"
     return renderJsonNoStore( withAuthJson(out.toString()), 200)
 }
 

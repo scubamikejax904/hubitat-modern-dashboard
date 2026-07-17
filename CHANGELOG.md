@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3
+
+- **Favorites:** customizable tile size per favorite — in Reorder mode, tap the size
+  button on each tile to cycle through allowed presets (standard, wide, compact for
+  lights/outlets/sensors; full, square, wide for locks, shades, fans, and music;
+  thermostats: full or square). Sizes are saved on the hub and sync across devices.
+
 ## 0.3.2
 
 - **Favorites:** reorder favorite tiles from the Favorites tab via overflow menu

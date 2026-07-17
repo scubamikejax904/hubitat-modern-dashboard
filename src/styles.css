@@ -283,6 +283,9 @@ body {
   max-height: none;
   overflow: visible;
 }
+.tab-view.quick-body-favorites .quick-fav-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 .tab-view.cameras-tab { padding: 0 0 calc(env(safe-area-inset-bottom)); }
 .cameras-empty {
   text-align: center; color: var(--text-faint); padding: 48px 20px;
@@ -430,7 +433,55 @@ body {
 .fav-move-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .fav-move-btn:active:not(:disabled) { transform: scale(.94); }
 .fav-move-btn:disabled { opacity: 0.35; cursor: default; }
+.fav-size-btn {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(0,0,0,.45);
+  color: #fff;
+  border-radius: 14px;
+  padding: 0 10px;
+  min-width: 56px;
+  min-height: 44px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  cursor: pointer;
+  touch-action: manipulation;
+  pointer-events: auto;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.fav-size-btn .fav-size-btn-label { font-size: 9px; opacity: 0.8; font-weight: 700; }
+.fav-size-btn:active:not(:disabled) { transform: scale(.94); }
+.favorites-reorder-mode .fav-size-btn { display: flex; }
 .favorites-reorder-mode .fav-reorder-overlay { display: flex; }
+
+/* On small tiles, stack overlay controls in a 2x2 grid so each stays >=44px. */
+.favorites-reorder-mode .fav-size-compact .fav-reorder-overlay,
+.favorites-reorder-mode .fav-size-standard .fav-reorder-overlay {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px;
+}
+.favorites-reorder-mode .fav-size-compact .fav-drag-handle,
+.favorites-reorder-mode .fav-size-standard .fav-drag-handle,
+.favorites-reorder-mode .fav-size-compact .fav-size-btn,
+.favorites-reorder-mode .fav-size-standard .fav-size-btn,
+.favorites-reorder-mode .fav-size-compact .fav-move-btns,
+.favorites-reorder-mode .fav-size-standard .fav-move-btns {
+  width: auto; min-width: 0; min-height: 44px; height: 44px;
+}
+.favorites-reorder-mode .fav-size-compact .fav-move-btn,
+.favorites-reorder-mode .fav-size-standard .fav-move-btn {
+  width: 100%; height: 44px;
+}
 .favorites-reorder-mode .fav-drag-handle,
 .favorites-reorder-mode .fav-move-btns { display: flex; }
 .favorites-reorder-mode .fav-reorder-item {
@@ -1954,6 +2005,163 @@ body {
   gap: 12px;
   container-type: inline-size;
 }
+
+/* ---- Favorites discrete tile sizes ----
+   Only the Favorites body uses the preset grid. Thermostats tab and other
+   .quick-fav-grid consumers keep the auto-fill behavior above.
+
+   Column spans define width; aspect-ratio defines preferred height from the
+   resolved column width (robust regardless of container height). Content may
+   grow a card beyond the preferred shape so essential controls never clip. */
+.quick-body-favorites .quick-fav-grid {
+  --fav-gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: auto;
+  grid-auto-flow: row;
+  max-width: 840px;
+  margin-inline: auto;
+  gap: var(--fav-gap);
+}
+.quick-body-favorites .quick-fav-grid .quick-fav-span,
+.quick-body-favorites .quick-fav-grid .quick-fav-tstat {
+  grid-column: auto;
+  grid-row: auto;
+}
+.quick-body-favorites .fav-size-full    { grid-column: span 4; grid-row: span 1; aspect-ratio: 4 / 1; }
+.quick-body-favorites .fav-size-square  { grid-column: span 2; grid-row: span 1; aspect-ratio: 1 / 1; }
+.quick-body-favorites .fav-size-wide    { grid-column: span 2; grid-row: span 1; aspect-ratio: 2 / 1; }
+.quick-body-favorites .fav-size-standard { grid-column: span 1; grid-row: span 1; aspect-ratio: 1 / 1; }
+.quick-body-favorites .fav-size-compact  { grid-column: span 1; grid-row: span 1; aspect-ratio: 2 / 1; }
+
+/* Two-column layout: popup width and narrow tab widths. */
+@media (max-width: 539px) {
+  .quick-body-favorites .quick-fav-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .quick-body-favorites .fav-size-full    { grid-column: span 2; grid-row: span 1; aspect-ratio: 2 / 1; }
+  .quick-body-favorites .fav-size-square  { grid-column: span 2; grid-row: span 1; aspect-ratio: 1 / 1; }
+  .quick-body-favorites .fav-size-wide    { grid-column: span 2; grid-row: span 1; aspect-ratio: 2 / 1; }
+  .quick-body-favorites .fav-size-standard { grid-column: span 1; grid-row: span 1; aspect-ratio: 1 / 1; }
+  .quick-body-favorites .fav-size-compact  { grid-column: span 1; grid-row: span 1; aspect-ratio: 2 / 1; }
+}
+/* Single column on the smallest phones. */
+@media (max-width: 359px) {
+  .quick-body-favorites .quick-fav-grid {
+    grid-template-columns: 1fr;
+  }
+  .quick-body-favorites .fav-size-full    { grid-column: span 1; grid-row: span 1; aspect-ratio: 3 / 1; min-height: 84px; }
+  .quick-body-favorites .fav-size-square  { grid-column: span 1; grid-row: span 1; aspect-ratio: 1 / 1; }
+  .quick-body-favorites .fav-size-wide    { grid-column: span 1; grid-row: span 1; aspect-ratio: 2 / 1; min-height: 84px; }
+  .quick-body-favorites .fav-size-standard { grid-column: span 1; grid-row: span 1; aspect-ratio: 1 / 1; }
+  .quick-body-favorites .fav-size-compact  { grid-column: span 1; grid-row: span 1; aspect-ratio: 3 / 1; min-height: 64px; }
+}
+
+/* Cards fill their grid area; content may grow beyond the preset shape
+   rather than clipping essential controls. */
+.quick-body-favorites .quick-fav-card,
+.quick-body-favorites .quick-lock-row,
+.quick-body-favorites .shade-tile,
+.quick-body-favorites .fan-tile,
+.quick-body-favorites .music-row,
+.quick-body-favorites .sensor-card,
+.quick-body-favorites .tile,
+.quick-body-favorites .fav-reorder-item {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.quick-body-favorites .fav-reorder-item {
+  display: flex;
+  flex-direction: column;
+}
+.quick-body-favorites .fav-reorder-content {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+/* ---- Thermostat: always stack in favorites (avoid @container horizontal in short tiles) ---- */
+.quick-body-favorites .quick-fav-tstat {
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  grid-template-columns: none;
+}
+.quick-body-favorites .quick-fav-tstat-name { text-align: center; }
+.quick-body-favorites .quick-fav-tstat-info { align-items: center; width: 100%; }
+.quick-body-favorites .quick-fav-tstat-state { align-self: center; }
+.quick-body-favorites .quick-fav-tstat-controls { margin-top: auto; width: 100%; }
+
+/* ---- Thermostat: stacked layout for square / wide ---- */
+.quick-body-favorites .fav-size-square.quick-fav-tstat,
+.quick-body-favorites .fav-size-wide.quick-fav-tstat {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 8px; padding: 12px 12px 14px;
+}
+.quick-body-favorites .fav-size-square .quick-fav-tstat-sp { font-size: 30px; }
+.quick-body-favorites .fav-size-wide .quick-fav-tstat-sp { font-size: 34px; }
+.quick-body-favorites .fav-size-square .quick-fav-tstat-name,
+.quick-body-favorites .fav-size-wide .quick-fav-tstat-name { text-align: center; }
+
+/* ---- Lock / garage: stack actions under status in square ---- */
+.quick-body-favorites .fav-size-square.quick-lock-row {
+  justify-content: center;
+}
+
+/* ---- Shade: hide slider in wide to keep buttons; stack in square ---- */
+.quick-body-favorites .fav-size-wide.shade-tile .shade-slider-wrap { display: none; }
+.quick-body-favorites .fav-size-square.shade-tile .shade-slider-wrap { width: 100%; }
+
+/* ---- Fan: stack status/controls in square ---- */
+.quick-body-favorites .fav-size-square.fan-tile .fan-controls { gap: 10px; }
+.quick-body-favorites .fav-size-square.fan-tile .fan-power { width: 60px; height: 60px; }
+.quick-body-favorites .fav-size-square.fan-tile .fan-power svg { width: 34px; height: 34px; }
+
+/* ---- Music: compact art in wide; stacked in square ---- */
+.quick-body-favorites .fav-size-wide.music-row,
+.quick-body-favorites .fav-size-square.music-row {
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "art info" "right right";
+}
+.quick-body-favorites .fav-size-wide.music-row .music-art,
+.quick-body-favorites .fav-size-square.music-row .music-art { width: 38px; height: 38px; }
+.quick-body-favorites .fav-size-wide.music-row .music-art svg,
+.quick-body-favorites .fav-size-square.music-row .music-art svg { width: 22px; height: 22px; }
+
+/* ---- Compact lights/outlets: name + state + fav; whole tile still toggles ---- */
+.quick-body-favorites .fav-size-compact.tile { padding: 10px 12px; min-height: 0; gap: 6px; }
+.quick-body-favorites .fav-size-compact.tile .tile-bulb,
+.quick-body-favorites .fav-size-compact.tile .tile-socket,
+.quick-body-favorites .fav-size-compact.tile .slider,
+.quick-body-favorites .fav-size-compact.tile .tile-foot .tile-level { display: none; }
+.quick-body-favorites .fav-size-compact.tile .tile-head { justify-content: flex-start; }
+.quick-body-favorites .fav-size-compact.tile .tile-name {
+  -webkit-line-clamp: 1; line-clamp: 1; max-height: calc(1 * 1.25em);
+  font-size: 13px;
+}
+.quick-body-favorites .fav-size-compact.tile .tile-foot { margin-top: auto; }
+.quick-body-favorites .fav-size-compact.tile .tile-state { font-size: 12px; font-weight: 700; }
+
+/* ---- Compact sensors: name + value + fav ---- */
+.quick-body-favorites .fav-size-compact.sensor-card { padding: 8px 10px; min-height: 0; gap: 3px; }
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-top,
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-meta,
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-foot,
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-battery { display: none; }
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-actions {
+  margin-top: auto;
+  min-height: 0;
+  justify-content: flex-end;
+}
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-value { font-size: 20px; margin-top: 0; }
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-name { font-size: 12px; }
+
+/* ---- Wide cell tiles: use horizontal space, keep all controls ---- */
+.quick-body-favorites .fav-size-wide.tile .tile-head { gap: 10px; }
+.quick-body-favorites .fav-size-wide.sensor-card .sensor-card-value { font-size: 32px; }
 .quick-fav-card {
   position: relative;
   border: 1px solid var(--stroke);

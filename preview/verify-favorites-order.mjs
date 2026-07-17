@@ -30,13 +30,13 @@ async function getJson(path) {
 }
 
 async function waitForServer(child) {
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 300; i++) {
     if (child.exitCode != null) throw new Error("preview server exited early");
     try {
       await getJson("/auth/status");
       return;
     } catch {
-      await wait(100);
+      await wait(200);
     }
   }
   throw new Error("preview server did not become ready");
@@ -79,6 +79,68 @@ try {
   const after = await getJson("/data");
   const saved = (after.config?.favorites || []).map(Number);
   assert(saved.join(",") === reversed.join(","), "favorites order persisted");
+
+  // ---- Sizes round-trip ----
+  const sizeIds = reversed.slice(0, 2);
+  const sizesBody = { ids: reversed, sizes: { [sizeIds[0]]: "square", [sizeIds[1]]: "compact" } };
+  const sizeRes = await fetch(`http://127.0.0.1:${PORT}/favorites?${dashSessionQuery}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(sizesBody),
+  });
+  assert(sizeRes.ok, "POST /favorites with sizes ok");
+  const sizeJson = await sizeRes.json();
+  assert(sizeJson.sizes && String(sizeJson.sizes[sizeIds[0]]) === "square", "server echoes square size");
+  assert(String(sizeJson.sizes[sizeIds[1]]) === "compact", "server echoes compact size");
+
+  const afterSizes = await getJson("/data");
+  const cfgSizes = afterSizes.config?.favoriteSizes || {};
+  assert(String(cfgSizes[sizeIds[0]]) === "square", "sizes persisted in /data config");
+  assert(String(cfgSizes[sizeIds[1]]) === "compact", "compact size persisted in /data config");
+
+  // ---- Unknown preset rejected ----
+  const badRes = await fetch(`http://127.0.0.1:${PORT}/favorites?${dashSessionQuery}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ ids: reversed, sizes: { [sizeIds[0]]: "enormous" } }),
+  });
+  const badJson = await badRes.json();
+  assert(!badJson.sizes || badJson.sizes[sizeIds[0]] == null, "unknown preset rejected");
+
+  // ---- Unknown id rejected ----
+  const badIdRes = await fetch(`http://127.0.0.1:${PORT}/favorites?${dashSessionQuery}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ ids: reversed, sizes: { "999999": "square" } }),
+  });
+  const badIdJson = await badIdRes.json();
+  assert(!badIdJson.sizes || badIdJson.sizes["999999"] == null, "unknown id size rejected");
+
+  // ---- Old client (no sizes) preserves retained sizes, prunes removed ----
+  const pruned = reversed.slice(0, reversed.length - 1);
+  await fetch(`http://127.0.0.1:${PORT}/favorites?${dashSessionQuery}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ ids: reversed, sizes: { [sizeIds[0]]: "wide" } }),
+  });
+  const oldClientRes = await fetch(`http://127.0.0.1:${PORT}/favorites?${dashSessionQuery}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ ids: pruned }),
+  });
+  const oldJson = await oldClientRes.json();
+  assert(String(oldJson.sizes[sizeIds[0]]) === "wide", "old client preserves retained size");
+  const removedId = reversed[reversed.length - 1];
+  assert(oldJson.sizes[removedId] == null, "old client prunes removed favorite size");
+
+  // ---- Re-add starts without a size ----
+  const readdRes = await fetch(`http://127.0.0.1:${PORT}/favorites?${dashSessionQuery}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ ids: reversed, sizes: {} }),
+  });
+  const readdJson = await readdRes.json();
+  assert(Object.keys(readdJson.sizes || {}).length === 0, "empty sizes clears stored sizes");
 
   console.log("verify-favorites-order: ok");
 } finally {

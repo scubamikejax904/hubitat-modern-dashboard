@@ -194,6 +194,8 @@
   let music = [];
   let cameras = [];
   let favorites = [];
+  let favoriteSizes = {}; // id -> preset string (only non-default entries kept)
+  let favoritesReorderSnapshotSizes = null;
   let snapshots = {};
   let roomGestureLockCount = 0;
   let hubModeLockUntil = 0;
@@ -4843,18 +4845,30 @@
     return false;
   }
 
-  async function saveFavorites(ids) {
+  async function saveFavorites(ids, sizes) {
     const paths = ["favorites"];
     let lastMsg = "Could not save favorites";
+    const payload = { ids };
+    if (sizes) payload.sizes = sizes;
     for (const path of paths) {
       try {
         let r = await fetch(withToken(path), {
           method: "POST",
           cache: "no-store",
           headers: { "Content-Type": "application/json", "Accept": "application/json" },
-          body: JSON.stringify({ ids }),
+          body: JSON.stringify(payload),
         });
-        if (r.ok) return true;
+        if (r.ok) {
+          // Adopt server-normalized sizes if provided.
+          try {
+            const body = await r.json();
+            if (body?.sizes && typeof body.sizes === "object") {
+              favoriteSizes = {};
+              for (const k of Object.keys(body.sizes)) favoriteSizes[Number(k)] = String(body.sizes[k]);
+            }
+          } catch {}
+          return true;
+        }
         try {
           const body = await r.json();
           if (body?.error) lastMsg = String(body.error);
@@ -5220,8 +5234,10 @@
     if (!isFavoriteableDeviceId(numId)) return;
     const idx = favorites.indexOf(numId);
     const wasFav = idx >= 0;
+    const prevSizes = { ...favoriteSizes };
     if (wasFav) favorites.splice(idx, 1);
     else favorites.push(numId);
+    if (wasFav) delete favoriteSizes[numId];
     updateAllFavButtons();
     updateQuickNavVisibility();
     if (currentCategory() === "favorites") renderFavoritesPopup();
@@ -5229,10 +5245,11 @@
     else if (quickPopupOpenType === "music") renderMusicPopup();
     else if (quickPopupOpenType === "blinds") refreshBlindsPopup();
     else if (quickPopupOpenType === "fans") refreshFansPopup();
-    const ok = await saveFavorites(favorites);
+    const ok = await saveFavorites(favorites, normalizedFavoriteSizes(favorites));
     if (!ok) {
       if (wasFav) favorites.push(numId);
       else favorites.splice(favorites.indexOf(numId), 1);
+      favoriteSizes = prevSizes;
       updateAllFavButtons();
       updateQuickNavVisibility();
       if (currentCategory() === "favorites") renderFavoritesPopup();
@@ -5739,6 +5756,10 @@
     replaceList(cameras, sortCamerasByOrder(Array.isArray(d.cameras) ? d.cameras : [], cfg.cameraOrder));
     if (Array.isArray(d.config?.favorites) && !postCall("isFavoritesReorderActive")) {
       replaceList(favorites, d.config.favorites.map(Number));
+      const favSet = new Set(favorites);
+      for (const k of Object.keys(favoriteSizes)) {
+        if (!favSet.has(Number(k))) delete favoriteSizes[Number(k)];
+      }
     }
     reapplyLockOptimistic();
     reapplyGarageOptimistic();
@@ -5755,6 +5776,20 @@
     replaceList(thermostats, d.thermostats);
     replaceList(tempSensors, d.tempSensors);
     replaceList(sensors, d.sensors);
+    if (d.config?.favoriteSizes && typeof d.config.favoriteSizes === "object" && !postCall("isFavoritesReorderActive")) {
+      const next = {};
+      const favSet = new Set(favorites);
+      for (const k of Object.keys(d.config.favoriteSizes)) {
+        const id = Number(k);
+        if (!favSet.has(id)) continue;
+        const size = String(d.config.favoriteSizes[k]);
+        const entry = getFavoriteEntries().find((e) => Number(e.dev.i) === id);
+        if (!entry) continue;
+        const profile = favoriteSizeProfile(entry);
+        if (size !== profile.default && profile.allowed.includes(size)) next[id] = size;
+      }
+      favoriteSizes = next;
+    }
     snapshots = d.snapshots && typeof d.snapshots === "object" ? d.snapshots : {};
     rebuildDevicesByRoom();
     rebuildOutletsByRoom();
@@ -7258,6 +7293,34 @@
     body.appendChild(list);
   }
 
+  function favoriteSizeProfile(entry) {
+    const t = entry.type;
+    if (t === "thermostat") return { default: "full", allowed: ["full", "square"] };
+    if (t === "lock" || t === "garage") return { default: "full", allowed: ["full", "square", "wide"] };
+    if (t === "shade" || t === "fan" || t === "music") return { default: "full", allowed: ["full", "square", "wide"] };
+    if (t === "light") return entry.dev && entry.dev.d
+      ? { default: "standard", allowed: ["standard", "wide"] }
+      : { default: "standard", allowed: ["standard", "wide", "compact"] };
+    if (t === "outlet") return { default: "standard", allowed: ["standard", "wide", "compact"] };
+    if (t === "sensor") return entry.dev && entry.dev.t === "valve"
+      ? { default: "standard", allowed: ["standard", "wide"] }
+      : { default: "standard", allowed: ["standard", "wide", "compact"] };
+    return { default: "standard", allowed: ["standard"] };
+  }
+
+  function normalizedFavoriteSizes(order) {
+    const out = {};
+    for (const id of order) {
+      const size = favoriteSizes[id];
+      if (!size) continue;
+      const entry = getFavoriteEntries().find((e) => Number(e.dev.i) === Number(id));
+      if (!entry) continue;
+      const profile = favoriteSizeProfile(entry);
+      if (size !== profile.default && profile.allowed.includes(size)) out[id] = size;
+    }
+    return out;
+  }
+
   // __MLD_SPLIT2__
 
   function makeShadeTile(shade, context) {
@@ -8682,7 +8745,9 @@
   }
 
   function favoritesPopupSignature() {
-    return getFavoriteEntries().map((e) => e.type + ":" + e.dev.i).join(",");
+    const entries = getFavoriteEntries();
+    const sizes = entries.map((e) => e.dev.i + ":" + resolveFavoriteSize(e)).join(",");
+    return entries.map((e) => e.type + ":" + e.dev.i).join(",") + "|" + sizes;
   }
 
   let favoritesReorderActive = false;
@@ -8697,23 +8762,43 @@
     return favoritesReorderActive;
   }
 
+  const FAVORITE_SIZE_PRESETS = ["full", "square", "wide", "standard", "compact"];
+
+  function resolveFavoriteSize(entry) {
+    const profile = favoriteSizeProfile(entry);
+    const saved = favoriteSizes[entry.dev.i];
+    if (saved && profile.allowed.includes(saved)) return saved;
+    return profile.default;
+  }
+
   function favoriteEntrySpan(type) {
-    return (type === "thermostat" || type === "lock" || type === "garage" || type === "shade" || type === "fan" || type === "music")
-      ? "full"
-      : "cell";
+    // Kept for compatibility with existing call sites; returns the default
+    // size for a type (used as the fallback span when no size is stored).
+    return favoriteSizeProfile({ type, dev: {} }).default === "full" ? "full" : "cell";
+  }
+
+  function applyFavoriteSizeClass(el, entry) {
+    const size = resolveFavoriteSize(entry);
+    for (const p of FAVORITE_SIZE_PRESETS) el.classList.remove("fav-size-" + p);
+    el.classList.add("fav-size-" + size);
+    el.dataset.favSize = size;
+    return size;
   }
 
   function makeFavoriteEntryElement(entry) {
-    if (entry.type === "light") return makeTile(entry.dev, "favorites");
-    if (entry.type === "outlet") return makeOutletTile(entry.dev, "favorites");
-    if (entry.type === "thermostat") return makeQuickTstatCard(entry.dev, favTstatMap);
-    if (entry.type === "sensor") return makeFavoriteSensorCard(entry.dev);
-    if (entry.type === "music") return makeMusicRow(entry.dev, "favorites");
-    if (entry.type === "lock") return makeLockRow(entry.dev, "favorites");
-    if (entry.type === "garage") return makeGarageRow(entry.dev, "favorites");
-    if (entry.type === "shade") return makeShadeTile(entry.dev, "favorites");
-    if (entry.type === "fan") return makeFanTile(entry.dev, "favorites");
-    return null;
+    let tile = null;
+    if (entry.type === "light") tile = makeTile(entry.dev, "favorites");
+    else if (entry.type === "outlet") tile = makeOutletTile(entry.dev, "favorites");
+    else if (entry.type === "thermostat") tile = makeQuickTstatCard(entry.dev, favTstatMap);
+    else if (entry.type === "sensor") tile = makeFavoriteSensorCard(entry.dev);
+    else if (entry.type === "music") tile = makeMusicRow(entry.dev, "favorites");
+    else if (entry.type === "lock") tile = makeLockRow(entry.dev, "favorites");
+    else if (entry.type === "garage") tile = makeGarageRow(entry.dev, "favorites");
+    else if (entry.type === "shade") tile = makeShadeTile(entry.dev, "favorites");
+    else if (entry.type === "fan") tile = makeFanTile(entry.dev, "favorites");
+    if (!tile) return null;
+    applyFavoriteSizeClass(tile, entry);
+    return tile;
   }
 
   function currentFavoritesOrderFromDom() {
@@ -8846,10 +8931,9 @@
       const rect = wrapper.getBoundingClientRect();
       floatOffsetX = e.clientX - rect.left;
       floatOffsetY = e.clientY - rect.top;
-      const span = wrapper.dataset.favSpan || "cell";
-      placeholder = ce("div", "fav-drag-placeholder" + (span === "full" ? " fav-drag-placeholder-full" : " fav-drag-placeholder-cell"));
+      const size = wrapper.dataset.favSize || "standard";
+      placeholder = ce("div", "fav-drag-placeholder fav-size-" + size);
       placeholder.style.height = rect.height + "px";
-      if (span === "cell") placeholder.style.width = rect.width + "px";
       wrapper.parentNode.insertBefore(placeholder, wrapper);
       wrapper.classList.add("fav-dragging");
       wrapper.style.width = rect.width + "px";
@@ -8950,12 +9034,14 @@
     const tile = makeFavoriteEntryElement(entry);
     if (!tile) return;
     const favId = Number(entry.dev.i);
-    const span = favoriteEntrySpan(entry.type);
-    const wrap = ce("div", "fav-reorder-item");
+    const profile = favoriteSizeProfile(entry);
+    const size = resolveFavoriteSize(entry);
+    const wrap = ce("div", "fav-reorder-item fav-size-" + size);
     wrap.dataset.favId = String(favId);
-    wrap.dataset.favSpan = span;
+    wrap.dataset.favSpan = size === "full" ? "full" : "cell";
+    wrap.dataset.favSize = size;
     wrap.dataset.name = String(entry.dev.n || "").toLowerCase();
-    if (span === "full") wrap.classList.add("fav-reorder-full");
+    if (size === "full") wrap.classList.add("fav-reorder-full");
     tile.classList.add("fav-reorder-content");
     wrap.appendChild(tile);
 
@@ -8964,6 +9050,35 @@
     dragHandle.type = "button";
     dragHandle.setAttribute("aria-label", "Drag to reorder");
     dragHandle.innerHTML = DRAG_HANDLE_SVG;
+
+    const sizeBtn = ce("button", "fav-size-btn");
+    sizeBtn.type = "button";
+    const sizeLabel = ce("span", "fav-size-btn-current");
+    const sizeHint = ce("span", "fav-size-btn-label");
+    sizeBtn.appendChild(sizeLabel);
+    sizeBtn.appendChild(sizeHint);
+    function syncSizeBtn() {
+      const cur = wrap.dataset.favSize;
+      const idx = profile.allowed.indexOf(cur);
+      const next = profile.allowed[(idx + 1) % profile.allowed.length];
+      sizeLabel.textContent = favoriteSizeShortLabel(cur);
+      sizeHint.textContent = "→ " + favoriteSizeShortLabel(next);
+      sizeBtn.setAttribute("aria-label", "Tile size " + favoriteSizeLongLabel(cur) + ". Tap for " + favoriteSizeLongLabel(next) + ".");
+      sizeBtn.disabled = profile.allowed.length <= 1;
+    }
+    sizeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (reorderBusy) return;
+      const cur = wrap.dataset.favSize;
+      const idx = profile.allowed.indexOf(cur);
+      const next = profile.allowed[(idx + 1) % profile.allowed.length];
+      cycleFavoriteSize(favId, next, wrap, tile, entry);
+      syncSizeBtn();
+      sizeBtn.focus();
+      flash("Size: " + favoriteSizeLongLabel(next));
+    });
+    syncSizeBtn();
+
     const moveBtns = ce("div", "fav-move-btns");
     const moveEarlier = ce("button", "fav-move-btn");
     moveEarlier.type = "button";
@@ -8986,21 +9101,49 @@
     moveBtns.appendChild(moveEarlier);
     moveBtns.appendChild(moveLater);
     overlay.appendChild(dragHandle);
+    overlay.appendChild(sizeBtn);
     overlay.appendChild(moveBtns);
     wrap.appendChild(overlay);
     attachFavoriteReorder(wrap, dragHandle);
-    favoritesReorderEls.set(favId, { moveEarlier, moveLater });
+    favoritesReorderEls.set(favId, { moveEarlier, moveLater, sizeBtn, syncSizeBtn });
     grid.appendChild(wrap);
+  }
+
+  function cycleFavoriteSize(favId, next, wrap, tile, entry) {
+    for (const p of FAVORITE_SIZE_PRESETS) wrap.classList.remove("fav-size-" + p);
+    wrap.classList.add("fav-size-" + next);
+    wrap.dataset.favSize = next;
+    wrap.dataset.favSpan = next === "full" ? "full" : "cell";
+    wrap.classList.toggle("fav-reorder-full", next === "full");
+    for (const p of FAVORITE_SIZE_PRESETS) tile.classList.remove("fav-size-" + p);
+    tile.classList.add("fav-size-" + next);
+    tile.dataset.favSize = next;
+    const profile = favoriteSizeProfile(entry);
+    if (next === profile.default) delete favoriteSizes[favId];
+    else favoriteSizes[favId] = next;
+    updateFavoritesDraftOrderFromDom();
+  }
+
+  function favoriteSizeShortLabel(size) {
+    return size === "full" ? "1×4" : size === "square" ? "2×2" : size === "wide" ? "1×2" : size === "compact" ? "½×1" : "1×1";
+  }
+  function favoriteSizeLongLabel(size) {
+    return size === "full" ? "wide row (1 by 4)"
+      : size === "square" ? "square (2 by 2)"
+      : size === "wide" ? "wide (1 by 2)"
+      : size === "compact" ? "compact (half by 1)"
+      : "standard (1 by 1)";
   }
 
   function enterFavoritesReorderMode() {
     if (!tabMode || activeTab !== "favorites") return;
     const entries = getFavoriteEntries();
-    if (entries.length < 2) {
-      flash("Add at least two favorites to reorder");
+    if (entries.length < 1) {
+      flash("Add a favorite first");
       return;
     }
     favoritesReorderSnapshot = favorites.slice();
+    favoritesReorderSnapshotSizes = { ...favoriteSizes };
     favoritesReorderDraftOrder = null;
     favoritesReorderEls.clear();
     stopPolling();
@@ -9025,6 +9168,7 @@
     favoritesReorderActive = false;
     favoritesReorderDraftOrder = null;
     favoritesReorderSnapshot = null;
+    favoritesReorderSnapshotSizes = null;
     favoritesReorderEls.clear();
     favoritesReorderSaving = false;
     reorderMode = false;
@@ -9046,21 +9190,25 @@
     if (favoritesReorderSaving) return false;
     cleanupFavDragState();
     const order = currentFavoritesOrderFromDom();
+    const sizes = normalizedFavoriteSizes(order);
     favoritesReorderSaving = true;
     if (REORDER_DONE_BTN) REORDER_DONE_BTN.disabled = true;
-    const saved = await saveFavorites(order);
+    const saved = await saveFavorites(order, sizes);
     favoritesReorderSaving = false;
     if (REORDER_DONE_BTN) REORDER_DONE_BTN.disabled = false;
     if (!saved) return false;
     replaceList(favorites, order);
+    favoriteSizes = sizes;
     lastDataSig = "";
     exitFavoritesReorderMode(true);
-    flash("Order saved");
+    flash("Order & sizes saved");
     return true;
   }
 
   function cancelFavoritesReorderMode() {
     if (favoritesReorderSnapshot) replaceList(favorites, favoritesReorderSnapshot);
+    if (favoritesReorderSnapshotSizes) favoriteSizes = { ...favoritesReorderSnapshotSizes };
+    else favoriteSizes = {};
     lastDataSig = "";
     exitFavoritesReorderMode(false);
   }
