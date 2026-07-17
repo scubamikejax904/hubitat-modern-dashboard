@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.12
+
+- **Favorites:** lock tiles support full and square sizes only (wide removed);
+  existing lock favorites saved as wide migrate to square automatically.
+  Garage doors still support wide.
+
 ## 0.3.11
 
 - **Favorites:** on phones, wide/square/standard/compact tiles use a single column

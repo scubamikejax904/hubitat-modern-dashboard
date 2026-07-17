@@ -7346,7 +7346,8 @@
   function favoriteSizeProfile(entry) {
     const t = entry.type;
     if (t === "thermostat") return { default: "full", allowed: ["full", "square"] };
-    if (t === "lock" || t === "garage") return { default: "full", allowed: ["full", "square", "wide"] };
+    if (t === "lock") return { default: "full", allowed: ["full", "square"] };
+    if (t === "garage") return { default: "full", allowed: ["full", "square", "wide"] };
     if (t === "shade" || t === "fan" || t === "music") return { default: "full", allowed: ["full", "square", "wide"] };
     if (t === "light") return entry.dev && entry.dev.d
       ? { default: "standard", allowed: ["standard", "wide"] }
@@ -7358,6 +7359,14 @@
     return { default: "standard", allowed: ["standard"] };
   }
 
+  function coerceFavoriteSize(entry, size) {
+    const profile = favoriteSizeProfile(entry);
+    if (!size) return profile.default;
+    if (profile.allowed.includes(size)) return size;
+    if (entry.type === "lock" && size === "wide") return "square";
+    return profile.default;
+  }
+
   function normalizedFavoriteSizes(order) {
     const out = {};
     for (const id of order) {
@@ -7366,7 +7375,8 @@
       if (entry) {
         if (!size) continue;
         const profile = favoriteSizeProfile(entry);
-        if (size !== profile.default && profile.allowed.includes(size)) out[id] = size;
+        const coerced = coerceFavoriteSize(entry, size);
+        if (coerced !== profile.default && profile.allowed.includes(coerced)) out[id] = coerced;
       } else if (size && FAVORITE_SIZE_PRESET_SET.has(size)) {
         // Device metadata can lag — keep the known size for the hub save.
         out[id] = size;
@@ -7389,7 +7399,8 @@
       const entry = getFavoriteEntries().find((e) => Number(e.dev.i) === id);
       if (entry) {
         const profile = favoriteSizeProfile(entry);
-        if (size !== profile.default && profile.allowed.includes(size)) next[id] = size;
+        const coerced = coerceFavoriteSize(entry, size);
+        if (coerced !== profile.default && profile.allowed.includes(coerced)) next[id] = coerced;
       } else if (FAVORITE_SIZE_PRESET_SET.has(size)) {
         // Device metadata can lag on the first paint — keep the server size until the entry resolves.
         next[id] = size;
@@ -8919,7 +8930,7 @@
   function resolveFavoriteSize(entry) {
     const profile = favoriteSizeProfile(entry);
     const saved = favoriteSizes[entry.dev.i];
-    if (saved && profile.allowed.includes(saved)) return saved;
+    if (saved) return coerceFavoriteSize(entry, saved);
     return profile.default;
   }
 
