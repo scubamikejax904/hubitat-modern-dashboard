@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.7
+
+- **Favorites:** square tile preset uses a true 1:1 aspect ratio at every breakpoint
+  (including phones) instead of fixed heights that could overflow or clip.
+- **Favorites:** lock and garage square tiles — tighter layout, status hidden in
+  favor of name + stacked Lock/Unlock buttons that fit the square.
+
 ## 0.3.6
 
 - **Favorites:** tile sizes load immediately from a local cache on open, then sync

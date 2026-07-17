@@ -2043,9 +2043,16 @@ body {
   margin-inline: auto;
   gap: var(--fav-gap);
 }
-.quick-body-favorites .quick-fav-grid .quick-fav-span,
 .quick-body-favorites .quick-fav-grid .quick-fav-tstat {
   grid-column: auto;
+  grid-row: auto;
+}
+/* Sized direct children win over legacy full-bleed rules (e.g. .quick-fav-tstat). */
+.quick-body-favorites .quick-fav-grid > .fav-size-square,
+.quick-body-favorites .quick-fav-grid > .fav-size-wide,
+.quick-body-favorites .quick-fav-grid > .fav-size-standard,
+.quick-body-favorites .quick-fav-grid > .fav-size-compact,
+.quick-body-favorites .quick-fav-grid > .fav-size-full {
   grid-row: auto;
 }
 
@@ -2056,7 +2063,9 @@ body {
 }
 .quick-body-favorites .quick-fav-grid > .fav-size-square {
   grid-column: span 2;
-  min-height: 168px;
+  min-height: 0;
+  aspect-ratio: 1;
+  align-self: start;
 }
 .quick-body-favorites .quick-fav-grid > .fav-size-wide {
   grid-column: span 2;
@@ -2082,8 +2091,9 @@ body {
     min-height: 96px;
   }
   .quick-body-favorites .quick-fav-grid > .fav-size-square {
-    grid-column: span 2;
-    min-height: 160px;
+    grid-column: span 1;
+    min-height: 0;
+    aspect-ratio: 1;
   }
   .quick-body-favorites .quick-fav-grid > .fav-size-wide {
     grid-column: span 2;
@@ -2112,7 +2122,7 @@ body {
     grid-column: span 1;
   }
   .quick-body-favorites .quick-fav-grid > .fav-size-full { min-height: 88px; }
-  .quick-body-favorites .quick-fav-grid > .fav-size-square { min-height: 148px; }
+  .quick-body-favorites .quick-fav-grid > .fav-size-square { min-height: 0; aspect-ratio: 1; }
   .quick-body-favorites .quick-fav-grid > .fav-size-wide { min-height: 84px; }
   .quick-body-favorites .quick-fav-grid > .fav-size-standard { min-height: 112px; }
   .quick-body-favorites .quick-fav-grid > .fav-size-compact { min-height: 52px; }
@@ -2142,20 +2152,20 @@ body {
   height: 100%;
 }
 .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-full { min-height: 96px; height: 96px; }
-.favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-square { min-height: 168px; height: 168px; }
+.favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-square { min-height: 0; height: auto; aspect-ratio: 1; }
 .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-wide { min-height: 96px; height: 96px; }
 .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-standard { min-height: 132px; height: 132px; }
 .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-compact { min-height: 64px; height: 64px; }
 @media (max-width: 539px) {
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-full { min-height: 96px; height: 96px; }
-  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-square { min-height: 160px; height: 160px; }
+  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-square { min-height: 0; height: auto; aspect-ratio: 1; }
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-wide { min-height: 88px; height: 88px; }
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-standard { min-height: 120px; height: 120px; }
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-compact { min-height: 56px; height: 56px; }
 }
 @media (max-width: 359px) {
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-full { min-height: 88px; height: 88px; }
-  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-square { min-height: 148px; height: 148px; }
+  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-square { min-height: 0; height: auto; aspect-ratio: 1; }
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-wide { min-height: 84px; height: 84px; }
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-standard { min-height: 112px; height: 112px; }
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-compact { min-height: 52px; height: 52px; }
@@ -2213,38 +2223,55 @@ body {
 .quick-body-favorites .fav-size-wide .quick-fav-tstat-name { text-align: center; }
 
 /* ---- Lock / garage: square stacks status + vertical actions; wide is horizontal ---- */
+.quick-body-favorites .quick-fav-grid > .fav-size-square.quick-lock-row,
+.quick-body-favorites .fav-reorder-item.fav-size-square {
+  overflow: hidden;
+}
 .quick-body-favorites .fav-size-square.quick-lock-row {
   justify-content: space-between;
-  gap: 8px;
-  padding: 12px;
+  gap: 6px;
+  padding: 10px;
   min-height: 0;
   height: 100%;
+  box-sizing: border-box;
 }
 .quick-body-favorites .fav-size-square.quick-lock-row .quick-fav-row-head {
   width: 100%;
   flex: 0 0 auto;
+  gap: 4px;
 }
 .quick-body-favorites .fav-size-square.quick-lock-row .quick-fav-name {
   text-align: center;
   width: 100%;
-}
-.quick-body-favorites .fav-size-square.quick-lock-row .quick-fav-meta {
-  text-align: center;
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
+  font-size: 13px;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.quick-body-favorites .fav-size-square.quick-lock-row .quick-fav-meta {
+  display: none;
+}
+.quick-body-favorites .fav-size-square.quick-lock-row .tile-fav {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
 .quick-body-favorites .fav-size-square.quick-lock-row .quick-lock-actions {
   flex-direction: column;
   width: 100%;
-  gap: 6px;
+  gap: 5px;
   margin-top: auto;
 }
 .quick-body-favorites .fav-size-square.quick-lock-row .quick-lock-btn {
-  min-height: 36px;
-  font-size: 13px;
+  min-height: 32px;
+  font-size: 12px;
+  padding: 0 8px;
+}
+.quick-body-favorites .fav-size-square.quick-lock-row .quick-lock-btn svg {
+  width: 14px;
+  height: 14px;
 }
 .quick-body-favorites .fav-size-wide.quick-lock-row {
   flex-direction: row;

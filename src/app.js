@@ -8835,7 +8835,8 @@
   function favoriteReorderGridSpan(size) {
     if (window.matchMedia("(max-width: 359px)").matches) return 1;
     if (window.matchMedia("(max-width: 539px)").matches) {
-      return size === "standard" || size === "compact" ? 1 : 2;
+      if (size === "square" || size === "standard" || size === "compact") return 1;
+      return 2;
     }
     if (size === "full") return 4;
     if (size === "square" || size === "wide") return 2;
@@ -8855,10 +8856,17 @@
   function applyFavoriteReorderPreview(wrap, size) {
     if (!wrap || !size) return;
     const span = favoriteReorderGridSpan(size);
-    const height = favoriteReorderPreviewHeight(size);
     wrap.style.gridColumn = "span " + span;
-    wrap.style.height = height + "px";
-    wrap.style.minHeight = height + "px";
+    if (size === "square") {
+      wrap.style.aspectRatio = "1";
+      wrap.style.height = "auto";
+      wrap.style.minHeight = "0";
+    } else {
+      wrap.style.aspectRatio = "";
+      const height = favoriteReorderPreviewHeight(size);
+      wrap.style.height = height + "px";
+      wrap.style.minHeight = height + "px";
+    }
     const grid = wrap.parentElement;
     if (grid) void grid.offsetHeight;
   }
