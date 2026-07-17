@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.8
+
+- **Favorites:** lock tiles show a centered lock icon with locked/unlocked styling;
+  square preset uses icon-only Lock/Unlock buttons to fit the layout.
+- **Favorites:** size saves are more reliable when device metadata loads after the
+  first paint — sizes are kept through hub sync instead of being dropped locally.
+
 ## 0.3.7
 
 - **Favorites:** square tile preset uses a true 1:1 aspect ratio at every breakpoint

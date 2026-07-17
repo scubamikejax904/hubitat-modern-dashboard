@@ -2253,6 +2253,26 @@ body {
 .quick-body-favorites .fav-size-square.quick-lock-row .quick-fav-meta {
   display: none;
 }
+.quick-body-favorites .quick-lock-row .quick-lock-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-height: 0;
+  pointer-events: none;
+}
+.quick-body-favorites .quick-lock-row .quick-lock-art svg {
+  width: 34px;
+  height: 34px;
+  display: block;
+}
+.quick-body-favorites .fav-size-square.quick-lock-row .quick-lock-art svg {
+  width: 30px;
+  height: 30px;
+}
+.quick-body-favorites .fav-size-square.quick-lock-row.is-unlocked .quick-lock-art {
+  opacity: 0.72;
+}
 .quick-body-favorites .fav-size-square.quick-lock-row .tile-fav {
   width: 24px;
   height: 24px;
@@ -2268,10 +2288,14 @@ body {
   min-height: 32px;
   font-size: 12px;
   padding: 0 8px;
+  gap: 0;
+}
+.quick-body-favorites .fav-size-square.quick-lock-row .quick-lock-btn-label {
+  display: none;
 }
 .quick-body-favorites .fav-size-square.quick-lock-row .quick-lock-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 .quick-body-favorites .fav-size-wide.quick-lock-row {
   flex-direction: row;

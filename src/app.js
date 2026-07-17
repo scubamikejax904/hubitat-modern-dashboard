@@ -7265,6 +7265,14 @@
     head.appendChild(fav);
     row.appendChild(head);
 
+    let art = null;
+    if (inFav) {
+      art = ce("div", "quick-lock-art");
+      art.innerHTML = LOCK_SVG;
+      art.setAttribute("aria-hidden", "true");
+      row.appendChild(art);
+    }
+
     const actions = ce("div", "quick-lock-actions");
     const lockBtn = ce("button", "quick-lock-btn");
     lockBtn.type = "button";
@@ -7288,7 +7296,10 @@
     row.appendChild(actions);
 
     if (inFav) {
-      favLockMap.set(lock.i, { el: row, meta, lockBtn, unlockBtn, favBtn: fav });
+      const isLocked = effectiveLock(lock);
+      row.classList.toggle("is-locked", isLocked);
+      row.classList.toggle("is-unlocked", !isLocked);
+      favLockMap.set(lock.i, { el: row, meta, art, lockBtn, unlockBtn, favBtn: fav });
     }
     return row;
   }
@@ -7298,6 +7309,8 @@
     if (!rec) return;
     rec.meta.textContent = roomLabel(lock.r) + " · " + lockStatusLabel(lock);
     const isLocked = effectiveLock(lock);
+    rec.el.classList.toggle("is-locked", isLocked);
+    rec.el.classList.toggle("is-unlocked", !isLocked);
     rec.lockBtn.classList.toggle("active", isLocked);
     rec.unlockBtn.classList.toggle("active", !isLocked);
   }
@@ -7348,11 +7361,15 @@
     const out = {};
     for (const id of order) {
       const size = favoriteSizes[id];
-      if (!size) continue;
       const entry = getFavoriteEntries().find((e) => Number(e.dev.i) === Number(id));
-      if (!entry) continue;
-      const profile = favoriteSizeProfile(entry);
-      if (size !== profile.default && profile.allowed.includes(size)) out[id] = size;
+      if (entry) {
+        if (!size) continue;
+        const profile = favoriteSizeProfile(entry);
+        if (size !== profile.default && profile.allowed.includes(size)) out[id] = size;
+      } else if (size && FAVORITE_SIZE_PRESET_SET.has(size)) {
+        // Device metadata can lag — keep the known size for the hub save.
+        out[id] = size;
+      }
     }
     return out;
   }
@@ -9346,8 +9363,6 @@
     if (REORDER_DONE_BTN) REORDER_DONE_BTN.disabled = false;
     if (!saved) return false;
     replaceList(favorites, order);
-    favoriteSizes = sizes;
-    saveFavoriteSizesCache(favoriteSizes);
     lastDataSig = "";
     exitFavoritesReorderMode(true);
     flash("Order & sizes saved");
