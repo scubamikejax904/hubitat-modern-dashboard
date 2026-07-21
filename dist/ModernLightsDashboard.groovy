@@ -1,12 +1,12 @@
-// Modern Dashboard v0.3.20
+// Modern Dashboard v0.3.21
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
 //
 // INSTALL:
 //   1. Paste this file into Apps Code, enable OAuth, Save.
-//   2. Upload the 11 files from dist/upload/ to Settings -> File Manager:
-//        mld-index.html, mld-app.css, mld-app.js, mld-app-core.js, mld-app-post.js, mld-app-post2.js, mld-app-post3.js,
+//   2. Upload the 12 files from dist/upload/ to Settings -> File Manager:
+//        mld-index.html, mld-app.css, mld-app-post.css, mld-app.js, mld-app-core.js, mld-app-post.js, mld-app-post2.js, mld-app-post3.js,
 //        mld-manifest.webmanifest, mld-sw.js, mld-icon-192.b64, mld-icon-512.b64
 //   3. Apps -> Add User App -> Modern Dashboard -> select devices -> Done
 
@@ -16,7 +16,7 @@ import groovy.transform.Field
 @Field private static String LOCAL_ASSET_CACHE_VERSION = ""
 @Field private static int LOCAL_ASSET_CACHE_BYTES = 0
 @Field private static final int LOCAL_ASSET_CACHE_MAX_BYTES = 768 * 1024
-@Field private static final String MLD_DEPLOYED_VERSION = "0.3.20"
+@Field private static final String MLD_DEPLOYED_VERSION = "0.3.21"
 
 definition(
     name: "Modern Dashboard",
@@ -50,7 +50,7 @@ def mainPage() {
             } else {
                 paragraph "<small><b>Hub-only:</b> UI and API run entirely on your hub — no Maker API or third-party cloud.</small>"
             }
-            paragraph "<small>Version 0.3.20 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
+            paragraph "<small>Version 0.3.21 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         if (assetsOk) {
             section("Dashboard links") {
@@ -64,7 +64,7 @@ def mainPage() {
                 def need = requiredAssetFiles()
                 def missing = need.findAll { n -> !fileNamePresent(names, n) }
                 paragraph "Upload these files via <b>Settings → File Manager</b> (root folder, exact names):"
-                paragraph "<ul><li><code>mld-index.html</code></li><li><code>mld-app.css</code></li><li><code>mld-app.js</code></li><li><code>mld-app-core.js</code></li><li><code>mld-app-post.js</code></li><li><code>mld-app-post2.js</code></li><li><code>mld-app-post3.js</code></li><li><code>mld-manifest.webmanifest</code></li><li><code>mld-sw.js</code></li><li><code>mld-icon-192.b64</code></li><li><code>mld-icon-512.b64</code></li></ul>"
+                paragraph "<ul><li><code>mld-index.html</code></li><li><code>mld-app.css</code></li><li><code>mld-app-post.css</code></li><li><code>mld-app.js</code></li><li><code>mld-app-core.js</code></li><li><code>mld-app-post.js</code></li><li><code>mld-app-post2.js</code></li><li><code>mld-app-post3.js</code></li><li><code>mld-manifest.webmanifest</code></li><li><code>mld-sw.js</code></li><li><code>mld-icon-192.b64</code></li><li><code>mld-icon-512.b64</code></li></ul>"
                 if (names) {
                     def mld = names.findAll { it?.contains("mld-") }
                     paragraph "<small>Files seen on hub: ${mld ? mld.join(', ') : '(none matching mld-*)'}</small>"
@@ -834,6 +834,7 @@ def rewriteDashboardAssetRefsToFileManager(String html) {
     def base = "${hubBaseUri()}/local"
     [
         ["href", "app.css", assetCssFile()],
+        ["href", "app-post.css", assetCssPostFile()],
         ["src", "app.js", assetJsFile()],
         ["src", "app-core.js", assetJsCoreFile()],
         ["src", "app-post.js", assetJsPostFile()],
@@ -853,6 +854,7 @@ def rewriteDashboardAssetRefsToFileManager(String html) {
 // File Manager asset names (uploaded to /local/)
 def assetHtmlFile() { return "mld-index.html" }
 def assetCssFile()  { return "mld-app.css" }
+def assetCssPostFile() { return "mld-app-post.css" }
 def assetJsFile()   { return "mld-app.js" }
 def assetJsCoreFile() { return "mld-app-core.js" }
 def assetJsPostFile() { return "mld-app-post.js" }
@@ -865,7 +867,7 @@ def assetIcon512File() { return "mld-icon-512.b64" }
 
 def requiredAssetFiles() {
     return [
-        assetHtmlFile(), assetCssFile(), assetJsFile(), assetJsCoreFile(), assetJsPostFile(), assetJsPost2File(), assetJsPost3File(),
+        assetHtmlFile(), assetCssFile(), assetCssPostFile(), assetJsFile(), assetJsCoreFile(), assetJsPostFile(), assetJsPost2File(), assetJsPost3File(),
         assetManifestFile(), assetSwFile(), assetIcon192File()
     ]
 }
@@ -1073,7 +1075,7 @@ def renderPngFromBase64Asset(String b64FileName, String missingMsg) {
 }
 
 def missingAssetHtml() {
-    return """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Setup</title></head><body style="font-family:system-ui;padding:24px;max-width:520px;margin:auto;line-height:1.5"><h1>Setup required</h1><p>Modern Dashboard serves its UI from File Manager on your hub. Upload these eleven files to <b>Settings &rarr; File Manager</b> (root folder, exact names):</p><ul><li>mld-index.html</li><li>mld-app.css</li><li>mld-app.js</li><li>mld-app-core.js</li><li>mld-app-post.js</li><li>mld-app-post2.js</li><li>mld-app-post3.js</li><li>mld-manifest.webmanifest</li><li>mld-sw.js</li><li>mld-icon-192.b64</li><li>mld-icon-512.b64</li></ul><p><b>Easiest install:</b> use <a href="https://github.com/evdev/hubitat-modern-dashboard#readme">Hubitat Package Manager</a> — OAuth and File Manager files are deployed automatically.</p><p>Then reopen the Modern Dashboard app, select your devices, and open the dashboard link.</p></body></html>"""
+    return """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Setup</title></head><body style="font-family:system-ui;padding:24px;max-width:520px;margin:auto;line-height:1.5"><h1>Setup required</h1><p>Modern Dashboard serves its UI from File Manager on your hub. Upload these twelve files to <b>Settings &rarr; File Manager</b> (root folder, exact names):</p><ul><li>mld-index.html</li><li>mld-app.css</li><li>mld-app-post.css</li><li>mld-app.js</li><li>mld-app-core.js</li><li>mld-app-post.js</li><li>mld-app-post2.js</li><li>mld-app-post3.js</li><li>mld-manifest.webmanifest</li><li>mld-sw.js</li><li>mld-icon-192.b64</li><li>mld-icon-512.b64</li></ul><p><b>Easiest install:</b> use <a href="https://github.com/evdev/hubitat-modern-dashboard#readme">Hubitat Package Manager</a> — OAuth and File Manager files are deployed automatically.</p><p>Then reopen the Modern Dashboard app, select your devices, and open the dashboard link.</p></body></html>"""
 }
 
 // ---------------------------------------------------------------------------
@@ -1083,6 +1085,7 @@ mappings {
     path("/dashboard") { action: [GET: "renderIndex"] }
     path("/")          { action: [GET: "renderIndex"] }
     path("/app.css")   { action: [GET: "renderCss"] }
+    path("/app-post.css") { action: [GET: "renderCssPost"] }
     path("/app.js")    { action: [GET: "renderJs"] }
     path("/app-core.js") { action: [GET: "renderJsCore"] }
     path("/app-post.js") { action: [GET: "renderJsPost"] }
@@ -1156,6 +1159,7 @@ def renderIndex() {
     if (token) {
         def q = "?access_token=${token}"
         html = appendAccessToken(html, "href", "app.css", token)
+        html = appendAccessToken(html, "href", "app-post.css", token)
         html = html.replace('href="manifest.webmanifest"', "href=\"manifest.webmanifest${q}\"")
         if (!iconHref) {
             html = html.replace('href="icons/icon-192.png"', "href=\"icons/icon-192.png${q}\"")
@@ -1172,6 +1176,12 @@ def renderIndex() {
 def renderCss() {
     def css = readLocalAsset(assetCssFile())
     if (!css) { css = "/* upload mld-app.css to File Manager */" }
+    renderVersionedAsset("text/css", css)
+}
+
+def renderCssPost() {
+    def css = readLocalAsset(assetCssPostFile())
+    if (!css) { css = "/* upload mld-app-post.css to File Manager */" }
     renderVersionedAsset("text/css", css)
 }
 
@@ -1617,7 +1627,12 @@ def renderData() {
     out << snapshotsJsonFragment()
     out << lightJobJsonFragment()
     out << sunTimesJsonFragment()
-    out << schedulesJsonFragment()
+    // Cloud MQTT ~128 KB limit: schedules can make /data fail entirely. Client loads via GET /schedules.
+    if (request?.requestSource == "cloud") {
+        out << ',"schedules":null'
+    } else {
+        out << schedulesJsonFragment()
+    }
     if (authRenewed) {
         out << ",\"dashSession\":" << jsonStr(authRenewed.session)
         out << ",\"dashSessionExpiresAt\":" << authRenewed.expiresAt

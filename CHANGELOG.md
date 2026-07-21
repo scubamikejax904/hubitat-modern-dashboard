@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.21
+
+- **Fix:** cloud dashboard could fail with "Cannot reach hub" after embed-card growth —
+  Hubitat Cloud drops oversized OAuth `/data` responses (~128 KB MQTT limit). Schedules
+  are omitted from cloud `/data` and loaded on demand via `GET /schedules`. CSS is split
+  into `mld-app.css` + `mld-app-post.css` so styles stay under the File Manager blob limit.
+
 ## 0.3.20
 
 - **Fix:** cloud dashboard could show only a bare top bar (All on/off) after embed-card

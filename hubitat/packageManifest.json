@@ -2,10 +2,10 @@
 	"packageName": "Modern Dashboard",
 	"minimumHEVersion": "2.3.0",
 	"author": "Ephrayim (evdev)",
-	"version": "0.3.20",
+	"version": "0.3.21",
 	"dateReleased": "2026-07-21",
 	"licenseFile": "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/master/LICENSE",
-	"releaseNotes": "0.3.20: **Fix:** cloud dashboard could show only a bare top bar (All on/off) after embed-card;   work — Hubitat Cloud drops OAuth responses near its ~128 KB MQTT limit, and;   `mld-app-post2.js` had grown to ~122 KB (it hosts boot/`init`). Rebalanced chunks so;   post2 stays ~81 KB; shades/fans/sensors/scenes move to post3, which loads with the;   other scripts again (no longer deferred).\nControl-first, minimal-effort Hubitat dashboard (mDash): pick devices and go — rooms and layout are automatic. Optimized for control (not just status): bulk room/house on/off, multi-thermostat control, drag-to-dim. Installable PWA from the cloud URL. Built-in scheduler (daily/weekly/once/sunrise/sunset/mode) managed from the dashboard without Hubitat admin login. Lights, shades, ceiling fans, thermostats, locks, HSM, scenes, hub mode, music/media, and sensors. Snapshots, favorites, and reorderable rooms/nav. Fully hosted on your hub — no Maker API or third-party cloud.",
+	"releaseNotes": "0.3.21: **Fix:** cloud dashboard could fail with \"Cannot reach hub\" after embed-card growth —;   Hubitat Cloud drops oversized OAuth `/data` responses (~128 KB MQTT limit). Schedules;   are omitted from cloud `/data` and loaded on demand via `GET /schedules`. CSS is split;   into `mld-app.css` + `mld-app-post.css` so styles stay under the File Manager blob limit.\nControl-first, minimal-effort Hubitat dashboard (mDash): pick devices and go — rooms and layout are automatic. Optimized for control (not just status): bulk room/house on/off, multi-thermostat control, drag-to-dim. Installable PWA from the cloud URL. Built-in scheduler (daily/weekly/once/sunrise/sunset/mode) managed from the dashboard without Hubitat admin login. Lights, shades, ceiling fans, thermostats, locks, HSM, scenes, hub mode, music/media, and sensors. Snapshots, favorites, and reorderable rooms/nav. Fully hosted on your hub — no Maker API or third-party cloud.",
 	"documentationLink": "https://github.com/evdev/hubitat-modern-dashboard#readme",
 	"communityLink": "https://community.hubitat.com/t/release-modern-dashboard-mdash-minimal-setup-pwa-with-built-in-scheduler-runs-entirely-on-your-hub/165028",
 	"gitHubUrl": "https://github.com/evdev/hubitat-modern-dashboard",
@@ -30,6 +30,11 @@
 			"id": "c2b3d4e5-f6a7-8901-bcde-f12345678901",
 			"name": "mld-app.css",
 			"location": "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/beta/dist/upload/mld-app.css"
+		},
+		{
+			"id": "c3b4d5e6-f7a8-9012-bcde-f23456789012",
+			"name": "mld-app-post.css",
+			"location": "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/beta/dist/upload/mld-app-post.css"
 		},
 		{
 			"id": "e4d5f6a7-b8c9-0123-def0-234567890123",

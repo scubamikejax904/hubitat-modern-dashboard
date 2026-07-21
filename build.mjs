@@ -60,6 +60,7 @@ const HPM_APP_ID = "a4f8c2e1-6b3d-4a9f-8e7c-1d2b3c4d5e6f";
 const FILE_MANAGER_ASSETS = [
   { id: "b1a2c3d4-e5f6-7890-abcd-ef1234567890", name: "mld-index.html" },
   { id: "c2b3d4e5-f6a7-8901-bcde-f12345678901", name: "mld-app.css" },
+  { id: "c3b4d5e6-f7a8-9012-bcde-f23456789012", name: "mld-app-post.css" },
   { id: "e4d5f6a7-b8c9-0123-def0-234567890123", name: "mld-app.js" },
   { id: "a1b2c3d4-e5f6-7890-abcd-ef1234567891", name: "mld-app-core.js" },
   { id: "f5e6a7b8-c9d0-1234-ef01-345678901234", name: "mld-app-post.js" },
@@ -543,9 +544,16 @@ const indexHtml = readFileSync(join(root, "src", "index.html"), "utf8")
   .replaceAll("__APP_VERSION__", pkg.version);
 writeFileSync(join(upload, "mld-index.html"), indexHtml);
 
-const cssOut = minifyCss("mld-app.css", readFileSync(join(root, "src", "styles.css"), "utf8"));
-assertUnderHubLimit("mld-app.css", cssOut);
-writeFileSync(join(upload, "mld-app.css"), cssOut);
+const cssSource = readFileSync(join(root, "src", "styles.css"), "utf8");
+const CSS_SPLIT = "/* __MLD_CSS_SPLIT__ */";
+const cssSplitIdx = cssSource.indexOf(CSS_SPLIT);
+if (cssSplitIdx < 0) throw new Error(`Missing ${CSS_SPLIT} in src/styles.css`);
+const cssPart1 = minifyCss("mld-app.css", cssSource.slice(0, cssSplitIdx));
+const cssPart2 = minifyCss("mld-app-post.css", cssSource.slice(cssSplitIdx + CSS_SPLIT.length));
+assertUnderHubLimit("mld-app.css", cssPart1);
+assertUnderHubLimit("mld-app-post.css", cssPart2);
+writeFileSync(join(upload, "mld-app.css"), cssPart1);
+writeFileSync(join(upload, "mld-app-post.css"), cssPart2);
 
 copyFileSync(join(root, "src", "manifest.webmanifest"), join(upload, "mld-manifest.webmanifest"));
 copyFileSync(join(root, "src", "sw.js"), join(upload, "mld-sw.js"));

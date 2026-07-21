@@ -639,7 +639,19 @@ const server = createServer(async (req, res) => {
   }
   if (p === "/app.css") {
     res.writeHead(200, { "Content-Type": "text/css" });
-    return res.end(existsSync(join(distUpload, "mld-app.css")) ? readDist("mld-app.css") : read("src/styles.css"));
+    if (existsSync(join(distUpload, "mld-app.css"))) return res.end(readDist("mld-app.css"));
+    const css = read("src/styles.css");
+    const marker = "/* __MLD_CSS_SPLIT__ */";
+    const idx = css.indexOf(marker);
+    return res.end(idx >= 0 ? css.slice(0, idx) : css);
+  }
+  if (p === "/app-post.css") {
+    res.writeHead(200, { "Content-Type": "text/css" });
+    if (existsSync(join(distUpload, "mld-app-post.css"))) return res.end(readDist("mld-app-post.css"));
+    const css = read("src/styles.css");
+    const marker = "/* __MLD_CSS_SPLIT__ */";
+    const idx = css.indexOf(marker);
+    return res.end(idx >= 0 ? css.slice(idx + marker.length) : "");
   }
   if (p === "/app.js") {
     res.writeHead(200, { "Content-Type": "application/javascript" });

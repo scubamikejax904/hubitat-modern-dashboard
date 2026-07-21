@@ -1535,6 +1535,7 @@ body {
 .scheduler-placeholder { margin: 12px 4px; color: var(--muted); font-size: 1rem; }
 
 /* ---------- scheduler (touch-optimized) ---------- */
+/* __MLD_CSS_SPLIT__ */
 .sched-list-wrap { display: flex; flex-direction: column; gap: 14px; }
 .sched-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 4px; }
 .sched-section-title { margin: 0; font-size: 1.125rem; font-weight: 700; }

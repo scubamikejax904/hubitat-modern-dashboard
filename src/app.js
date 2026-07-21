@@ -1506,7 +1506,19 @@
 
   async function getJson(url, authPass) {
     const pass = authPass || 0;
-    const r = await fetchWithTimeout(withToken(url), { cache: "no-store", headers: { "Accept": "application/json" } });
+    let r;
+    try {
+      r = await fetchWithTimeout(withToken(url), { cache: "no-store", headers: { "Accept": "application/json" } });
+    } catch (e) {
+      if (e?.name === "AbortError") {
+        const err = new Error("timed out");
+        err.code = "timeout";
+        throw err;
+      }
+      const err = new Error(e?.message || "network error");
+      err.code = "network";
+      throw err;
+    }
     if (r.status === 401) {
       // First 401: reload any just-saved session and retry before prompting again.
       // Clearing first caused a second password prompt when /data raced unlock.
@@ -1521,8 +1533,19 @@
       err.code = "auth_required";
       throw err;
     }
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const data = await r.json();
+    if (!r.ok) {
+      const err = new Error("HTTP " + r.status);
+      err.status = r.status;
+      throw err;
+    }
+    let data;
+    try {
+      data = await r.json();
+    } catch {
+      const err = new Error("invalid JSON (response may exceed Hubitat Cloud ~128 KB limit)");
+      err.code = "bad_json";
+      throw err;
+    }
     applyDashSessionFromResponse(data);
     return data;
   }
@@ -12400,6 +12423,8 @@
   const SCHED_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const SCHED_OFFSET_PRESETS = [-60, -45, -30, -15, 0, 15, 30, 45, 60];
   let schedules = [];
+  let schedulesLoadedFromHub = false;
+  let schedulesLoadPromise = null;
   let sunTimes = { sunrise: null, sunset: null };
   let schedUse24Hour = false;
   let schedDraft = null;     // in-progress create/edit draft
@@ -12413,13 +12438,36 @@
       schedDraft = null;
       schedEditingId = null;
       schedStep = 1;
+      schedulesLoadedFromHub = false;
     }
-    if (Array.isArray(data.schedules)) schedules = data.schedules;
+    if (Array.isArray(data.schedules)) {
+      schedules = data.schedules;
+      schedulesLoadedFromHub = true;
+    }
     if (data.sunTimes && typeof data.sunTimes === "object") {
       sunTimes = { sunrise: data.sunTimes.sunrise ?? null, sunset: data.sunTimes.sunset ?? null };
     }
     schedUse24Hour = data.schedUse24Hour === true;
     if (schedulerViewIsActive() && schedulerEnabled) renderSchedulerActive();
+  }
+
+  async function ensureSchedulesLoaded() {
+    if (!schedulerEnabled || schedulesLoadedFromHub) return;
+    if (schedulesLoadPromise) return schedulesLoadPromise;
+    schedulesLoadPromise = (async () => {
+      try {
+        const res = await getJson("schedules");
+        if (Array.isArray(res?.schedules)) {
+          schedules = res.schedules;
+          schedulesLoadedFromHub = true;
+        }
+      } catch (e) {
+        console.warn("Modern Dashboard: schedules fetch failed", e);
+      } finally {
+        schedulesLoadPromise = null;
+      }
+    })();
+    return schedulesLoadPromise;
   }
 
   function schedulerViewIsActive() {
@@ -12800,6 +12848,9 @@
   }
 
   function renderSchedulerView() {
+    void ensureSchedulesLoaded().then(() => {
+      if (schedulerViewIsActive()) renderSchedulerActive();
+    });
     renderSchedulerActive();
   }
 
@@ -12837,6 +12888,12 @@
     header.appendChild(addBtn);
     wrap.appendChild(header);
 
+    if (!schedulesLoadedFromHub && schedulesLoadPromise) {
+      const empty = ce("div", "empty");
+      empty.textContent = "Loading schedules\u2026";
+      wrap.appendChild(empty);
+      return wrap;
+    }
     if (!schedules.length) {
       const empty = ce("p", "sched-empty");
       empty.textContent = "No schedules yet. Tap \u201cNew schedule\u201d to create one.";
@@ -12888,7 +12945,10 @@
       const res = await schedApi("toggle", { id: s.id });
       toggle.disabled = false;
       if (res?.ok) {
-        if (Array.isArray(res.schedules)) schedules = res.schedules;
+        if (Array.isArray(res.schedules)) {
+          schedules = res.schedules;
+          schedulesLoadedFromHub = true;
+        }
         renderSchedulerActive();
       } else {
         flash(res?.error || "Toggle failed", true);
@@ -12935,7 +12995,10 @@
       const res = await schedApi("delete", { id: s.id });
       delBtn.disabled = false;
       if (res?.ok) {
-        if (Array.isArray(res.schedules)) schedules = res.schedules;
+        if (Array.isArray(res.schedules)) {
+          schedules = res.schedules;
+          schedulesLoadedFromHub = true;
+        }
         renderSchedulerActive();
       } else {
         flash(res?.error || "Delete failed", true);
@@ -13936,7 +13999,10 @@
     };
     const res = await schedApi("save", payload);
     if (res?.ok) {
-      if (Array.isArray(res.schedules)) schedules = res.schedules;
+      if (Array.isArray(res.schedules)) {
+        schedules = res.schedules;
+        schedulesLoadedFromHub = true;
+      }
       schedDraft = null;
       schedEditingId = null;
       flash("Schedule saved");
