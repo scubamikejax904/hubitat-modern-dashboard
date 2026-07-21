@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.15
+
+- **Favorites:** embed cards style and layout load with the main dashboard (not only
+  after the deferred JS chunk), so the Favorites tab looks correct on first open.
+- **Favorites:** embed editor and reorder mode no longer lose embed state when live
+  `/data` refreshes arrive from another chunk.
+
 ## 0.3.14
 
 - **Favorites:** HTTPS embed cards — add iframe widget URLs (Google Calendar embed,

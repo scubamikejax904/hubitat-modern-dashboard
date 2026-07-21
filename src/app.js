@@ -218,9 +218,18 @@
     return out;
   }
 
+  function syncEmbedStateToMld() {
+    const m = globalThis.__MLD;
+    if (!m) return;
+    m.embedCards = embedCards;
+    m.favoritesLayout = favoritesLayout;
+    m.embedEditorOpen = embedEditorOpen;
+  }
+
   function applyEmbedConfigFromData(d, { allowDuringReorder = false } = {}) {
     if (!d?.config) return false;
-    if (!allowDuringReorder && (postCall("isFavoritesReorderActive") || embedEditorOpen)) return false;
+    const editorOpen = embedEditorOpen || !!globalThis.__MLD?.embedEditorOpen;
+    if (!allowDuringReorder && (postCall("isFavoritesReorderActive") || editorOpen)) return false;
     const nextCards = Array.isArray(d.config.embedCards)
       ? d.config.embedCards.map((c) => ({
           id: String(c.id || ""),
@@ -237,6 +246,7 @@
     const prevSig = favoritesLayout.join(",") + "|" + embedCards.map((c) => c.id + ":" + c.size + ":" + c.url).join("|");
     embedCards = nextCards;
     favoritesLayout = nextLayout;
+    syncEmbedStateToMld();
     const nextSig = favoritesLayout.join(",") + "|" + embedCards.map((c) => c.id + ":" + c.size + ":" + c.url).join("|");
     return prevSig !== nextSig;
   }
@@ -1665,6 +1675,46 @@
     roomMap.clear();
     for (const r of rooms) roomMap.set(r.id, r.name);
   }
+
+  // Embed card chrome styles live in JS (not mld-app.css) to stay under Hubitat's 124 KB CSS blob limit.
+  function ensureFavEmbedStyles() {
+    if (document.getElementById("mld-fav-embed-css")) return;
+    const style = document.createElement("style");
+    style.id = "mld-fav-embed-css";
+    style.textContent =
+      ".fav-embed-card{display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid var(--stroke);border-radius:16px;background:var(--panel);overflow:hidden;position:relative}" +
+      ".fav-embed-head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--stroke)}" +
+      ".fav-embed-title{flex:1;min-width:0;font-size:.92rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".fav-embed-actions{display:flex;align-items:center;gap:4px;position:relative}" +
+      ".fav-embed-open,.fav-embed-expand,.fav-embed-menu-btn,.fav-embed-close-expand{border:1px solid var(--stroke-2);background:var(--panel-solid);color:var(--text);border-radius:999px;padding:4px 10px;font-size:.78rem;font-weight:700;text-decoration:none;cursor:pointer}" +
+      ".fav-embed-menu{position:absolute;right:0;top:calc(100% + 4px);min-width:120px;z-index:5;padding:4px;background:var(--panel-solid);border:1px solid var(--stroke-2);border-radius:12px;box-shadow:var(--shadow)}" +
+      ".fav-embed-menu-item{display:block;width:100%;text-align:left;border:0;background:transparent;color:var(--text);padding:8px 10px;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer}" +
+      ".fav-embed-menu-item.danger{color:#ef4444}" +
+      ".fav-embed-media{position:relative;flex:1;min-height:160px;background:#000}" +
+      ".fav-size-wide.fav-embed-card .fav-embed-media{min-height:180px}" +
+      ".fav-size-tall.fav-embed-card .fav-embed-media{min-height:240px}" +
+      ".fav-size-viewport.fav-embed-card .fav-embed-media{min-height:calc(100dvh - 14rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))}" +
+      ".fav-embed-iframe{position:absolute;inset:0;width:100%;height:100%;border:0}" +
+      ".favorites-reorder-mode .fav-embed-iframe{pointer-events:none}" +
+      ".fav-embed-hint{position:absolute;left:8px;right:8px;bottom:8px;z-index:1;font-size:.72rem;font-weight:600;color:rgba(255,255,255,.78);pointer-events:none}" +
+      ".fav-embed-blocked{display:grid;place-items:center;text-align:center;padding:16px;font-size:.88rem;font-weight:600;min-height:140px}" +
+      ".fav-embed-card.fav-embed-expanded{position:fixed;inset:0;z-index:80;border-radius:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}" +
+      ".fav-embed-card.fav-embed-expanded .fav-embed-media{min-height:0}" +
+      ".fav-embed-close-expand{position:absolute;top:calc(10px + env(safe-area-inset-top));right:12px;z-index:3}" +
+      "body.fav-embed-expanded-open{overflow:hidden}" +
+      ".fav-embed-expand-placeholder{border-radius:16px;border:1px dashed var(--stroke)}" +
+      ".fav-empty{display:flex;flex-direction:column;gap:12px;padding:8px 2px 20px;color:var(--muted)}" +
+      ".fav-embed-editor-panel{width:min(440px,calc(100svw - 32px))}" +
+      ".fav-embed-editor-heading{margin:0 0 6px;font-size:1.1rem}" +
+      ".fav-embed-editor-help{margin:0 0 12px;color:var(--muted);font-size:.88rem;line-height:1.4}" +
+      ".fav-embed-field{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;font-size:.82rem;font-weight:700;color:var(--muted)}" +
+      ".fav-embed-url-input{width:100%;min-height:88px;resize:vertical;border-radius:12px;border:1px solid var(--stroke-2);background:var(--bg);color:var(--text);padding:10px 12px;font:inherit}" +
+      ".fav-embed-editor-error{color:#ef4444;font-size:.85rem;font-weight:600;margin-bottom:8px}" +
+      ".fav-embed-editor-preview{border:1px solid var(--stroke);border-radius:12px;overflow:hidden;height:160px;margin-bottom:12px;background:#000}" +
+      ".fav-embed-editor-preview-frame{width:100%;height:100%;border:0}";
+    document.head.appendChild(style);
+  }
+  ensureFavEmbedStyles();
 
   // ---------- render ----------
   // __MLD_SPLIT_CORE__
@@ -5384,8 +5434,12 @@
       const sensorDev = buildMergedSensorCard(ts, sen);
       if (sensorDev) { deviceById.set(id, { type: "sensor", dev: sensorDev }); continue; }
     }
-    const embedById = new Map(embedCards.map((c) => [c.id, c]));
-    const layout = normalizeFavoritesLayout(favoritesLayout, favorites, embedCards);
+    const embedById = new Map((Array.isArray(embedCards) ? embedCards : []).map((c) => [c.id, c]));
+    const layout = normalizeFavoritesLayout(
+      Array.isArray(favoritesLayout) ? favoritesLayout : [],
+      favorites,
+      Array.isArray(embedCards) ? embedCards : []
+    );
     const out = [];
     const seen = new Set();
     for (const key of layout) {
@@ -5406,7 +5460,7 @@
       const key = deviceFavoriteKey(id);
       if (!seen.has(key)) out.push(entry);
     }
-    for (const card of embedCards) {
+    for (const card of Array.isArray(embedCards) ? embedCards : []) {
       const key = embedFavoriteKey(card.id);
       if (!seen.has(key)) out.push({ type: "embed", card });
     }
@@ -5971,7 +6025,7 @@
     replaceList(valves, Array.isArray(d.valves) ? d.valves : []);
     replaceList(music, d.music);
     replaceList(cameras, sortCamerasByOrder(Array.isArray(d.cameras) ? d.cameras : [], cfg.cameraOrder));
-    if (Array.isArray(d.config?.favorites) && !postCall("isFavoritesReorderActive") && !embedEditorOpen) {
+    if (Array.isArray(d.config?.favorites) && !postCall("isFavoritesReorderActive") && !embedEditorOpen && !globalThis.__MLD?.embedEditorOpen) {
       replaceList(favorites, d.config.favorites.map(Number));
       const favSet = new Set(favorites);
       for (const k of Object.keys(favoriteSizes)) {
@@ -9647,6 +9701,7 @@
     else favoriteSizes = {};
     if (favoritesReorderSnapshotLayout) favoritesLayout = favoritesReorderSnapshotLayout.slice();
     if (favoritesReorderSnapshotEmbeds) embedCards = favoritesReorderSnapshotEmbeds.map((c) => ({ ...c }));
+    syncEmbedStateToMld();
     lastDataSig = "";
     exitFavoritesReorderMode(false);
   }
@@ -9954,6 +10009,7 @@
     const popup = document.getElementById("fav-embed-editor");
     if (!popup) return;
     embedEditorOpen = false;
+    syncEmbedStateToMld();
     popup.classList.remove("open");
     popup.hidden = true;
     if (popup._previewFrame) popup._previewFrame.src = "about:blank";
@@ -10080,6 +10136,7 @@
       });
     }
     embedEditorOpen = true;
+    syncEmbedStateToMld();
     popup._existing = existing || null;
     popup._titleInput.value = existing?.title || "";
     popup._urlInput.value = existing?.url || "";
@@ -11836,6 +11893,7 @@
   // dashboards and valid sessions load /data immediately. On 401, getJson()
   // opens the gate via ensureDashboardAccess() and retries.
   (async function init() {
+    syncEmbedStateToMld();
     consumePreferCloudParam();
     loadingState();
     try {
@@ -11883,45 +11941,6 @@
   if (globalThis.__MLD) globalThis.__MLD.updateQuickNavVisibility = updateQuickNavVisibility;
 
   // __MLD_SPLIT3__
-
-  // Embed card styles: injected here (post3) so mld-app.css / post2 stay under Hubitat's 124 KB blob limit.
-  (function injectFavEmbedStyles() {
-    if (document.getElementById("mld-fav-embed-css")) return;
-    const style = document.createElement("style");
-    style.id = "mld-fav-embed-css";
-    style.textContent =
-      ".fav-embed-card{display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid var(--stroke);border-radius:16px;background:var(--panel);overflow:hidden;position:relative}" +
-      ".fav-embed-head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--stroke)}" +
-      ".fav-embed-title{flex:1;min-width:0;font-size:.92rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-      ".fav-embed-actions{display:flex;align-items:center;gap:4px;position:relative}" +
-      ".fav-embed-open,.fav-embed-expand,.fav-embed-menu-btn,.fav-embed-close-expand{border:1px solid var(--stroke-2);background:var(--panel-solid);color:var(--text);border-radius:999px;padding:4px 10px;font-size:.78rem;font-weight:700;text-decoration:none;cursor:pointer}" +
-      ".fav-embed-menu{position:absolute;right:0;top:calc(100% + 4px);min-width:120px;z-index:5;padding:4px;background:var(--panel-solid);border:1px solid var(--stroke-2);border-radius:12px;box-shadow:var(--shadow)}" +
-      ".fav-embed-menu-item{display:block;width:100%;text-align:left;border:0;background:transparent;color:var(--text);padding:8px 10px;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer}" +
-      ".fav-embed-menu-item.danger{color:#ef4444}" +
-      ".fav-embed-media{position:relative;flex:1;min-height:160px;background:#000}" +
-      ".fav-size-wide.fav-embed-card .fav-embed-media{min-height:180px}" +
-      ".fav-size-tall.fav-embed-card .fav-embed-media{min-height:240px}" +
-      ".fav-size-viewport.fav-embed-card .fav-embed-media{min-height:calc(100dvh - 14rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))}" +
-      ".fav-embed-iframe{position:absolute;inset:0;width:100%;height:100%;border:0}" +
-      ".favorites-reorder-mode .fav-embed-iframe{pointer-events:none}" +
-      ".fav-embed-hint{position:absolute;left:8px;right:8px;bottom:8px;z-index:1;font-size:.72rem;font-weight:600;color:rgba(255,255,255,.78);pointer-events:none}" +
-      ".fav-embed-blocked{display:grid;place-items:center;text-align:center;padding:16px;font-size:.88rem;font-weight:600;min-height:140px}" +
-      ".fav-embed-card.fav-embed-expanded{position:fixed;inset:0;z-index:80;border-radius:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}" +
-      ".fav-embed-card.fav-embed-expanded .fav-embed-media{min-height:0}" +
-      ".fav-embed-close-expand{position:absolute;top:calc(10px + env(safe-area-inset-top));right:12px;z-index:3}" +
-      "body.fav-embed-expanded-open{overflow:hidden}" +
-      ".fav-embed-expand-placeholder{border-radius:16px;border:1px dashed var(--stroke)}" +
-      ".fav-empty{display:flex;flex-direction:column;gap:12px;padding:8px 2px 20px;color:var(--muted)}" +
-      ".fav-embed-editor-panel{width:min(440px,calc(100svw - 32px))}" +
-      ".fav-embed-editor-heading{margin:0 0 6px;font-size:1.1rem}" +
-      ".fav-embed-editor-help{margin:0 0 12px;color:var(--muted);font-size:.88rem;line-height:1.4}" +
-      ".fav-embed-field{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;font-size:.82rem;font-weight:700;color:var(--muted)}" +
-      ".fav-embed-url-input{width:100%;min-height:88px;resize:vertical;border-radius:12px;border:1px solid var(--stroke-2);background:var(--bg);color:var(--text);padding:10px 12px;font:inherit}" +
-      ".fav-embed-editor-error{color:#ef4444;font-size:.85rem;font-weight:600;margin-bottom:8px}" +
-      ".fav-embed-editor-preview{border:1px solid var(--stroke);border-radius:12px;overflow:hidden;height:160px;margin-bottom:12px;background:#000}" +
-      ".fav-embed-editor-preview-frame{width:100%;height:100%;border:0}";
-    document.head.appendChild(style);
-  })();
 
   // ---------- cameras module (ships as mld-app-post3.js) ----------
   let camerasObserver = null;
