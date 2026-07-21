@@ -2053,7 +2053,8 @@ body {
 .quick-body-favorites .quick-fav-grid > .fav-size-tall,
 .quick-body-favorites .quick-fav-grid > .fav-size-standard,
 .quick-body-favorites .quick-fav-grid > .fav-size-compact,
-.quick-body-favorites .quick-fav-grid > .fav-size-full {
+.quick-body-favorites .quick-fav-grid > .fav-size-full,
+.quick-body-favorites .quick-fav-grid > .fav-size-viewport {
   grid-row: auto;
 }
 
@@ -2085,6 +2086,10 @@ body {
   min-height: 64px;
   align-self: start;
 }
+.quick-body-favorites .quick-fav-grid > .fav-size-viewport {
+  grid-column: span 4;
+  min-height: calc(100dvh - 11rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
 
 @media (min-width: 540px) {
   .quick-body-favorites .quick-fav-grid > .fav-size-square {
@@ -2106,6 +2111,9 @@ body {
   .quick-body-favorites .quick-fav-grid > .fav-size-full {
     grid-column: span 2;
     min-height: 96px;
+  }
+  .quick-body-favorites .quick-fav-grid > .fav-size-viewport {
+    grid-column: span 2;
   }
   .quick-body-favorites .quick-fav-grid > .fav-size-tall {
     grid-column: span 2;
@@ -2140,7 +2148,8 @@ body {
   .quick-body-favorites .quick-fav-grid > .fav-size-wide,
   .quick-body-favorites .quick-fav-grid > .fav-size-tall,
   .quick-body-favorites .quick-fav-grid > .fav-size-standard,
-  .quick-body-favorites .quick-fav-grid > .fav-size-compact {
+  .quick-body-favorites .quick-fav-grid > .fav-size-compact,
+  .quick-body-favorites .quick-fav-grid > .fav-size-viewport {
     grid-column: span 1;
   }
   .quick-body-favorites .quick-fav-grid > .fav-size-full { min-height: 88px; }

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.14
+
+- **Favorites:** HTTPS embed cards — add iframe widget URLs (Google Calendar embed,
+  weather widgets, etc.) from overflow **Add embed** or the empty state. Cards are
+  sandboxed, lazy-loaded, resizable (standard / wide / tall / near full-screen),
+  expandable to a temporary full-viewport overlay, and can interleave with device
+  favorites. Only absolute `https://` sources are accepted; use the provider’s
+  iframe embed link (normal websites often refuse framing). **Open** always
+  available as a fallback.
+
 ## 0.3.13
 
 - **Favorites:** new **tall (2×4)** size preset for thermostats, locks, shades, fans,

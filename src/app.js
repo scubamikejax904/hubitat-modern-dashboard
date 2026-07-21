@@ -20,6 +20,7 @@
   const OVERFLOW_BTN = document.getElementById("topbar-overflow-btn");
   const OVERFLOW_MENU = document.getElementById("topbar-overflow-menu");
   const MENU_REORDER_BTN = document.getElementById("menu-reorder");
+  const MENU_ADD_EMBED_BTN = document.getElementById("menu-add-embed");
   const MENU_HAPTICS_EL = document.getElementById("menu-haptics");
   const MENU_TABS_EL = document.getElementById("menu-tabs");
   const MENU_DRAWER_EL = document.getElementById("menu-drawer");
@@ -113,7 +114,132 @@
     try { localStorage.setItem(CAMERAS_COLS_STORAGE_KEY, String(cols)); } catch {}
   }
 
-  const FAVORITE_SIZE_PRESET_SET = new Set(["full", "square", "wide", "tall", "standard", "compact"]);
+  const FAVORITE_SIZE_PRESET_SET = new Set(["full", "square", "wide", "tall", "standard", "compact", "viewport"]);
+  const EMBED_SIZE_PRESET_SET = new Set(["standard", "wide", "tall", "viewport"]);
+  const MAX_EMBED_CARDS = 12;
+  const MAX_EMBED_TITLE = 80;
+  const MAX_EMBED_URL = 4096;
+
+  function validateHttpsEmbedUrl(raw) {
+    if (raw == null) return null;
+    const s = String(raw).trim();
+    if (!s || s.length > MAX_EMBED_URL) return null;
+    if (/[\u0000-\u001F\u007F]/.test(s)) return null;
+    if (s.startsWith("//")) return null;
+    let u;
+    try { u = new URL(s); } catch { return null; }
+    if (u.protocol !== "https:") return null;
+    if (!u.hostname) return null;
+    return s;
+  }
+
+  function hostnameFromHttpsUrl(url) {
+    try { return new URL(url).hostname || ""; } catch { return ""; }
+  }
+
+  function normalizeEmbedTitle(raw, url) {
+    let t = raw == null ? "" : String(raw).replace(/[\u0000-\u001F\u007F]/g, " ").trim();
+    if (t.length > MAX_EMBED_TITLE) t = t.slice(0, MAX_EMBED_TITLE).trim();
+    if (t) return t;
+    return hostnameFromHttpsUrl(url) || "Embed";
+  }
+
+  function parseEmbedInput(raw) {
+    const text = String(raw || "").trim();
+    if (!text) return { ok: false, error: "Enter an HTTPS embed URL or iframe code" };
+    if (/<script[\s>]/i.test(text) && !/<iframe[\s>]/i.test(text)) {
+      return { ok: false, error: "Script embeds are not supported — paste an iframe embed URL instead" };
+    }
+    let candidate = text;
+    if (/<iframe[\s>]/i.test(text)) {
+      try {
+        const doc = new DOMParser().parseFromString(text, "text/html");
+        const iframe = doc.querySelector("iframe[src]");
+        if (!iframe) return { ok: false, error: "Could not find an iframe src in the pasted code" };
+        candidate = String(iframe.getAttribute("src") || "").trim();
+      } catch {
+        return { ok: false, error: "Could not parse iframe code" };
+      }
+    }
+    const url = validateHttpsEmbedUrl(candidate);
+    if (!url) return { ok: false, error: "URL must be an absolute https:// link" };
+    return { ok: true, url };
+  }
+
+  function isSameOriginEmbedUrl(url) {
+    try {
+      return new URL(url, location.href).origin === location.origin;
+    } catch {
+      return false;
+    }
+  }
+
+  function deviceFavoriteKey(id) { return "d:" + Number(id); }
+  function embedFavoriteKey(id) {
+    const s = String(id || "");
+    return "e:" + (s.startsWith("e_") ? s.slice(2) : s);
+  }
+  function favoriteEntryKey(entry) {
+    if (!entry) return "";
+    if (entry.type === "embed") return embedFavoriteKey(entry.card.id);
+    return deviceFavoriteKey(entry.dev.i);
+  }
+
+  function normalizeFavoritesLayout(layout, deviceIds, cards) {
+    const validDevices = new Set((deviceIds || []).map(Number));
+    const validEmbeds = new Set((cards || []).map((c) => String(c.id)));
+    const out = [];
+    const seen = new Set();
+    for (const raw of layout || []) {
+      const s = String(raw || "").trim();
+      let key = null;
+      if (s.startsWith("d:") && /^\d+$/.test(s.slice(2))) key = s;
+      else if (s.startsWith("e:")) {
+        let rest = s.slice(2);
+        if (rest.startsWith("e_")) rest = rest.slice(2);
+        if (/^[A-Za-z0-9_-]+$/.test(rest)) key = "e:" + rest;
+      } else if (s.startsWith("e_") && /^e_[A-Za-z0-9_-]+$/.test(s)) {
+        key = "e:" + s.slice(2);
+      }
+      if (!key || seen.has(key)) continue;
+      if (key.startsWith("d:") && !validDevices.has(Number(key.slice(2)))) continue;
+      if (key.startsWith("e:") && !validEmbeds.has("e_" + key.slice(2))) continue;
+      seen.add(key);
+      out.push(key);
+    }
+    for (const id of deviceIds || []) {
+      const key = deviceFavoriteKey(id);
+      if (!seen.has(key)) { seen.add(key); out.push(key); }
+    }
+    for (const card of cards || []) {
+      const key = embedFavoriteKey(card.id);
+      if (!seen.has(key)) { seen.add(key); out.push(key); }
+    }
+    return out;
+  }
+
+  function applyEmbedConfigFromData(d, { allowDuringReorder = false } = {}) {
+    if (!d?.config) return false;
+    if (!allowDuringReorder && (postCall("isFavoritesReorderActive") || embedEditorOpen)) return false;
+    const nextCards = Array.isArray(d.config.embedCards)
+      ? d.config.embedCards.map((c) => ({
+          id: String(c.id || ""),
+          title: normalizeEmbedTitle(c.title, c.url),
+          url: validateHttpsEmbedUrl(c.url) || "",
+          size: EMBED_SIZE_PRESET_SET.has(String(c.size)) ? String(c.size) : "tall",
+        })).filter((c) => c.id.startsWith("e_") && c.url)
+      : [];
+    const nextLayout = normalizeFavoritesLayout(
+      Array.isArray(d.config.favoritesLayout) ? d.config.favoritesLayout : [],
+      favorites,
+      nextCards
+    );
+    const prevSig = favoritesLayout.join(",") + "|" + embedCards.map((c) => c.id + ":" + c.size + ":" + c.url).join("|");
+    embedCards = nextCards;
+    favoritesLayout = nextLayout;
+    const nextSig = favoritesLayout.join(",") + "|" + embedCards.map((c) => c.id + ":" + c.size + ":" + c.url).join("|");
+    return prevSig !== nextSig;
+  }
 
   function loadFavoriteSizesCache() {
     try {
@@ -238,6 +364,13 @@
   let favorites = [];
   let favoriteSizes = loadFavoriteSizesCache(); // id -> preset string (only non-default entries kept)
   let favoritesReorderSnapshotSizes = null;
+  let embedCards = []; // [{id,title,url,size}]
+  let favoritesLayout = []; // ["d:123","e:abc",...]
+  let favoritesReorderSnapshotLayout = null;
+  let favoritesReorderSnapshotEmbeds = null;
+  let embedEditorOpen = false;
+  let embedExpandState = null; // { cardEl, placeholder, restoreFocus }
+  let favEmbedObserver = null;
   let snapshots = {};
   let roomGestureLockCount = 0;
   let hubModeLockUntil = 0;
@@ -1411,6 +1544,7 @@
       if (Array.isArray(d.config.favorites) && d.config.favoriteSizes) {
         primeFavoriteSizesFromConfig(d.config.favorites, d.config.favoriteSizes);
       }
+      applyEmbedConfigFromData(d, { allowDuringReorder: true });
     }
     if (globalThis.__MLD) {
       const schedHook = globalThis.__MLD["applySchedules" + "FromData"];
@@ -4049,6 +4183,11 @@
     MENU_CAMERAS_LAYOUT.hidden = !(tabMode && activeTab === "cameras");
   }
 
+  function updateAddEmbedMenuVisibility() {
+    if (!MENU_ADD_EMBED_BTN) return;
+    MENU_ADD_EMBED_BTN.hidden = !(tabMode && activeTab === "favorites");
+  }
+
   function applyCamerasCols(cols) {
     const n = cols === 2 || cols === 3 ? cols : 1;
     cfg.camerasCols = n;
@@ -4904,13 +5043,16 @@
           body: JSON.stringify(payload),
         });
         if (r.ok) {
-          // Adopt server-normalized sizes if provided.
+          // Adopt server-normalized sizes / layout if provided.
           try {
             const body = await r.json();
             if (body?.sizes && typeof body.sizes === "object") {
               favoriteSizes = {};
               for (const k of Object.keys(body.sizes)) favoriteSizes[Number(k)] = String(body.sizes[k]);
               saveFavoriteSizesCache(favoriteSizes);
+            }
+            if (Array.isArray(body?.favoritesLayout) || Array.isArray(body?.embedCards)) {
+              applyEmbedConfigFromData({ config: body }, { allowDuringReorder: true });
             }
           } catch {}
           return true;
@@ -5216,31 +5358,57 @@
   }
 
   function getFavoriteEntries() {
-    const out = [];
+    const deviceById = new Map();
     for (const id of favorites) {
       // Prefer fan over light when the same device is in both pickers.
       const fan = ceilingFans.find(x => x.i === id);
-      if (fan) { out.push({ type: "fan", dev: fan }); continue; }
+      if (fan) { deviceById.set(id, { type: "fan", dev: fan }); continue; }
       const dev = devices.find(d => d.i === id);
-      if (dev) { out.push({ type: "light", dev }); continue; }
+      if (dev) { deviceById.set(id, { type: "light", dev }); continue; }
       const outlet = outlets.find(o => o.i === id);
-      if (outlet) { out.push({ type: "outlet", dev: outlet }); continue; }
+      if (outlet) { deviceById.set(id, { type: "outlet", dev: outlet }); continue; }
       const t = thermostats.find(x => x.i === id);
-      if (t) { out.push({ type: "thermostat", dev: t }); continue; }
+      if (t) { deviceById.set(id, { type: "thermostat", dev: t }); continue; }
       const valve = valves.find(x => x.i === id);
-      if (valve) { out.push({ type: "sensor", dev: normalizeValveForCard(valve) }); continue; }
+      if (valve) { deviceById.set(id, { type: "sensor", dev: normalizeValveForCard(valve) }); continue; }
       const mp = music.find(x => x.i === id);
-      if (mp) { out.push({ type: "music", dev: mp }); continue; }
+      if (mp) { deviceById.set(id, { type: "music", dev: mp }); continue; }
       const lk = locks.find(x => x.i === id);
-      if (lk) { out.push({ type: "lock", dev: lk }); continue; }
+      if (lk) { deviceById.set(id, { type: "lock", dev: lk }); continue; }
       const garage = garageDoors.find(x => x.i === id);
-      if (garage) { out.push({ type: "garage", dev: garage }); continue; }
+      if (garage) { deviceById.set(id, { type: "garage", dev: garage }); continue; }
       const shade = windowShades.find(x => x.i === id);
-      if (shade) { out.push({ type: "shade", dev: shade }); continue; }
+      if (shade) { deviceById.set(id, { type: "shade", dev: shade }); continue; }
       const ts = tempSensors.find(x => x.i === id);
       const sen = sensors.find(x => x.i === id);
       const sensorDev = buildMergedSensorCard(ts, sen);
-      if (sensorDev) { out.push({ type: "sensor", dev: sensorDev }); continue; }
+      if (sensorDev) { deviceById.set(id, { type: "sensor", dev: sensorDev }); continue; }
+    }
+    const embedById = new Map(embedCards.map((c) => [c.id, c]));
+    const layout = normalizeFavoritesLayout(favoritesLayout, favorites, embedCards);
+    const out = [];
+    const seen = new Set();
+    for (const key of layout) {
+      if (seen.has(key)) continue;
+      if (key.startsWith("d:")) {
+        const entry = deviceById.get(Number(key.slice(2)));
+        if (!entry) continue;
+        seen.add(key);
+        out.push(entry);
+      } else if (key.startsWith("e:")) {
+        const card = embedById.get("e_" + key.slice(2));
+        if (!card) continue;
+        seen.add(key);
+        out.push({ type: "embed", card });
+      }
+    }
+    for (const [id, entry] of deviceById) {
+      const key = deviceFavoriteKey(id);
+      if (!seen.has(key)) out.push(entry);
+    }
+    for (const card of embedCards) {
+      const key = embedFavoriteKey(card.id);
+      if (!seen.has(key)) out.push({ type: "embed", card });
     }
     return out;
   }
@@ -5455,6 +5623,7 @@
     if (!OVERFLOW_MENU || !OVERFLOW_BTN || reorderMode) return;
     updateLocalModeMenuUI();
     updateCamerasLayoutMenuVisibility();
+    updateAddEmbedMenuVisibility();
     OVERFLOW_MENU.hidden = false;
     OVERFLOW_BTN.setAttribute("aria-expanded", "true");
     const onClick = (e) => {
@@ -5802,13 +5971,14 @@
     replaceList(valves, Array.isArray(d.valves) ? d.valves : []);
     replaceList(music, d.music);
     replaceList(cameras, sortCamerasByOrder(Array.isArray(d.cameras) ? d.cameras : [], cfg.cameraOrder));
-    if (Array.isArray(d.config?.favorites) && !postCall("isFavoritesReorderActive")) {
+    if (Array.isArray(d.config?.favorites) && !postCall("isFavoritesReorderActive") && !embedEditorOpen) {
       replaceList(favorites, d.config.favorites.map(Number));
       const favSet = new Set(favorites);
       for (const k of Object.keys(favoriteSizes)) {
         if (!favSet.has(Number(k))) delete favoriteSizes[Number(k)];
       }
     }
+    const embedCfgChanged = applyEmbedConfigFromData(d);
     reapplyLockOptimistic();
     reapplyGarageOptimistic();
     reapplyShadeOptimistic();
@@ -5862,7 +6032,7 @@
     updateClimateWidgets();
     applySearch();
     refreshQuickPopupIfOpen();
-    if (favSizesChanged && currentCategory() === "favorites") renderFavoritesPopup();
+    if ((favSizesChanged || embedCfgChanged) && currentCategory() === "favorites") renderFavoritesPopup();
     restoreUiScroll(scrollSnap);
   }
 
@@ -7354,6 +7524,7 @@
   };
 
   function favoriteSizeProfile(entry) {
+    if (entry?.type === "embed") return { default: "tall", allowed: ["standard", "wide", "tall", "viewport"] };
     if (entryNeedsControlledFavoriteSize(entry)) return CONTROLLED_FAVORITE_SIZE_PROFILE;
     const t = entry.type;
     if (t === "garage") return { default: "full", allowed: ["full", "square", "wide"] };
@@ -8851,8 +9022,8 @@
 
   function favoritesPopupSignature() {
     const entries = getFavoriteEntries();
-    const sizes = entries.map((e) => e.dev.i + ":" + resolveFavoriteSize(e)).join(",");
-    return entries.map((e) => e.type + ":" + e.dev.i).join(",") + "|" + sizes;
+    const sizes = entries.map((e) => favoriteEntryKey(e) + ":" + resolveFavoriteSize(e)).join(",");
+    return entries.map((e) => favoriteEntryKey(e)).join(",") + "|" + sizes;
   }
 
   function favoritesGridSizesMatch(entries, grid) {
@@ -8877,22 +9048,23 @@
   function favoriteReorderGridSpan(size) {
     if (window.matchMedia("(max-width: 359px)").matches) return 1;
     if (window.matchMedia("(max-width: 539px)").matches) {
-      if (size === "full" || size === "tall") return 2;
-      return 1;
+      if (size === "full" || size === "tall" || size === "viewport") return 2;
+      return size === "wide" || size === "square" ? 2 : 1;
     }
-    if (size === "full" || size === "tall") return 4;
+    if (size === "full" || size === "tall" || size === "viewport") return 4;
     if (size === "square" || size === "wide") return 2;
     return 1;
   }
 
   function favoriteReorderPreviewHeight(size) {
+    const viewportH = Math.round(Math.max(280, window.innerHeight * 0.72));
     if (window.matchMedia("(max-width: 359px)").matches) {
-      return { full: 88, square: 148, tall: 176, wide: 84, standard: 112, compact: 52 }[size] || 112;
+      return { full: 88, square: 148, tall: 176, wide: 84, standard: 112, compact: 52, viewport: viewportH }[size] || 112;
     }
     if (window.matchMedia("(max-width: 539px)").matches) {
-      return { full: 96, square: 160, tall: 192, wide: 88, standard: 120, compact: 56 }[size] || 120;
+      return { full: 96, square: 160, tall: 192, wide: 88, standard: 120, compact: 56, viewport: viewportH }[size] || 120;
     }
-    return { full: 96, square: 168, tall: 192, wide: 96, standard: 132, compact: 64 }[size] || 132;
+    return { full: 96, square: 168, tall: 192, wide: 96, standard: 132, compact: 64, viewport: viewportH }[size] || 132;
   }
 
   function applyFavoriteReorderPreview(wrap, size) {
@@ -8944,10 +9116,13 @@
     return favoritesReorderActive;
   }
 
-  const FAVORITE_SIZE_PRESETS = ["full", "square", "wide", "tall", "standard", "compact"];
+  const FAVORITE_SIZE_PRESETS = ["full", "square", "wide", "tall", "standard", "compact", "viewport"];
 
   function resolveFavoriteSize(entry) {
     const profile = favoriteSizeProfile(entry);
+    if (entry?.type === "embed") {
+      return coerceFavoriteSize(entry, entry.card?.size);
+    }
     const saved = favoriteSizes[entry.dev.i];
     if (saved) return coerceFavoriteSize(entry, saved);
     return profile.default;
@@ -8969,7 +9144,8 @@
 
   function makeFavoriteEntryElement(entry) {
     let tile = null;
-    if (entry.type === "light") tile = makeTile(entry.dev, "favorites");
+    if (entry.type === "embed") tile = makeEmbedFavoriteCard(entry.card);
+    else if (entry.type === "light") tile = makeTile(entry.dev, "favorites");
     else if (entry.type === "outlet") tile = makeOutletTile(entry.dev, "favorites");
     else if (entry.type === "thermostat") tile = makeQuickTstatCard(entry.dev, favTstatMap);
     else if (entry.type === "sensor") tile = makeFavoriteSensorCard(entry.dev);
@@ -8985,9 +9161,16 @@
 
   function currentFavoritesOrderFromDom() {
     const grid = currentBody()?.querySelector(".quick-fav-grid");
-    if (!grid) return favorites.map(Number);
+    if (!grid) return favoritesLayout.slice();
     return Array.from(grid.querySelectorAll(".fav-reorder-item"))
-      .map((el) => Number(el.dataset.favId))
+      .map((el) => el.dataset.favKey)
+      .filter(Boolean);
+  }
+
+  function currentFavoritesDeviceOrderFromDom() {
+    return currentFavoritesOrderFromDom()
+      .filter((k) => k.startsWith("d:"))
+      .map((k) => Number(k.slice(2)))
       .filter((id) => Number.isFinite(id));
   }
 
@@ -9001,18 +9184,18 @@
     if (!grid) return;
     const items = Array.from(grid.querySelectorAll(".fav-reorder-item"));
     items.forEach((item, i) => {
-      const rec = favoritesReorderEls.get(Number(item.dataset.favId));
+      const rec = favoritesReorderEls.get(item.dataset.favKey);
       if (!rec?.moveEarlier || !rec?.moveLater) return;
       rec.moveEarlier.disabled = i === 0;
       rec.moveLater.disabled = i === items.length - 1;
     });
   }
 
-  function moveFavorite(favId, delta) {
+  function moveFavorite(favKey, delta) {
     const grid = currentBody()?.querySelector(".quick-fav-grid");
     if (!grid) return;
     const items = Array.from(grid.querySelectorAll(".fav-reorder-item"));
-    const idx = items.findIndex((el) => Number(el.dataset.favId) === favId);
+    const idx = items.findIndex((el) => el.dataset.favKey === String(favKey));
     if (idx < 0) return;
     const newIdx = idx + delta;
     if (newIdx < 0 || newIdx >= items.length) return;
@@ -9216,15 +9399,15 @@
   function wrapFavoriteForReorder(grid, entry) {
     const tile = makeFavoriteEntryElement(entry);
     if (!tile) return;
-    const favId = Number(entry.dev.i);
+    const favKey = favoriteEntryKey(entry);
     const profile = favoriteSizeProfile(entry);
     const size = resolveFavoriteSize(entry);
     const wrap = ce("div", "fav-reorder-item fav-size-" + size);
-    wrap.dataset.favId = String(favId);
-    wrap.dataset.favSpan = size === "full" || size === "tall" ? "full" : "cell";
+    wrap.dataset.favKey = favKey;
+    wrap.dataset.favSpan = (size === "full" || size === "tall" || size === "viewport") ? "full" : "cell";
     wrap.dataset.favSize = size;
-    wrap.dataset.name = String(entry.dev.n || "").toLowerCase();
-    if (size === "full" || size === "tall") wrap.classList.add("fav-reorder-full");
+    wrap.dataset.name = String(entry.type === "embed" ? (entry.card.title || "") : (entry.dev.n || "")).toLowerCase();
+    if (size === "full" || size === "tall" || size === "viewport") wrap.classList.add("fav-reorder-full");
     tile.classList.add("fav-reorder-content");
     wrap.appendChild(tile);
 
@@ -9262,7 +9445,7 @@
       const idx = profile.allowed.indexOf(cur);
       const next = profile.allowed[(idx + 1) % profile.allowed.length];
       if (!next || next === cur) return;
-      cycleFavoriteSize(favId, next, wrap, tile, entry);
+      cycleFavoriteSize(favKey, next, wrap, tile, entry);
       syncSizeBtn();
       sizeBtn.focus();
       hapticTap();
@@ -9277,7 +9460,7 @@
     moveEarlier.innerHTML = MOVE_UP_SVG;
     moveEarlier.addEventListener("click", (e) => {
       e.stopPropagation();
-      moveFavorite(favId, -1);
+      moveFavorite(favKey, -1);
       moveEarlier.focus();
     });
     const moveLater = ce("button", "fav-move-btn");
@@ -9286,7 +9469,7 @@
     moveLater.innerHTML = MOVE_DOWN_SVG;
     moveLater.addEventListener("click", (e) => {
       e.stopPropagation();
-      moveFavorite(favId, 1);
+      moveFavorite(favKey, 1);
       moveLater.focus();
     });
     moveBtns.appendChild(moveEarlier);
@@ -9296,23 +9479,30 @@
     overlay.appendChild(moveBtns);
     wrap.appendChild(overlay);
     attachFavoriteReorder(wrap, dragHandle);
-    favoritesReorderEls.set(favId, { moveEarlier, moveLater, sizeBtn, syncSizeBtn });
+    favoritesReorderEls.set(favKey, { moveEarlier, moveLater, sizeBtn, syncSizeBtn });
     applyFavoriteReorderPreview(wrap, size);
     grid.appendChild(wrap);
   }
 
-  function cycleFavoriteSize(favId, next, wrap, tile, entry) {
+  function cycleFavoriteSize(favKey, next, wrap, tile, entry) {
     for (const p of FAVORITE_SIZE_PRESETS) wrap.classList.remove("fav-size-" + p);
     wrap.classList.add("fav-size-" + next);
     wrap.dataset.favSize = next;
-    wrap.dataset.favSpan = next === "full" || next === "tall" ? "full" : "cell";
-    wrap.classList.toggle("fav-reorder-full", next === "full" || next === "tall");
+    wrap.dataset.favSpan = (next === "full" || next === "tall" || next === "viewport") ? "full" : "cell";
+    wrap.classList.toggle("fav-reorder-full", next === "full" || next === "tall" || next === "viewport");
     for (const p of FAVORITE_SIZE_PRESETS) tile.classList.remove("fav-size-" + p);
     tile.classList.add("fav-size-" + next);
     tile.dataset.favSize = next;
     const profile = favoriteSizeProfile(entry);
-    if (next === profile.default) delete favoriteSizes[favId];
-    else favoriteSizes[favId] = next;
+    if (entry.type === "embed") {
+      entry.card.size = next;
+      const idx = embedCards.findIndex((c) => c.id === entry.card.id);
+      if (idx >= 0) embedCards[idx] = { ...embedCards[idx], size: next };
+    } else {
+      const favId = Number(entry.dev.i);
+      if (next === profile.default) delete favoriteSizes[favId];
+      else favoriteSizes[favId] = next;
+    }
     applyFavoriteReorderPreview(wrap, next);
     updateFavoritesDraftOrderFromDom();
   }
@@ -9322,6 +9512,7 @@
       : size === "square" ? "2×2"
       : size === "tall" ? "2×4"
       : size === "wide" ? "1×2"
+      : size === "viewport" ? "Fill"
       : size === "compact" ? "½×1"
       : "1×1";
   }
@@ -9330,6 +9521,7 @@
       : size === "square" ? "square (2 by 2)"
       : size === "tall" ? "tall (2 by 4)"
       : size === "wide" ? "wide (1 by 2)"
+      : size === "viewport" ? "near full screen"
       : size === "compact" ? "compact (half by 1)"
       : "standard (1 by 1)";
   }
@@ -9338,11 +9530,13 @@
     if (!tabMode || activeTab !== "favorites") return;
     const entries = getFavoriteEntries();
     if (entries.length < 1) {
-      flash("Add a favorite first");
+      flash("Add a favorite or embed first");
       return;
     }
     favoritesReorderSnapshot = favorites.slice();
     favoritesReorderSnapshotSizes = { ...favoriteSizes };
+    favoritesReorderSnapshotLayout = favoritesLayout.slice();
+    favoritesReorderSnapshotEmbeds = embedCards.map((c) => ({ ...c }));
     favoritesReorderDraftOrder = null;
     favoritesReorderEls.clear();
     stopPolling();
@@ -9351,6 +9545,7 @@
     APP_EL?.classList.add("reorder-mode", "favorites-reorder-mode");
     postCall("closeTopbarOverflowMenu");
     closeFavoriteTstatModeMenu();
+    closeEmbedExpand();
     if (SEARCH_EL) {
       SEARCH_EL.value = "";
       applySearch();
@@ -9371,6 +9566,8 @@
     favoritesReorderDraftOrder = null;
     favoritesReorderSnapshot = null;
     favoritesReorderSnapshotSizes = null;
+    favoritesReorderSnapshotLayout = null;
+    favoritesReorderSnapshotEmbeds = null;
     favoritesReorderEls.clear();
     favoritesReorderSaving = false;
     reorderMode = false;
@@ -9388,18 +9585,56 @@
     }
   }
 
+  async function saveFavoritesLayoutApi(layout, deviceSizes, embedSizes) {
+    try {
+      const r = await fetch(withToken("settings/favorites-layout"), {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          layout,
+          favoriteSizes: deviceSizes,
+          embedSizes,
+        }),
+      });
+      if (!r.ok) {
+        let msg = "Could not save favorites layout";
+        try {
+          const body = await r.json();
+          if (body?.error) msg = String(body.error);
+        } catch {}
+        flash(msg, true);
+        return false;
+      }
+      const body = await r.json();
+      if (Array.isArray(body?.favorites)) replaceList(favorites, body.favorites.map(Number));
+      if (body?.sizes && typeof body.sizes === "object") {
+        favoriteSizes = {};
+        for (const k of Object.keys(body.sizes)) favoriteSizes[Number(k)] = String(body.sizes[k]);
+        saveFavoriteSizesCache(favoriteSizes);
+      }
+      applyEmbedConfigFromData({ config: body }, { allowDuringReorder: true });
+      return true;
+    } catch {
+      flash("Could not save favorites layout", true);
+      return false;
+    }
+  }
+
   async function finishFavoritesReorderMode() {
     if (favoritesReorderSaving) return false;
     cleanupFavDragState();
-    const order = currentFavoritesOrderFromDom();
-    const sizes = normalizedFavoriteSizes(order);
+    const layout = currentFavoritesOrderFromDom();
+    const deviceOrder = layout.filter((k) => k.startsWith("d:")).map((k) => Number(k.slice(2)));
+    const sizes = normalizedFavoriteSizes(deviceOrder);
+    const embedSizes = {};
+    for (const card of embedCards) embedSizes[card.id] = card.size || "tall";
     favoritesReorderSaving = true;
     if (REORDER_DONE_BTN) REORDER_DONE_BTN.disabled = true;
-    const saved = await saveFavorites(order, sizes);
+    const saved = await saveFavoritesLayoutApi(layout, sizes, embedSizes);
     favoritesReorderSaving = false;
     if (REORDER_DONE_BTN) REORDER_DONE_BTN.disabled = false;
     if (!saved) return false;
-    replaceList(favorites, order);
     lastDataSig = "";
     exitFavoritesReorderMode(true);
     flash("Order & sizes saved");
@@ -9410,6 +9645,8 @@
     if (favoritesReorderSnapshot) replaceList(favorites, favoritesReorderSnapshot);
     if (favoritesReorderSnapshotSizes) favoriteSizes = { ...favoritesReorderSnapshotSizes };
     else favoriteSizes = {};
+    if (favoritesReorderSnapshotLayout) favoritesLayout = favoritesReorderSnapshotLayout.slice();
+    if (favoritesReorderSnapshotEmbeds) embedCards = favoritesReorderSnapshotEmbeds.map((c) => ({ ...c }));
     lastDataSig = "";
     exitFavoritesReorderMode(false);
   }
@@ -9519,9 +9756,362 @@
     if (favTstatModeMenu && favTstatModeMenuId === t.i) syncFavoriteTstatModeMenu(t);
   }
 
+  function stopFavEmbedStreams() {
+    if (favEmbedObserver) {
+      favEmbedObserver.disconnect();
+      favEmbedObserver = null;
+    }
+    const grid = currentBody()?.querySelector(".quick-fav-grid");
+    if (grid) {
+      for (const iframe of grid.querySelectorAll(".fav-embed-iframe")) iframe.src = "about:blank";
+    }
+  }
+
+  function closeEmbedExpand() {
+    if (!embedExpandState) return;
+    const { cardEl, placeholder, restoreFocus } = embedExpandState;
+    embedExpandState = null;
+    document.body.classList.remove("fav-embed-expanded-open");
+    cardEl.classList.remove("fav-embed-expanded");
+    const closeBtn = cardEl.querySelector(".fav-embed-close-expand");
+    if (closeBtn) closeBtn.hidden = true;
+    if (placeholder?.parentNode) {
+      placeholder.parentNode.insertBefore(cardEl, placeholder);
+      placeholder.remove();
+    }
+    try { restoreFocus?.focus?.(); } catch {}
+  }
+
+  function expandEmbedCard(cardEl, triggerBtn) {
+    if (!cardEl || embedExpandState) return;
+    const placeholder = ce("div", "fav-embed-expand-placeholder");
+    placeholder.style.height = cardEl.offsetHeight + "px";
+    placeholder.className = "fav-embed-expand-placeholder " + Array.from(cardEl.classList).filter((c) => c.startsWith("fav-size-")).join(" ");
+    cardEl.parentNode.insertBefore(placeholder, cardEl);
+    document.body.appendChild(cardEl);
+    cardEl.classList.add("fav-embed-expanded");
+    document.body.classList.add("fav-embed-expanded-open");
+    let closeBtn = cardEl.querySelector(".fav-embed-close-expand");
+    if (!closeBtn) {
+      closeBtn = ce("button", "fav-embed-close-expand");
+      closeBtn.type = "button";
+      closeBtn.textContent = "Close";
+      closeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeEmbedExpand();
+      });
+      cardEl.appendChild(closeBtn);
+    }
+    closeBtn.hidden = false;
+    embedExpandState = { cardEl, placeholder, restoreFocus: triggerBtn || document.activeElement };
+    closeBtn.focus();
+  }
+
+  function observeFavEmbedCard(card) {
+    if (!("IntersectionObserver" in window)) {
+      const iframe = card.querySelector(".fav-embed-iframe");
+      const url = card.dataset.embedUrl;
+      if (iframe && url && card.dataset.blocked !== "1") iframe.src = url;
+      return;
+    }
+    if (!favEmbedObserver) {
+      favEmbedObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          const tile = entry.target;
+          const iframe = tile.querySelector(".fav-embed-iframe");
+          const url = tile.dataset.embedUrl;
+          if (!iframe || !url || tile.dataset.blocked === "1") continue;
+          if (entry.isIntersecting) {
+            if (!iframe.src || iframe.src === "about:blank" || iframe.src.endsWith("about:blank")) iframe.src = url;
+          }
+        }
+      }, { root: null, rootMargin: "80px", threshold: 0.05 });
+    }
+    favEmbedObserver.observe(card);
+  }
+
+  function makeEmbedFavoriteCard(card) {
+    const el = ce("article", "fav-embed-card");
+    el.dataset.embedId = card.id;
+    el.dataset.embedUrl = card.url;
+    const title = normalizeEmbedTitle(card.title, card.url);
+    const head = ce("div", "fav-embed-head");
+    const titleEl = ce("div", "fav-embed-title");
+    titleEl.textContent = title;
+    head.appendChild(titleEl);
+    const actions = ce("div", "fav-embed-actions");
+    const openBtn = ce("a", "fav-embed-open");
+    openBtn.href = card.url;
+    openBtn.target = "_blank";
+    openBtn.rel = "noopener noreferrer";
+    openBtn.textContent = "Open";
+    openBtn.setAttribute("aria-label", "Open " + title + " externally");
+    const expandBtn = ce("button", "fav-embed-expand");
+    expandBtn.type = "button";
+    expandBtn.textContent = "Expand";
+    expandBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      hapticTap();
+      expandEmbedCard(el, expandBtn);
+    });
+    const menuBtn = ce("button", "fav-embed-menu-btn");
+    menuBtn.type = "button";
+    menuBtn.setAttribute("aria-label", "Embed options");
+    menuBtn.setAttribute("aria-haspopup", "menu");
+    menuBtn.textContent = "\u22ef";
+    const menu = ce("div", "fav-embed-menu");
+    menu.hidden = true;
+    menu.setAttribute("role", "menu");
+    const editBtn = ce("button", "fav-embed-menu-item");
+    editBtn.type = "button";
+    editBtn.setAttribute("role", "menuitem");
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.hidden = true;
+      openEmbedEditor(card);
+    });
+    const delBtn = ce("button", "fav-embed-menu-item danger");
+    delBtn.type = "button";
+    delBtn.setAttribute("role", "menuitem");
+    delBtn.textContent = "Delete";
+    delBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      menu.hidden = true;
+      const ok = await confirmAction({ message: "Delete this embed card?", confirmLabel: "Delete", danger: true });
+      if (ok) await deleteEmbedCard(card.id);
+    });
+    menu.appendChild(editBtn);
+    menu.appendChild(delBtn);
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.hidden = !menu.hidden;
+    });
+    actions.appendChild(openBtn);
+    actions.appendChild(expandBtn);
+    actions.appendChild(menuBtn);
+    actions.appendChild(menu);
+    head.appendChild(actions);
+    el.appendChild(head);
+
+    const media = ce("div", "fav-embed-media");
+    const hint = ce("div", "fav-embed-hint");
+    hint.textContent = "Blank or refused? Use the provider\u2019s iframe embed link, then Open.";
+    const sameOrigin = isSameOriginEmbedUrl(card.url);
+    if (sameOrigin) {
+      el.dataset.blocked = "1";
+      const blocked = ce("div", "fav-embed-blocked");
+      blocked.textContent = "Same-origin URLs cannot be embedded here for security. Use Open instead.";
+      media.appendChild(blocked);
+      media.appendChild(hint);
+    } else {
+      const iframe = ce("iframe", "fav-embed-iframe");
+      iframe.setAttribute("title", title);
+      iframe.loading = "lazy";
+      iframe.referrerPolicy = "no-referrer";
+      iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox");
+      iframe.src = "about:blank";
+      media.appendChild(iframe);
+      media.appendChild(hint);
+    }
+    el.appendChild(media);
+    if (!sameOrigin) observeFavEmbedCard(el);
+    return el;
+  }
+
+  async function embedCardsApi(payload) {
+    try {
+      const r = await fetch(withToken("embed-cards"), {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        flash(String(body?.error || "Could not save embed"), true);
+        return null;
+      }
+      applyEmbedConfigFromData({ config: body }, { allowDuringReorder: true });
+      return body;
+    } catch {
+      flash("Could not save embed", true);
+      return null;
+    }
+  }
+
+  async function deleteEmbedCard(id) {
+    const body = await embedCardsApi({ action: "delete", id });
+    if (!body) return false;
+    closeEmbedExpand();
+    if (currentCategory() === "favorites") renderFavoritesPopup();
+    updateQuickNavVisibility();
+    flash("Embed deleted");
+    return true;
+  }
+
+  function closeEmbedEditor() {
+    const popup = document.getElementById("fav-embed-editor");
+    if (!popup) return;
+    embedEditorOpen = false;
+    popup.classList.remove("open");
+    popup.hidden = true;
+    if (popup._previewFrame) popup._previewFrame.src = "about:blank";
+  }
+
+  function openEmbedEditor(existing) {
+    let popup = document.getElementById("fav-embed-editor");
+    if (!popup) {
+      popup = ce("div", "confirm-popup fav-embed-editor");
+      popup.id = "fav-embed-editor";
+      popup.hidden = true;
+      popup.setAttribute("role", "dialog");
+      popup.setAttribute("aria-modal", "true");
+      popup.setAttribute("aria-labelledby", "fav-embed-editor-title");
+      const panel = ce("div", "confirm-panel fav-embed-editor-panel");
+      const heading = ce("h2", "fav-embed-editor-heading");
+      heading.id = "fav-embed-editor-title";
+      heading.textContent = "Embed card";
+      const help = ce("p", "fav-embed-editor-help");
+      help.textContent = "Paste an HTTPS iframe embed URL (or iframe code). Normal website pages often refuse embedding.";
+      const titleLabel = ce("label", "fav-embed-field");
+      const titleSpan = ce("span");
+      titleSpan.textContent = "Title (optional)";
+      const titleInput = ce("input", "topbar-overflow-input fav-embed-title-input");
+      titleInput.type = "text";
+      titleInput.maxLength = MAX_EMBED_TITLE;
+      titleLabel.appendChild(titleSpan);
+      titleLabel.appendChild(titleInput);
+      const urlLabel = ce("label", "fav-embed-field");
+      const urlSpan = ce("span");
+      urlSpan.textContent = "HTTPS embed URL or iframe code";
+      const urlInput = ce("textarea", "fav-embed-url-input");
+      urlInput.rows = 4;
+      urlLabel.appendChild(urlSpan);
+      urlLabel.appendChild(urlInput);
+      const err = ce("div", "fav-embed-editor-error");
+      err.hidden = true;
+      const previewWrap = ce("div", "fav-embed-editor-preview");
+      previewWrap.hidden = true;
+      const previewFrame = ce("iframe", "fav-embed-editor-preview-frame");
+      previewFrame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox");
+      previewFrame.referrerPolicy = "no-referrer";
+      previewFrame.title = "Embed preview";
+      previewWrap.appendChild(previewFrame);
+      const actions = ce("div", "confirm-actions");
+      const cancel = ce("button", "ghost-btn confirm-cancel");
+      cancel.type = "button";
+      cancel.textContent = "Cancel";
+      const save = ce("button", "confirm-btn");
+      save.type = "button";
+      save.textContent = "Save";
+      actions.appendChild(cancel);
+      actions.appendChild(save);
+      panel.appendChild(heading);
+      panel.appendChild(help);
+      panel.appendChild(titleLabel);
+      panel.appendChild(urlLabel);
+      panel.appendChild(err);
+      panel.appendChild(previewWrap);
+      panel.appendChild(actions);
+      popup.appendChild(panel);
+      appendPopup(popup);
+      popup._titleInput = titleInput;
+      popup._urlInput = urlInput;
+      popup._err = err;
+      popup._previewWrap = previewWrap;
+      popup._previewFrame = previewFrame;
+      popup._save = save;
+      cancel.addEventListener("click", () => closeEmbedEditor());
+      bindPopupDismiss(popup, null, null, () => closeEmbedEditor());
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && popup.classList.contains("open")) closeEmbedEditor();
+      });
+      const refreshPreview = () => {
+        const parsed = parseEmbedInput(urlInput.value);
+        if (!parsed.ok) {
+          err.hidden = false;
+          err.textContent = parsed.error;
+          previewWrap.hidden = true;
+          previewFrame.src = "about:blank";
+          return null;
+        }
+        if (isSameOriginEmbedUrl(parsed.url)) {
+          err.hidden = false;
+          err.textContent = "Same-origin URLs cannot be embedded for security.";
+          previewWrap.hidden = true;
+          previewFrame.src = "about:blank";
+          return null;
+        }
+        err.hidden = true;
+        previewWrap.hidden = false;
+        previewFrame.src = parsed.url;
+        return parsed.url;
+      };
+      urlInput.addEventListener("input", () => { refreshPreview(); });
+      save.addEventListener("click", async () => {
+        const parsed = parseEmbedInput(urlInput.value);
+        if (!parsed.ok) {
+          err.hidden = false;
+          err.textContent = parsed.error;
+          return;
+        }
+        if (isSameOriginEmbedUrl(parsed.url)) {
+          err.hidden = false;
+          err.textContent = "Same-origin URLs cannot be embedded for security.";
+          return;
+        }
+        if (!popup._existing && embedCards.length >= MAX_EMBED_CARDS) {
+          err.hidden = false;
+          err.textContent = "Embed card limit reached (" + MAX_EMBED_CARDS + ")";
+          return;
+        }
+        save.disabled = true;
+        const payload = popup._existing
+          ? { action: "update", id: popup._existing.id, title: titleInput.value, url: parsed.url, size: popup._existing.size || "tall" }
+          : { action: "create", title: titleInput.value, url: parsed.url, size: "tall" };
+        const body = await embedCardsApi(payload);
+        save.disabled = false;
+        if (!body) return;
+        closeEmbedEditor();
+        if (currentCategory() === "favorites") renderFavoritesPopup();
+        updateQuickNavVisibility();
+        flash(popup._existing ? "Embed updated" : "Embed added");
+      });
+    }
+    embedEditorOpen = true;
+    popup._existing = existing || null;
+    popup._titleInput.value = existing?.title || "";
+    popup._urlInput.value = existing?.url || "";
+    popup._err.hidden = true;
+    popup._previewWrap.hidden = true;
+    popup._previewFrame.src = "about:blank";
+    popup.hidden = false;
+    popup.classList.add("open");
+    popup._urlInput.focus();
+    if (existing?.url) popup._urlInput.dispatchEvent(new Event("input"));
+  }
+
+  function renderFavoritesEmptyState(body) {
+    const wrap = ce("div", "fav-empty");
+    const p = ce("p");
+    p.textContent = "Tap the star on any device to add it here, or add an HTTPS embed card.";
+    const addBtn = ce("button", "confirm-btn fav-add-embed-btn");
+    addBtn.type = "button";
+    addBtn.textContent = "Add embed";
+    addBtn.addEventListener("click", () => {
+      hapticTap();
+      openEmbedEditor(null);
+    });
+    wrap.appendChild(p);
+    wrap.appendChild(addBtn);
+    body.appendChild(wrap);
+  }
+
   function refreshFavoritesPopup() {
     if (currentCategory() !== "favorites") return;
     if (favoritesReorderActive) return;
+    if (embedEditorOpen || embedExpandState) return;
     const entries = getFavoriteEntries();
     const sig = favoritesPopupSignature();
     const body = currentBody();
@@ -9531,6 +10121,7 @@
       return;
     }
     for (const entry of getFavoriteEntries()) {
+      if (entry.type === "embed") continue;
       if (entry.type === "thermostat") {
         const t = thermostats.find((x) => x.i === entry.dev.i) || entry.dev;
         updateQuickTstatCard(t, favTstatMap);
@@ -9560,6 +10151,8 @@
 
   function renderFavoritesPopup() {
     closeFavoriteTstatModeMenu();
+    if (!favoritesReorderActive) closeEmbedExpand();
+    stopFavEmbedStreams();
     if (!tabMode || activeTab !== "favorites") {
       const popup = ensureQuickPopup();
       syncQuickPopupWidthForOpen(popup);
@@ -9580,7 +10173,7 @@
     const entries = getFavoriteEntries();
     if (!entries.length) {
       favPopupSig = favoritesPopupSignature();
-      body.textContent = "Tap the star on any device to add it here";
+      renderFavoritesEmptyState(body);
       return;
     }
     const grid = ce("div", "quick-fav-grid");
@@ -9648,7 +10241,7 @@
       case "thermostats": return thermostatsPopupEnabled && thermostats.length > 0;
       case "music": return music.length > 0;
       case "cameras": return tabMode && isLocalOrigin() && cameras.length > 0;
-      case "favorites": return getFavoriteEntries().length > 0;
+      case "favorites": return true;
       default: return false;
     }
   }
@@ -9873,6 +10466,11 @@
     if (shadeMasterPopup && shadeMasterPopup.classList.contains("open")) closeShadeMasterPopup();
     if (quickPopup && quickPopup.classList.contains("open")) closeQuickPopup();
     if (activeTab === "cameras" && id !== "cameras") postCall("stopCamerasStreams");
+    if (activeTab === "favorites" && id !== "favorites") {
+      closeEmbedExpand();
+      stopFavEmbedStreams();
+      closeEmbedEditor();
+    }
     const tabChanged = id !== activeTab;
     if (tabChanged && SEARCH_EL) {
       SEARCH_EL.value = "";
@@ -9895,6 +10493,7 @@
     if (SEARCH_EL) SEARCH_EL.placeholder = nonLights ? "Search " + (TAB_LABELS[id] || "items") : "Search lights or rooms";
     syncCamerasViewClass(tabMode && id === "cameras");
     updateCamerasLayoutMenuVisibility();
+    updateAddEmbedMenuVisibility();
     updateTabActiveStates();
     if (nonLights) {
       switch (id) {
@@ -10397,6 +10996,20 @@
       enterReorderMode();
     });
   }
+
+  if (MENU_ADD_EMBED_BTN) {
+    MENU_ADD_EMBED_BTN.addEventListener("click", () => {
+      closeTopbarOverflowMenu();
+      openEmbedEditor(null);
+    });
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && embedExpandState) {
+      e.preventDefault();
+      closeEmbedExpand();
+    }
+  });
 
   if (MENU_HAPTICS_EL) {
     const hapticsLabel = MENU_HAPTICS_EL.closest(".topbar-overflow-check");
@@ -11270,6 +11883,45 @@
   if (globalThis.__MLD) globalThis.__MLD.updateQuickNavVisibility = updateQuickNavVisibility;
 
   // __MLD_SPLIT3__
+
+  // Embed card styles: injected here (post3) so mld-app.css / post2 stay under Hubitat's 124 KB blob limit.
+  (function injectFavEmbedStyles() {
+    if (document.getElementById("mld-fav-embed-css")) return;
+    const style = document.createElement("style");
+    style.id = "mld-fav-embed-css";
+    style.textContent =
+      ".fav-embed-card{display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid var(--stroke);border-radius:16px;background:var(--panel);overflow:hidden;position:relative}" +
+      ".fav-embed-head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--stroke)}" +
+      ".fav-embed-title{flex:1;min-width:0;font-size:.92rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".fav-embed-actions{display:flex;align-items:center;gap:4px;position:relative}" +
+      ".fav-embed-open,.fav-embed-expand,.fav-embed-menu-btn,.fav-embed-close-expand{border:1px solid var(--stroke-2);background:var(--panel-solid);color:var(--text);border-radius:999px;padding:4px 10px;font-size:.78rem;font-weight:700;text-decoration:none;cursor:pointer}" +
+      ".fav-embed-menu{position:absolute;right:0;top:calc(100% + 4px);min-width:120px;z-index:5;padding:4px;background:var(--panel-solid);border:1px solid var(--stroke-2);border-radius:12px;box-shadow:var(--shadow)}" +
+      ".fav-embed-menu-item{display:block;width:100%;text-align:left;border:0;background:transparent;color:var(--text);padding:8px 10px;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer}" +
+      ".fav-embed-menu-item.danger{color:#ef4444}" +
+      ".fav-embed-media{position:relative;flex:1;min-height:160px;background:#000}" +
+      ".fav-size-wide.fav-embed-card .fav-embed-media{min-height:180px}" +
+      ".fav-size-tall.fav-embed-card .fav-embed-media{min-height:240px}" +
+      ".fav-size-viewport.fav-embed-card .fav-embed-media{min-height:calc(100dvh - 14rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))}" +
+      ".fav-embed-iframe{position:absolute;inset:0;width:100%;height:100%;border:0}" +
+      ".favorites-reorder-mode .fav-embed-iframe{pointer-events:none}" +
+      ".fav-embed-hint{position:absolute;left:8px;right:8px;bottom:8px;z-index:1;font-size:.72rem;font-weight:600;color:rgba(255,255,255,.78);pointer-events:none}" +
+      ".fav-embed-blocked{display:grid;place-items:center;text-align:center;padding:16px;font-size:.88rem;font-weight:600;min-height:140px}" +
+      ".fav-embed-card.fav-embed-expanded{position:fixed;inset:0;z-index:80;border-radius:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}" +
+      ".fav-embed-card.fav-embed-expanded .fav-embed-media{min-height:0}" +
+      ".fav-embed-close-expand{position:absolute;top:calc(10px + env(safe-area-inset-top));right:12px;z-index:3}" +
+      "body.fav-embed-expanded-open{overflow:hidden}" +
+      ".fav-embed-expand-placeholder{border-radius:16px;border:1px dashed var(--stroke)}" +
+      ".fav-empty{display:flex;flex-direction:column;gap:12px;padding:8px 2px 20px;color:var(--muted)}" +
+      ".fav-embed-editor-panel{width:min(440px,calc(100svw - 32px))}" +
+      ".fav-embed-editor-heading{margin:0 0 6px;font-size:1.1rem}" +
+      ".fav-embed-editor-help{margin:0 0 12px;color:var(--muted);font-size:.88rem;line-height:1.4}" +
+      ".fav-embed-field{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;font-size:.82rem;font-weight:700;color:var(--muted)}" +
+      ".fav-embed-url-input{width:100%;min-height:88px;resize:vertical;border-radius:12px;border:1px solid var(--stroke-2);background:var(--bg);color:var(--text);padding:10px 12px;font:inherit}" +
+      ".fav-embed-editor-error{color:#ef4444;font-size:.85rem;font-weight:600;margin-bottom:8px}" +
+      ".fav-embed-editor-preview{border:1px solid var(--stroke);border-radius:12px;overflow:hidden;height:160px;margin-bottom:12px;background:#000}" +
+      ".fav-embed-editor-preview-frame{width:100%;height:100%;border:0}";
+    document.head.appendChild(style);
+  })();
 
   // ---------- cameras module (ships as mld-app-post3.js) ----------
   let camerasObserver = null;

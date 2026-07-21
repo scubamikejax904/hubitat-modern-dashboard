@@ -1,4 +1,4 @@
-// Modern Dashboard v0.3.13
+// Modern Dashboard v0.3.14
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
@@ -16,7 +16,7 @@ import groovy.transform.Field
 @Field private static String LOCAL_ASSET_CACHE_VERSION = ""
 @Field private static int LOCAL_ASSET_CACHE_BYTES = 0
 @Field private static final int LOCAL_ASSET_CACHE_MAX_BYTES = 768 * 1024
-@Field private static final String MLD_DEPLOYED_VERSION = "0.3.13"
+@Field private static final String MLD_DEPLOYED_VERSION = "0.3.14"
 
 definition(
     name: "Modern Dashboard",
@@ -50,7 +50,7 @@ def mainPage() {
             } else {
                 paragraph "<small><b>Hub-only:</b> UI and API run entirely on your hub — no Maker API or third-party cloud.</small>"
             }
-            paragraph "<small>Version 0.3.13 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
+            paragraph "<small>Version 0.3.14 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         if (assetsOk) {
             section("Dashboard links") {
@@ -1069,6 +1069,8 @@ mappings {
     path("/hsm") { action: [GET: "setHsmGet", POST: "setHsm"] }
     path("/scene/activate") { action: [GET: "activateSceneGet", POST: "activateScene"] }
     path("/favorites") { action: [GET: "saveFavoritesGet", POST: "saveFavorites"] }
+    path("/embed-cards") { action: [POST: "saveEmbedCards"] }
+    path("/settings/favorites-layout") { action: [POST: "saveFavoritesLayout"] }
     path("/snapshot/save") { action: [GET: "snapshotSaveGet", POST: "snapshotSave"] }
     path("/snapshot/restore") { action: [GET: "snapshotRestoreGet", POST: "snapshotRestore"] }
     path("/snapshot/status") { action: [GET: "snapshotStatus"] }
@@ -3312,7 +3314,441 @@ def favoritesJsonFragment() {
     }
     out << "]"
     out << favoriteSizesJsonFragment()
+    out << embedCardsJsonFragment()
+    out << favoritesLayoutJsonFragment()
     return out.toString()
+}
+
+// ---------------------------------------------------------------------------
+// Favorites embed cards + mixed layout (device + embed)
+// ---------------------------------------------------------------------------
+def maxEmbedCards() { return 12 }
+def maxEmbedTitleLen() { return 80 }
+def maxEmbedUrlLen() { return 4096 }
+def maxEmbedCardsStateBytes() { return 32768 }
+def embedSizePresetSet() { return ["standard", "wide", "tall", "viewport"] as Set }
+
+def parseEmbedCardsState() {
+    if (!state.embedCardsJson) return []
+    try {
+        def parsed = new groovy.json.JsonSlurper().parseText(state.embedCardsJson.toString())
+        if (!(parsed instanceof List)) return []
+        def out = []
+        def seen = new HashSet()
+        for (item in parsed) {
+            if (!(item instanceof Map)) continue
+            def id = item.id?.toString()?.trim()
+            def url = validateHttpsEmbedUrl(item.url)
+            if (!id || !id.startsWith("e_") || !url || seen.contains(id)) continue
+            seen.add(id)
+            def title = normalizeEmbedTitle(item.title, url)
+            def size = item.size?.toString()?.trim()
+            if (!embedSizePresetSet().contains(size)) size = "tall"
+            out << [id: id, title: title, url: url, size: size]
+            if (out.size() >= maxEmbedCards()) break
+        }
+        return out
+    } catch (e) {
+        return []
+    }
+}
+
+def parseFavoritesLayoutState() {
+    if (!state.favoritesLayoutJson) return []
+    try {
+        def parsed = new groovy.json.JsonSlurper().parseText(state.favoritesLayoutJson.toString())
+        if (!(parsed instanceof List)) return []
+        return parsed.collect { it?.toString()?.trim() }.findAll { it }
+    } catch (e) {
+        return []
+    }
+}
+
+def deviceLayoutKey(id) { return "d:" + id.toString() }
+def embedLayoutKey(id) { return "e:" + id.toString().replaceFirst(/^e_/, "") }
+
+def normalizeEmbedLayoutKey(raw) {
+    def s = raw?.toString()?.trim()
+    if (!s) return null
+    if (s.startsWith("d:")) {
+        def rest = s.substring(2)
+        if (!(rest ==~ /^\d+$/)) return null
+        return "d:" + rest
+    }
+    if (s.startsWith("e:")) {
+        def rest = s.substring(2).trim()
+        if (!rest) return null
+        if (rest.startsWith("e_")) rest = rest.substring(2)
+        if (!(rest ==~ /^[A-Za-z0-9_-]+$/)) return null
+        return "e:" + rest
+    }
+    if (s.startsWith("e_")) {
+        def rest = s.substring(2)
+        if (!(rest ==~ /^[A-Za-z0-9_-]+$/)) return null
+        return "e:" + rest
+    }
+    return null
+}
+
+def embedCardIdFromLayoutKey(key) {
+    def k = normalizeEmbedLayoutKey(key)
+    if (!k || !k.startsWith("e:")) return null
+    return "e_" + k.substring(2)
+}
+
+def hostnameFromHttpsUrl(url) {
+    try {
+        def u = new java.net.URI(url.toString())
+        return (u.host ?: "").toString()
+    } catch (e) {
+        return ""
+    }
+}
+
+def normalizeEmbedTitle(raw, url) {
+    def t = raw == null ? "" : raw.toString().replaceAll(/[\u0000-\u001F\u007F]/, " ").trim()
+    if (t.length() > maxEmbedTitleLen()) t = t.substring(0, maxEmbedTitleLen()).trim()
+    if (t) return t
+    def host = hostnameFromHttpsUrl(url)
+    return host ?: "Embed"
+}
+
+def validateHttpsEmbedUrl(raw) {
+    if (raw == null) return null
+    def s = raw.toString().trim()
+    if (!s || s.length() > maxEmbedUrlLen()) return null
+    for (int i = 0; i < s.length(); i++) {
+        if ((int) s.charAt(i) < 0x20) return null
+    }
+    if (s.startsWith("//")) return null
+    try {
+        def u = new java.net.URI(s)
+        if (!u.isAbsolute()) return null
+        def scheme = (u.scheme ?: "").toLowerCase()
+        if (scheme != "https") return null
+        if (!u.host) return null
+        return s
+    } catch (e) {
+        return null
+    }
+}
+
+def persistEmbedCards(cards) {
+    def json = groovy.json.JsonOutput.toJson(cards)
+    if (json.toString().length() > maxEmbedCardsStateBytes()) {
+        return [ok: false, error: "embed cards too large"]
+    }
+    state.embedCardsJson = json
+    return [ok: true]
+}
+
+def reconcileFavoritesLayout(deviceIds, embedCards, preferredLayout = null, persist = true) {
+    def validDevices = new HashSet(deviceIds.collect { it.toString() })
+    def validEmbeds = new HashSet(embedCards.collect { it.id.toString() })
+    def source = preferredLayout != null ? preferredLayout : parseFavoritesLayoutState()
+    def out = []
+    def seen = new HashSet()
+    for (raw in source) {
+        def key = normalizeEmbedLayoutKey(raw)
+        if (!key || seen.contains(key)) continue
+        if (key.startsWith("d:")) {
+            def id = key.substring(2)
+            if (!validDevices.contains(id)) continue
+        } else if (key.startsWith("e:")) {
+            def eid = embedCardIdFromLayoutKey(key)
+            if (!eid || !validEmbeds.contains(eid)) continue
+            key = "e:" + eid.substring(2)
+        } else {
+            continue
+        }
+        seen.add(key)
+        out << key
+    }
+    for (id in deviceIds) {
+        def key = deviceLayoutKey(id)
+        if (!seen.contains(key)) {
+            seen.add(key)
+            out << key
+        }
+    }
+    for (card in embedCards) {
+        def key = "e:" + card.id.toString().substring(2)
+        if (!seen.contains(key)) {
+            seen.add(key)
+            out << key
+        }
+    }
+    if (persist) state.favoritesLayoutJson = groovy.json.JsonOutput.toJson(out)
+    return out
+}
+
+def replaceDeviceSlotsInLayout(deviceIds) {
+    def cards = parseEmbedCardsState()
+    def prev = parseFavoritesLayoutState()
+    def deviceQueue = deviceIds.collect { deviceLayoutKey(it) }
+    def next = []
+    def di = 0
+    for (raw in prev) {
+        def key = normalizeEmbedLayoutKey(raw)
+        if (!key) continue
+        if (key.startsWith("d:")) {
+            if (di < deviceQueue.size()) {
+                next << deviceQueue[di]
+                di++
+            }
+        } else if (key.startsWith("e:")) {
+            def eid = embedCardIdFromLayoutKey(key)
+            if (eid && cards.find { it.id == eid }) next << ("e:" + eid.substring(2))
+        }
+    }
+    while (di < deviceQueue.size()) {
+        next << deviceQueue[di]
+        di++
+    }
+    return reconcileFavoritesLayout(deviceIds, cards, next)
+}
+
+def embedCardsJsonFragment() {
+    def cards = parseEmbedCardsState()
+    def out = new StringBuilder()
+    out << ",\"embedCards\":["
+    boolean first = true
+    for (card in cards) {
+        if (!first) out << ","; first = false
+        out << "{\"id\":" << jsonStr(card.id)
+        out << ",\"title\":" << jsonStr(card.title)
+        out << ",\"url\":" << jsonStr(card.url)
+        out << ",\"size\":" << jsonStr(card.size) << "}"
+    }
+    out << "]"
+    return out.toString()
+}
+
+def favoritesLayoutJsonFragment() {
+    // Read-only reconcile for the response; do not rewrite hub state on every /data poll.
+    def layout = reconcileFavoritesLayout(parseFavoritesState(), parseEmbedCardsState(), parseFavoritesLayoutState(), false)
+    def out = new StringBuilder()
+    out << ",\"favoritesLayout\":["
+    boolean first = true
+    for (key in layout) {
+        if (!first) out << ","; first = false
+        out << jsonStr(key)
+    }
+    out << "]"
+    return out.toString()
+}
+
+def newEmbedCardId() {
+    return "e_" + UUID.randomUUID().toString().replace("-", "")
+}
+
+def saveEmbedCards() {
+    if (!guardDashboardAccess()) return renderAuthRequired()
+    def body = request?.JSON
+    if (body == null) {
+        try {
+            def raw = request?.postBody ?: request?.content
+            if (raw) body = new groovy.json.JsonSlurper().parseText(raw.toString())
+        } catch (e) {}
+    }
+    def action = body?.action?.toString()?.trim()?.toLowerCase()
+    if (!action) return renderJsonNoStore('{"ok":false,"error":"missing action"}', 400)
+    def cards = parseEmbedCardsState()
+    def deviceIds = parseFavoritesState()
+
+    if (action == "create") {
+        if (cards.size() >= maxEmbedCards()) {
+            return renderJsonNoStore('{"ok":false,"error":"embed card limit reached"}', 400)
+        }
+        def url = validateHttpsEmbedUrl(body?.url)
+        if (!url) return renderJsonNoStore('{"ok":false,"error":"invalid https url"}', 400)
+        def size = body?.size?.toString()?.trim()
+        if (!embedSizePresetSet().contains(size)) size = "tall"
+        def id = newEmbedCardId()
+        def title = normalizeEmbedTitle(body?.title, url)
+        cards << [id: id, title: title, url: url, size: size]
+        def persisted = persistEmbedCards(cards)
+        if (!persisted.ok) return renderJsonNoStore("{\"ok\":false,\"error\":${jsonStr(persisted.error)}}", 400)
+        def layout = parseFavoritesLayoutState()
+        layout << ("e:" + id.substring(2))
+        def reconciled = reconcileFavoritesLayout(deviceIds, cards, layout)
+        return renderEmbedCardsResponse(cards, reconciled, id)
+    }
+
+    if (action == "update") {
+        def id = body?.id?.toString()?.trim()
+        if (!id || !id.startsWith("e_")) return renderJsonNoStore('{"ok":false,"error":"missing id"}', 400)
+        def idx = -1
+        for (int i = 0; i < cards.size(); i++) {
+            if (cards[i].id == id) { idx = i; break }
+        }
+        if (idx < 0) return renderJsonNoStore('{"ok":false,"error":"not found"}', 404)
+        def url = body?.url != null ? validateHttpsEmbedUrl(body.url) : cards[idx].url
+        if (!url) return renderJsonNoStore('{"ok":false,"error":"invalid https url"}', 400)
+        def title = body?.title != null ? normalizeEmbedTitle(body.title, url) : normalizeEmbedTitle(cards[idx].title, url)
+        def size = body?.size != null ? body.size.toString().trim() : cards[idx].size
+        if (!embedSizePresetSet().contains(size)) size = cards[idx].size
+        cards[idx] = [id: id, title: title, url: url, size: size]
+        def persisted = persistEmbedCards(cards)
+        if (!persisted.ok) return renderJsonNoStore("{\"ok\":false,\"error\":${jsonStr(persisted.error)}}", 400)
+        def reconciled = reconcileFavoritesLayout(deviceIds, cards)
+        return renderEmbedCardsResponse(cards, reconciled, id)
+    }
+
+    if (action == "delete") {
+        def id = body?.id?.toString()?.trim()
+        if (!id || !id.startsWith("e_")) return renderJsonNoStore('{"ok":false,"error":"missing id"}', 400)
+        def next = cards.findAll { it.id != id }
+        if (next.size() == cards.size()) return renderJsonNoStore('{"ok":false,"error":"not found"}', 404)
+        def persisted = persistEmbedCards(next)
+        if (!persisted.ok) return renderJsonNoStore("{\"ok\":false,\"error\":${jsonStr(persisted.error)}}", 400)
+        def reconciled = reconcileFavoritesLayout(deviceIds, next)
+        return renderEmbedCardsResponse(next, reconciled, id)
+    }
+
+    return renderJsonNoStore('{"ok":false,"error":"invalid action"}', 400)
+}
+
+def renderEmbedCardsResponse(cards, layout, id = null) {
+    def out = new StringBuilder()
+    out << "{\"ok\":true"
+    if (id != null) out << ",\"id\":" << jsonStr(id)
+    out << ",\"embedCards\":["
+    boolean first = true
+    for (card in cards) {
+        if (!first) out << ","; first = false
+        out << "{\"id\":" << jsonStr(card.id)
+        out << ",\"title\":" << jsonStr(card.title)
+        out << ",\"url\":" << jsonStr(card.url)
+        out << ",\"size\":" << jsonStr(card.size) << "}"
+    }
+    out << "],\"favoritesLayout\":["
+    first = true
+    for (key in layout) {
+        if (!first) out << ","; first = false
+        out << jsonStr(key)
+    }
+    out << "]}"
+    return renderJsonNoStore(withAuthJson(out.toString()), 200)
+}
+
+def saveFavoritesLayout() {
+    if (!guardDashboardAccess()) return renderAuthRequired()
+    def body = request?.JSON
+    if (body == null) {
+        try {
+            def raw = request?.postBody ?: request?.content
+            if (raw) body = new groovy.json.JsonSlurper().parseText(raw.toString())
+        } catch (e) {}
+    }
+    def layoutIn = body?.layout
+    if (!(layoutIn instanceof List)) {
+        return renderJsonNoStore('{"ok":false,"error":"missing layout"}', 400)
+    }
+    def cards = parseEmbedCardsState()
+    def deviceIds = parseFavoritesState()
+    def validDevices = new HashSet(deviceIds.collect { it.toString() })
+    def cardById = [:]
+    for (card in cards) cardById[card.id] = card
+
+    def nextLayout = []
+    def seen = new HashSet()
+    def nextDevices = []
+    def embedSizes = body?.embedSizes
+    if (embedSizes != null && !(embedSizes instanceof Map)) {
+        return renderJsonNoStore('{"ok":false,"error":"invalid embedSizes"}', 400)
+    }
+    def favoriteSizes = body?.favoriteSizes
+    if (favoriteSizes != null && !(favoriteSizes instanceof Map)) {
+        return renderJsonNoStore('{"ok":false,"error":"invalid favoriteSizes"}', 400)
+    }
+
+    for (raw in layoutIn) {
+        def key = normalizeEmbedLayoutKey(raw)
+        if (!key || seen.contains(key)) continue
+        if (key.startsWith("d:")) {
+            def id = key.substring(2)
+            if (!validDevices.contains(id)) continue
+            seen.add(key)
+            nextLayout << key
+            nextDevices << id.toLong()
+        } else if (key.startsWith("e:")) {
+            def eid = embedCardIdFromLayoutKey(key)
+            if (!eid || !cardById.containsKey(eid)) continue
+            def nk = "e:" + eid.substring(2)
+            seen.add(nk)
+            nextLayout << nk
+        }
+    }
+    // Preserve any omitted devices/embeds at the end (deterministic reconcile).
+    nextLayout = reconcileFavoritesLayout(nextDevices.size() ? nextDevices : deviceIds, cards, nextLayout)
+    if (nextDevices.size()) {
+        state.favorites = nextDevices.join(",")
+        deviceIds = nextDevices
+    }
+
+    // Device sizes: same rules as saveFavoritesFromList when provided.
+    if (favoriteSizes != null) {
+        def validSizes = new HashSet(["full", "square", "wide", "tall", "standard", "compact"])
+        def validatedSet = new HashSet(deviceIds.collect { it.toString() })
+        def nextSizes = [:]
+        for (entry in favoriteSizes) {
+            def idKey = String.valueOf(entry.key)
+            def val = String.valueOf(entry.value)
+            if (!validatedSet.contains(idKey)) continue
+            if (!validSizes.contains(val)) continue
+            nextSizes[idKey] = val
+        }
+        state.favoriteSizesJson = groovy.json.JsonOutput.toJson(nextSizes)
+    }
+
+    // Embed sizes live on each card.
+    if (embedSizes != null) {
+        def allowed = embedSizePresetSet()
+        def nextCards = []
+        for (card in cards) {
+            def size = card.size
+            if (embedSizes.containsKey(card.id)) {
+                def cand = embedSizes[card.id]?.toString()?.trim()
+                if (allowed.contains(cand)) size = cand
+            } else if (embedSizes.containsKey(card.id.toString().substring(2))) {
+                def cand = embedSizes[card.id.toString().substring(2)]?.toString()?.trim()
+                if (allowed.contains(cand)) size = cand
+            }
+            nextCards << [id: card.id, title: card.title, url: card.url, size: size]
+        }
+        def persisted = persistEmbedCards(nextCards)
+        if (!persisted.ok) return renderJsonNoStore("{\"ok\":false,\"error\":${jsonStr(persisted.error)}}", 400)
+        cards = nextCards
+        nextLayout = reconcileFavoritesLayout(deviceIds, cards, nextLayout)
+    }
+
+    def out = new StringBuilder()
+    out << "{\"ok\":true,\"favorites\":["
+    boolean first = true
+    for (id in deviceIds) {
+        if (!first) out << ","; first = false
+        out << id
+    }
+    out << "],\"sizes\":"
+    out << (state.favoriteSizesJson ? state.favoriteSizesJson.toString() : "{}")
+    out << ",\"embedCards\":["
+    first = true
+    for (card in cards) {
+        if (!first) out << ","; first = false
+        out << "{\"id\":" << jsonStr(card.id)
+        out << ",\"title\":" << jsonStr(card.title)
+        out << ",\"url\":" << jsonStr(card.url)
+        out << ",\"size\":" << jsonStr(card.size) << "}"
+    }
+    out << "],\"favoritesLayout\":["
+    first = true
+    for (key in nextLayout) {
+        if (!first) out << ","; first = false
+        out << jsonStr(key)
+    }
+    out << "]}"
+    return renderJsonNoStore(withAuthJson(out.toString()), 200)
 }
 
 def parseFavoriteSizesState() {
@@ -3857,6 +4293,9 @@ def saveFavoritesFromList(ids, sizes = null) {
         state.favoriteSizesJson = groovy.json.JsonOutput.toJson(nextSizes)
     }
 
+    // Preserve embed slots when device favorites change from older clients.
+    def layout = replaceDeviceSlotsInLayout(validated)
+
     def out = new StringBuilder()
     out << "{\"ok\":true,\"ids\":["
     boolean first = true
@@ -3866,7 +4305,22 @@ def saveFavoritesFromList(ids, sizes = null) {
     }
     out << "],\"sizes\":"
     out << (state.favoriteSizesJson ? state.favoriteSizesJson.toString() : "{}")
-    out << "}"
+    out << ",\"favoritesLayout\":["
+    first = true
+    for (key in layout) {
+        if (!first) out << ","; first = false
+        out << jsonStr(key)
+    }
+    out << "],\"embedCards\":["
+    first = true
+    for (card in parseEmbedCardsState()) {
+        if (!first) out << ","; first = false
+        out << "{\"id\":" << jsonStr(card.id)
+        out << ",\"title\":" << jsonStr(card.title)
+        out << ",\"url\":" << jsonStr(card.url)
+        out << ",\"size\":" << jsonStr(card.size) << "}"
+    }
+    out << "]}"
     return renderJsonNoStore( withAuthJson(out.toString()), 200)
 }
 

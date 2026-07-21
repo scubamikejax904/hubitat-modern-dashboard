@@ -344,6 +344,18 @@ starred devices. On the Favorites tab, use overflow menu (⋯) → **Reorder** t
 drag tiles or use the move buttons; compact tiles reflow responsively, while
 thermostats and other wide favorites stay full-width rows.
 
+**Embed cards:** From Favorites, use overflow **Add embed** (or the empty-state
+button) to add an HTTPS iframe widget — for example a [Google Calendar embed](https://support.google.com/calendar/answer/41207)
+URL or an iframe-based weather widget. You can paste either the HTTPS URL or a
+full `<iframe …>` snippet; only the `src` is kept. Cards support sizes
+**standard**, **wide**, **tall**, and **near full screen**, plus a temporary
+**Expand** overlay. Use **Open** if the site refuses to load in a frame (many
+normal website pages block embedding; public Google Calendar embeds usually work,
+while private calendars may require an existing Google sign-in in that browser).
+Only `https://` sources are accepted so embeds work on the installed cloud PWA.
+Embedded sites see your IP address and may use cookies already set for that
+provider.
+
 ### Search, collapse & reorder
 
 **Search** — the sticky search bar filters lights and rooms by name. Matching
@@ -751,7 +763,7 @@ Nothing to edit.
 | `POST /lights/bulk` | Bulk on/off by scope |
 | `POST /hub-mode`, `/hsm`, `/scene/activate` | Mode, security, scenes |
 | `GET/POST /schedules/*` | Scheduler CRUD, toggle, test |
-| `POST /settings/room-order`, `/nav-order`, `/favorites` | Layout sync |
+| `POST /settings/room-order`, `/nav-order`, `/favorites`, `/embed-cards`, `/settings/favorites-layout` | Layout sync, favorites, HTTPS embed cards |
 
 All endpoints require `?access_token=…` (included automatically when you open the
 dashboard link from the app page).
