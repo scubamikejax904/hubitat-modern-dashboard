@@ -8899,7 +8899,10 @@
       case "fans": return ceilingFans.length > 0;
       case "outlets": return outletsSeparateTab && outlets.length > 0;
       case "scheduling": return schedulerEnabled;
-      case "sensors": return mergedSensorList().length > 0;
+      case "sensors": {
+        const listFn = globalThis.__MLD?.mergedSensorList;
+        return typeof listFn === "function" && listFn().length > 0;
+      }
       case "thermostats": return thermostatsPopupEnabled && thermostats.length > 0;
       case "music": return music.length > 0;
       case "cameras": return tabMode && isLocalOrigin() && cameras.length > 0;

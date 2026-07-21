@@ -332,9 +332,12 @@ function wrapPostChunk(body, exportIds, priorMissingMsg) {
   const replaceIds = exportIds.filter((id) => !localIds.has(id));
   replaceIds.sort((a, b) => b.length - a.length);
   const rewritten = rewritePart2PreservingStrings(body, replaceIds);
+  // Function declarations are hoisted in the IIFE, so export them BEFORE any
+  // top-level statements in the body (e.g. post3 used to call
+  // updateQuickNavVisibility before Object.assign ran, aborting exports).
   const chunkIds = parseTopLevelFunctions(body.split("\n")).filter((id) => !exportIds.includes(id));
-  const assign = chunkIds.length ? `\n  Object.assign(M, { ${chunkIds.join(", ")} });\n` : "";
-  return `(() => {\n  "use strict";\n  const M = globalThis.__MLD;\n  if (!M) {\n    console.error("Modern Dashboard: ${priorMissingMsg}");\n    return;\n  }\n${rewritten}${assign}})();\n`;
+  const assign = chunkIds.length ? `  Object.assign(M, { ${chunkIds.join(", ")} });\n` : "";
+  return `(() => {\n  "use strict";\n  const M = globalThis.__MLD;\n  if (!M) {\n    console.error("Modern Dashboard: ${priorMissingMsg}");\n    return;\n  }\n${assign}${rewritten}})();\n`;
 }
 
 function splitAppJs(srcPath) {

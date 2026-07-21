@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.22
+
+- **Fix:** cloud boot crashed with `M.mergedSensorList is not a function` (shown as
+  "Cannot reach hub") — post3 called `updateQuickNavVisibility` before exporting its
+  functions onto `__MLD`, so the chunk aborted and sensors/cameras helpers never
+  registered. Chunk exports are now assigned before the chunk body runs.
+
 ## 0.3.21
 
 - **Fix:** cloud dashboard could fail with "Cannot reach hub" after embed-card growth —
