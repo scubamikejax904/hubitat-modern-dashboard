@@ -236,7 +236,7 @@ function validateUnlockPin(pin) {
   return { ok: true };
 }
 
-const EMBED_SIZE_PRESETS = new Set(["standard", "wide", "tall", "viewport"]);
+const EMBED_SIZE_PRESETS = new Set(["compact", "standard", "wide", "square", "portrait", "full", "tall", "large", "viewport"]);
 const MAX_EMBED_CARDS = 12;
 const MAX_EMBED_TITLE = 80;
 const MAX_EMBED_URL = 4096;

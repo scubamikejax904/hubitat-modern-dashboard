@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.26
+
+- **Favorites:** sensor tiles put the star in the top-right and hide the bottom row
+  when there is no battery readout, so compact sensor favorites take less space.
+- **Favorites:** embed iframe cards support more size presets — **Compact**,
+  **Square**, **Portrait**, **Full row**, **Large**, and the existing **Standard**,
+  **Wide**, **Tall**, and **Fill screen** — so dashboards can match varied page layouts.
+- **Favorites:** sensor favorites can use **Square** size.
+
 ## 0.3.25
 
 - **Favorites:** tile sizes use named choices (**Compact**, **Standard**, **Wide**,

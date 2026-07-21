@@ -1861,7 +1861,7 @@ body {
   background: var(--panel-2);
   border-radius: 16px;
   padding: 11px 12px 8px;
-  min-height: 124px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -1876,11 +1876,17 @@ body {
     0 0 0 1px color-mix(in srgb, var(--sensor-accent) 32%, transparent),
     0 0 16px color-mix(in srgb, var(--sensor-accent) 16%, transparent);
 }
-.sensor-card-top { display: flex; align-items: center; justify-content: space-between; min-height: 20px; }
+.sensor-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
 .sensor-card-icon {
   color: var(--text-faint);
   width: 20px; height: 20px;
   display: inline-flex;
+  flex-shrink: 0;
   transition: color .2s var(--ease);
 }
 .sensor-card--temp .sensor-card-icon,
@@ -1898,6 +1904,7 @@ body {
   background: color-mix(in srgb, var(--panel-solid) 60%, transparent);
   border: 1px solid var(--stroke);
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0;
 }
 .sensor-card.is-alert .sensor-card-pill {
   color: var(--sensor-accent);
@@ -1945,9 +1952,10 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 32px;
+  min-height: 0;
   margin-top: 2px;
 }
+.sensor-card-actions[hidden] { display: none; }
 .sensor-card-battery {
   flex: 1;
   min-width: 0;
@@ -2047,18 +2055,24 @@ body {
   --fav-span-standard: 1;
   --fav-span-wide: 2;
   --fav-span-square: 2;
+  --fav-span-portrait: 2;
   --fav-span-full: 4;
   --fav-span-tall: 4;
+  --fav-span-large: 4;
   --fav-span-viewport: 4;
   --fav-min-h-compact: 64px;
   --fav-min-h-standard: 132px;
   --fav-min-h-wide: 96px;
   --fav-min-h-square: 0;
+  --fav-min-h-portrait: 240px;
   --fav-min-h-full: 96px;
   --fav-min-h-tall: 192px;
+  --fav-min-h-large: min(320px, 48dvh);
   --fav-min-h-viewport: calc(100dvh - 11rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   --fav-row-square: 2;
+  --fav-row-portrait: 2;
   --fav-row-tall: 2;
+  --fav-row-large: 2;
   grid-template-columns: repeat(var(--fav-cols), minmax(0, 1fr));
   grid-auto-rows: auto;
   grid-auto-flow: row;
@@ -2073,7 +2087,9 @@ body {
 /* Sized direct children win over legacy full-bleed rules (e.g. .quick-fav-tstat). */
 .quick-body-favorites .quick-fav-grid > .fav-size-square,
 .quick-body-favorites .quick-fav-grid > .fav-size-wide,
+.quick-body-favorites .quick-fav-grid > .fav-size-portrait,
 .quick-body-favorites .quick-fav-grid > .fav-size-tall,
+.quick-body-favorites .quick-fav-grid > .fav-size-large,
 .quick-body-favorites .quick-fav-grid > .fav-size-standard,
 .quick-body-favorites .quick-fav-grid > .fav-size-compact,
 .quick-body-favorites .quick-fav-grid > .fav-size-full,
@@ -2093,10 +2109,22 @@ body {
   aspect-ratio: 1;
   align-self: start;
 }
+.quick-body-favorites .quick-fav-grid > .fav-size-portrait {
+  grid-column: span var(--fav-span-portrait);
+  grid-row: span var(--fav-row-portrait);
+  min-height: var(--fav-min-h-portrait);
+  align-self: start;
+}
 .quick-body-favorites .quick-fav-grid > .fav-size-tall {
   grid-column: span var(--fav-span-tall);
   grid-row: span var(--fav-row-tall);
   min-height: var(--fav-min-h-tall);
+  align-self: start;
+}
+.quick-body-favorites .quick-fav-grid > .fav-size-large {
+  grid-column: span var(--fav-span-large);
+  grid-row: span var(--fav-row-large);
+  min-height: var(--fav-min-h-large);
   align-self: start;
 }
 .quick-body-favorites .quick-fav-grid > .fav-size-wide {
@@ -2125,17 +2153,23 @@ body {
     --fav-span-compact: 1;
     --fav-span-standard: 1;
     --fav-span-square: 1;
+    --fav-span-portrait: 1;
     --fav-span-wide: 2;
     --fav-span-full: 2;
     --fav-span-tall: 2;
+    --fav-span-large: 2;
     --fav-span-viewport: 2;
     --fav-min-h-compact: 56px;
     --fav-min-h-standard: 120px;
     --fav-min-h-wide: 88px;
+    --fav-min-h-portrait: 220px;
     --fav-min-h-full: 96px;
     --fav-min-h-tall: 192px;
+    --fav-min-h-large: min(280px, 45dvh);
     --fav-row-square: 1;
+    --fav-row-portrait: 1;
     --fav-row-tall: 1;
+    --fav-row-large: 1;
   }
 }
 /* Single column on the smallest Favorites containers. */
@@ -2146,17 +2180,23 @@ body {
     --fav-span-compact: 1;
     --fav-span-standard: 1;
     --fav-span-square: 1;
+    --fav-span-portrait: 1;
     --fav-span-wide: 1;
     --fav-span-full: 1;
     --fav-span-tall: 1;
+    --fav-span-large: 1;
     --fav-span-viewport: 1;
     --fav-min-h-compact: 52px;
     --fav-min-h-standard: 112px;
     --fav-min-h-wide: 84px;
+    --fav-min-h-portrait: 200px;
     --fav-min-h-full: 88px;
     --fav-min-h-tall: 176px;
+    --fav-min-h-large: min(260px, 42dvh);
     --fav-row-square: 1;
+    --fav-row-portrait: 1;
     --fav-row-tall: 1;
+    --fav-row-large: 1;
   }
 }
 
@@ -2288,8 +2328,10 @@ body {
 .fav-size-option-preview--standard { --preview-w: 25%; --preview-h: 55%; }
 .fav-size-option-preview--wide { --preview-w: 50%; --preview-h: 45%; }
 .fav-size-option-preview--square { --preview-w: 50%; --preview-h: 85%; }
+.fav-size-option-preview--portrait { --preview-w: 50%; --preview-h: 100%; }
 .fav-size-option-preview--full { --preview-w: 100%; --preview-h: 45%; }
-.fav-size-option-preview--tall { --preview-w: 100%; --preview-h: 90%; }
+.fav-size-option-preview--tall { --preview-w: 100%; --preview-h: 75%; }
+.fav-size-option-preview--large { --preview-w: 100%; --preview-h: 90%; }
 .fav-size-option-preview--viewport { --preview-w: 100%; --preview-h: 100%; }
 @media (max-width: 359px) {
   .fav-size-sheet-options { grid-template-columns: 1fr; }
@@ -2438,18 +2480,8 @@ body {
 }
 .quick-body-favorites .sensor-card--valve.fav-size-square .sensor-card-meta,
 .quick-body-favorites .sensor-card--valve.fav-size-square .sensor-card-foot,
-.quick-body-favorites .sensor-card--valve.fav-size-square .sensor-card-battery {
-  display: none;
-}
-.quick-body-favorites .sensor-card--valve.fav-size-square .sensor-card-top {
-  padding-right: 30px;
-}
 .quick-body-favorites .sensor-card--valve.fav-size-square .sensor-card-actions {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  min-height: 32px;
-  margin: 0;
+  display: none;
 }
 .quick-body-favorites .sensor-card--valve.fav-size-square .sensor-card-controls {
   flex-direction: column;
@@ -2497,7 +2529,7 @@ body {
 
   .sensor-card--valve.fav-size-full {
     display: grid;
-    grid-template-columns: auto minmax(120px, 1fr) minmax(220px, auto) auto;
+    grid-template-columns: auto minmax(120px, 1fr) minmax(220px, auto);
     grid-template-rows: auto auto;
     align-items: center;
     gap: 2px 12px;
@@ -2518,7 +2550,7 @@ body {
   }
   .sensor-card--valve.fav-size-full .sensor-card-meta,
   .sensor-card--valve.fav-size-full .sensor-card-foot,
-  .sensor-card--valve.fav-size-full .sensor-card-battery {
+  .sensor-card--valve.fav-size-full .sensor-card-actions {
     display: none;
   }
   .sensor-card--valve.fav-size-full .sensor-card-controls {
@@ -2526,11 +2558,6 @@ body {
     grid-row: 1 / 3;
     margin: 0;
     min-width: 220px;
-  }
-  .sensor-card--valve.fav-size-full .sensor-card-actions {
-    grid-column: 4;
-    grid-row: 1 / 3;
-    margin: 0;
   }
 
   .fav-size-full.shade-tile {
@@ -2579,16 +2606,24 @@ body {
 .quick-body-favorites .fav-size-compact.tile .tile-foot { margin-top: auto; }
 .quick-body-favorites .fav-size-compact.tile .tile-state { font-size: 12px; font-weight: 700; }
 
-/* ---- Compact sensors: name + value + fav ---- */
-.quick-body-favorites .fav-size-compact.sensor-card { padding: 8px 10px; min-height: 0; gap: 3px; }
-.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-top,
+/* ---- Compact sensors: value + name; star overlays top-right ---- */
+.quick-body-favorites .fav-size-compact.sensor-card {
+  padding: 8px 36px 8px 10px;
+  min-height: 0;
+  gap: 3px;
+}
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-icon,
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-pill,
 .quick-body-favorites .fav-size-compact.sensor-card .sensor-card-meta,
 .quick-body-favorites .fav-size-compact.sensor-card .sensor-card-foot,
-.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-battery { display: none; }
-.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-actions {
-  margin-top: auto;
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-actions { display: none; }
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-top {
+  position: absolute;
+  top: 4px;
+  right: 4px;
   min-height: 0;
-  justify-content: flex-end;
+  margin: 0;
+  z-index: 1;
 }
 .quick-body-favorites .fav-size-compact.sensor-card .sensor-card-value { font-size: 20px; margin-top: 0; }
 .quick-body-favorites .fav-size-compact.sensor-card .sensor-card-name { font-size: 12px; }

@@ -342,15 +342,17 @@ etc.) to add it to favorites. The list is stored on the hub and syncs across
 devices. Open the **Favorites** quick-nav icon for a cross-category view of
 starred devices. On the Favorites tab, use overflow menu (⋯) → **Reorder** to
 drag tiles or use the move buttons, and tap **Size** on a tile to choose a
-named layout (**Compact**, **Standard**, **Wide**, **Square**, **Full row**,
-**Tall**, or **Fill screen** depending on device type). One size is saved per
-tile and adapts responsively across phone and desktop widths.
+named layout (**Compact**, **Standard**, **Wide**, **Square**, **Portrait**,
+**Full row**, **Tall**, **Large**, or **Fill screen** depending on device type).
+One size is saved per tile and adapts responsively across phone and desktop
+widths.
 
 **Embed cards:** From Favorites, use overflow **Add embed** (or the empty-state
 button) to add an HTTPS iframe widget — for example a [Google Calendar embed](https://support.google.com/calendar/answer/41207)
 URL or an iframe-based weather widget. You can paste either the HTTPS URL or a
 full `<iframe …>` snippet; only the `src` is kept. Cards support sizes
-**Standard**, **Wide**, **Tall**, and **Fill screen**, plus a temporary
+**Compact**, **Standard**, **Wide**, **Square**, **Portrait**, **Full row**,
+**Tall**, **Large**, and **Fill screen**, plus a temporary
 **Expand** overlay. Use **Open** if the site refuses to load in a frame (many
 normal website pages block embedding; public Google Calendar embeds usually work,
 while private calendars may require an existing Google sign-in in that browser).

@@ -1,4 +1,4 @@
-// Modern Dashboard v0.3.25
+// Modern Dashboard v0.3.26
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
@@ -16,7 +16,7 @@ import groovy.transform.Field
 @Field private static String LOCAL_ASSET_CACHE_VERSION = ""
 @Field private static int LOCAL_ASSET_CACHE_BYTES = 0
 @Field private static final int LOCAL_ASSET_CACHE_MAX_BYTES = 768 * 1024
-@Field private static final String MLD_DEPLOYED_VERSION = "0.3.25"
+@Field private static final String MLD_DEPLOYED_VERSION = "0.3.26"
 
 definition(
     name: "Modern Dashboard",
@@ -50,7 +50,7 @@ def mainPage() {
             } else {
                 paragraph "<small><b>Hub-only:</b> UI and API run entirely on your hub — no Maker API or third-party cloud.</small>"
             }
-            paragraph "<small>Version 0.3.25 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
+            paragraph "<small>Version 0.3.26 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         if (assetsOk) {
             section("Dashboard links") {
@@ -3384,7 +3384,7 @@ def maxEmbedCards() { return 12 }
 def maxEmbedTitleLen() { return 80 }
 def maxEmbedUrlLen() { return 4096 }
 def maxEmbedCardsStateBytes() { return 32768 }
-def embedSizePresetSet() { return ["standard", "wide", "tall", "viewport"] as Set }
+def embedSizePresetSet() { return ["compact", "standard", "wide", "square", "portrait", "full", "tall", "large", "viewport"] as Set }
 
 def parseEmbedCardsState() {
     if (!state.embedCardsJson) return []

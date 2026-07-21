@@ -114,8 +114,8 @@
     try { localStorage.setItem(CAMERAS_COLS_STORAGE_KEY, String(cols)); } catch {}
   }
 
-  const FAVORITE_SIZE_PRESET_SET = new Set(["full", "square", "wide", "tall", "standard", "compact", "viewport"]);
-  const EMBED_SIZE_PRESET_SET = new Set(["standard", "wide", "tall", "viewport"]);
+  const FAVORITE_SIZE_PRESET_SET = new Set(["full", "square", "wide", "tall", "large", "portrait", "standard", "compact", "viewport"]);
+  const EMBED_SIZE_PRESET_SET = new Set(["compact", "standard", "wide", "square", "portrait", "full", "tall", "large", "viewport"]);
   const MAX_EMBED_CARDS = 12;
   const MAX_EMBED_TITLE = 80;
   const MAX_EMBED_URL = 4096;
@@ -1716,8 +1716,14 @@
       ".fav-embed-menu-item{display:block;width:100%;text-align:left;border:0;background:transparent;color:var(--text);padding:8px 10px;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer}" +
       ".fav-embed-menu-item.danger{color:#ef4444}" +
       ".fav-embed-media{position:relative;flex:1;min-height:160px;background:#000}" +
+      ".fav-size-compact.fav-embed-card .fav-embed-media{min-height:120px}" +
+      ".fav-size-standard.fav-embed-card .fav-embed-media{min-height:160px}" +
       ".fav-size-wide.fav-embed-card .fav-embed-media{min-height:180px}" +
+      ".fav-size-square.fav-embed-card .fav-embed-media{min-height:0}" +
+      ".fav-size-portrait.fav-embed-card .fav-embed-media{min-height:220px}" +
+      ".fav-size-full.fav-embed-card .fav-embed-media{min-height:140px}" +
       ".fav-size-tall.fav-embed-card .fav-embed-media{min-height:240px}" +
+      ".fav-size-large.fav-embed-card .fav-embed-media{min-height:320px}" +
       ".fav-size-viewport.fav-embed-card .fav-embed-media{min-height:calc(100dvh - 11rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))}" +
       ".fav-embed-iframe{position:absolute;inset:0;width:100%;height:100%;border:0}" +
       ".favorites-reorder-mode .fav-embed-iframe{pointer-events:none}" +
@@ -7606,8 +7612,10 @@
     standard: { short: "Standard", long: "Standard" },
     wide: { short: "Wide", long: "Wide" },
     square: { short: "Square", long: "Square" },
+    portrait: { short: "Portrait", long: "Portrait" },
     full: { short: "Full row", long: "Full row" },
     tall: { short: "Tall", long: "Tall" },
+    large: { short: "Large", long: "Large" },
     viewport: { short: "Fill screen", long: "Fill screen" },
   };
   // Legacy hub values for controlled tiles map to square.
@@ -7620,11 +7628,13 @@
     default: "square",
     allowed: ["square", "full", "tall"],
   };
+  const EMBED_FAVORITE_SIZE_PROFILE = {
+    default: "tall",
+    allowed: ["compact", "standard", "wide", "square", "portrait", "full", "tall", "large", "viewport"],
+  };
 
   function favoriteSizeProfile(entry) {
-    if (entry?.type === "embed") {
-      return { default: "tall", allowed: ["standard", "wide", "tall", "viewport"] };
-    }
+    if (entry?.type === "embed") return EMBED_FAVORITE_SIZE_PROFILE;
     if (entryNeedsControlledFavoriteSize(entry)) return CONTROLLED_FAVORITE_SIZE_PROFILE;
     const t = entry.type;
     if (t === "garage") return { default: "full", allowed: ["full", "square", "wide"] };
@@ -7634,7 +7644,7 @@
         : { default: "standard", allowed: ["standard", "wide", "compact"] };
     }
     if (t === "outlet") return { default: "standard", allowed: ["standard", "wide", "compact"] };
-    if (t === "sensor") return { default: "standard", allowed: ["standard", "wide", "compact"] };
+    if (t === "sensor") return { default: "standard", allowed: ["standard", "wide", "compact", "square"] };
     return { default: "standard", allowed: ["standard"] };
   }
 
@@ -7739,7 +7749,7 @@
     return favoritesReorderActive;
   }
 
-  const FAVORITE_SIZE_PRESETS = ["full", "square", "wide", "tall", "standard", "compact", "viewport"];
+  const FAVORITE_SIZE_PRESETS = ["full", "square", "wide", "tall", "large", "portrait", "standard", "compact", "viewport"];
 
   function resolveFavoriteSize(entry) {
     const profile = favoriteSizeProfile(entry);
@@ -7776,7 +7786,7 @@
   }
 
   function isFullFavoriteSize(size) {
-    return size === "full" || size === "tall" || size === "viewport";
+    return size === "full" || size === "tall" || size === "large" || size === "viewport";
   }
 
   function makeFavoriteEntryElement(entry) {
@@ -11897,6 +11907,7 @@
     const batTxt = sensorBatteryLabel(dev);
     rec.batteryEl.textContent = batTxt;
     rec.batteryEl.hidden = !batTxt;
+    if (rec.actionsEl) rec.actionsEl.hidden = !batTxt;
     const lastTxt = sensorLastEventLine(dev);
     card.setAttribute("aria-label", (dev.n || "Sensor") + ", " + roomLabel(dev.r) + ", " + sensorTypeLabel(dev.t) + (pill ? ", " + pill : "") + (lastTxt ? ", " + lastTxt : "") + (batTxt ? ", " + batTxt : ""));
     if (dev.t === "valve" && rec.openBtn && rec.closeBtn) {
@@ -11927,6 +11938,10 @@
     pill.appendChild(pillTxt);
     top.appendChild(icon);
     top.appendChild(pill);
+    const fav = ce("button", "sensor-card-fav tile-fav");
+    fav.type = "button";
+    attachFavButton(fav, dev.i);
+    top.appendChild(fav);
     const hero = ce("div", "sensor-card-value");
     const name = ce("div", "sensor-card-name");
     const fullName = dev.n || ("Sensor " + dev.i);
@@ -11943,17 +11958,13 @@
     const foot = ce("div", "sensor-card-foot");
     const actions = ce("div", "sensor-card-actions");
     const battery = ce("div", "sensor-card-battery");
-    const fav = ce("button", "sensor-card-fav tile-fav");
-    fav.type = "button";
-    attachFavButton(fav, dev.i);
     actions.appendChild(battery);
-    actions.appendChild(fav);
     card.appendChild(top);
     card.appendChild(hero);
     card.appendChild(name);
     card.appendChild(metaRow);
     card.appendChild(foot);
-    const rec = { el: card, heroEl: hero, pillEl: pill, pillTxt, dot, footEl: foot, batteryEl: battery, favBtn: fav, t: dev.t, i: dev.i };
+    const rec = { el: card, heroEl: hero, pillEl: pill, pillTxt, dot, footEl: foot, batteryEl: battery, actionsEl: actions, favBtn: fav, t: dev.t, i: dev.i };
     if (dev.t === "valve") {
       const controls = ce("div", "sensor-card-controls");
       const openBtn = ce("button", "quick-lock-btn sensor-valve-btn");
