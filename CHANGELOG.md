@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.23
+
+- **Favorites:** embed iframes no longer reload when switching category tabs — live
+  frames are parked off-DOM and reattached so in-widget state (e.g. Google Calendar
+  view) is preserved. Provider cookies still depend on the browser after a full refresh.
+
 ## 0.3.22
 
 - **Fix:** cloud boot crashed with `M.mergedSensorList is not a function` (shown as
