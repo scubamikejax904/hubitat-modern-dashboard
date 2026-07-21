@@ -181,7 +181,8 @@
   }
   function favoriteEntryKey(entry) {
     if (!entry) return "";
-    if (entry.type === "embed") return embedFavoriteKey(entry.card.id);
+    if (entry.type === "embed") return embedFavoriteKey(entry.card?.id);
+    if (entry.dev?.i == null) return "";
     return deviceFavoriteKey(entry.dev.i);
   }
 
@@ -7602,11 +7603,16 @@
     return profile.default;
   }
 
+  function findDeviceFavoriteEntry(id) {
+    const want = Number(id);
+    return getFavoriteEntries().find((e) => e?.type !== "embed" && Number(e?.dev?.i) === want);
+  }
+
   function normalizedFavoriteSizes(order) {
     const out = {};
     for (const id of order) {
       const size = favoriteSizes[id];
-      const entry = getFavoriteEntries().find((e) => Number(e.dev.i) === Number(id));
+      const entry = findDeviceFavoriteEntry(id);
       if (entry) {
         if (!size) continue;
         const profile = favoriteSizeProfile(entry);
@@ -7631,7 +7637,7 @@
       const id = Number(k);
       if (!favSet.has(id)) continue;
       const size = String(d.config.favoriteSizes[k]);
-      const entry = getFavoriteEntries().find((e) => Number(e.dev.i) === id);
+      const entry = findDeviceFavoriteEntry(id);
       if (entry) {
         const profile = favoriteSizeProfile(entry);
         const coerced = coerceFavoriteSize(entry, size);

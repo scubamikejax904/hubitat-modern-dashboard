@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.17
+
+- **Fix:** dashboard could fail to leave the loading shell when Favorites had an
+  HTTPS embed card plus saved device sizes — size lookup assumed every favorite
+  entry had a device (`e.dev.i`) and threw on embed entries.
+
 ## 0.3.16
 
 - **Fix:** favorites embed cards could disappear or ignore saved layout after `/data`
