@@ -997,7 +997,7 @@ const server = createServer(async (req, res) => {
       ...(state.windowShades || []).map(s => s.i),
       ...(state.ceilingFans || []).map(f => f.i),
     ]);
-    const validSizes = new Set(["full", "square", "wide", "standard", "compact"]);
+    const validSizes = new Set(["full", "square", "wide", "tall", "standard", "compact"]);
     const validateIds = (raw) => {
       const validated = [];
       const seen = new Set();

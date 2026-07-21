@@ -3835,7 +3835,7 @@ def saveFavoritesFromList(ids, sizes = null) {
     state.favorites = validated.join(",")
 
     // Persist only non-default, valid preset sizes for retained favorites.
-    def validSizes = new HashSet(["full", "square", "wide", "standard", "compact"])
+    def validSizes = new HashSet(["full", "square", "wide", "tall", "standard", "compact"])
     def validatedSet = new HashSet(validated.collect { it.toString() })
     def nextSizes = [:]
     if (sizes != null) {

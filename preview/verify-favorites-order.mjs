@@ -82,7 +82,7 @@ try {
 
   // ---- Sizes round-trip ----
   const sizeIds = reversed.slice(0, 2);
-  const sizesBody = { ids: reversed, sizes: { [sizeIds[0]]: "square", [sizeIds[1]]: "compact" } };
+  const sizesBody = { ids: reversed, sizes: { [sizeIds[0]]: "tall", [sizeIds[1]]: "compact" } };
   const sizeRes = await fetch(`http://127.0.0.1:${PORT}/favorites?${dashSessionQuery}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -90,12 +90,12 @@ try {
   });
   assert(sizeRes.ok, "POST /favorites with sizes ok");
   const sizeJson = await sizeRes.json();
-  assert(sizeJson.sizes && String(sizeJson.sizes[sizeIds[0]]) === "square", "server echoes square size");
+  assert(sizeJson.sizes && String(sizeJson.sizes[sizeIds[0]]) === "tall", "server echoes tall size");
   assert(String(sizeJson.sizes[sizeIds[1]]) === "compact", "server echoes compact size");
 
   const afterSizes = await getJson("/data");
   const cfgSizes = afterSizes.config?.favoriteSizes || {};
-  assert(String(cfgSizes[sizeIds[0]]) === "square", "sizes persisted in /data config");
+  assert(String(cfgSizes[sizeIds[0]]) === "tall", "tall size persisted in /data config");
   assert(String(cfgSizes[sizeIds[1]]) === "compact", "compact size persisted in /data config");
 
   // ---- Unknown preset rejected ----

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.13
+
+- **Favorites:** new **tall (2×4)** size preset for thermostats, locks, shades, fans,
+  music, and valve sensors — same three choices for all of them: **square** (default),
+  **full**, and **tall**. Garage doors keep full / square / wide.
+- **Favorites:** denser grid on tablets — square and tall tiles span two rows so
+  standard compact tiles tuck beside them without stretching.
+- **Favorites:** on wider screens, **full** presets for controlled devices use a
+  horizontal layout (setpoints and mode buttons, lock icon + actions, shade slider,
+  fan speed, music transport, valve open/close) so controls stay on one row.
+- **Favorites:** sensor favorite cards update type/alert styling correctly on live
+  status changes.
+
 ## 0.3.12
 
 - **Favorites:** lock tiles support full and square sizes only (wide removed);

@@ -113,7 +113,7 @@
     try { localStorage.setItem(CAMERAS_COLS_STORAGE_KEY, String(cols)); } catch {}
   }
 
-  const FAVORITE_SIZE_PRESET_SET = new Set(["full", "square", "wide", "standard", "compact"]);
+  const FAVORITE_SIZE_PRESET_SET = new Set(["full", "square", "wide", "tall", "standard", "compact"]);
 
   function loadFavoriteSizesCache() {
     try {
@@ -7343,19 +7343,25 @@
     body.appendChild(list);
   }
 
+  function entryNeedsControlledFavoriteSize(entry) {
+    if (["thermostat", "lock", "shade", "fan", "music"].includes(entry.type)) return true;
+    return entry.type === "sensor" && entry.dev?.t === "valve";
+  }
+
+  const CONTROLLED_FAVORITE_SIZE_PROFILE = {
+    default: "square",
+    allowed: ["square", "full", "tall"]
+  };
+
   function favoriteSizeProfile(entry) {
+    if (entryNeedsControlledFavoriteSize(entry)) return CONTROLLED_FAVORITE_SIZE_PROFILE;
     const t = entry.type;
-    if (t === "thermostat") return { default: "full", allowed: ["full", "square"] };
-    if (t === "lock") return { default: "full", allowed: ["full", "square"] };
     if (t === "garage") return { default: "full", allowed: ["full", "square", "wide"] };
-    if (t === "shade" || t === "fan" || t === "music") return { default: "full", allowed: ["full", "square", "wide"] };
     if (t === "light") return entry.dev && entry.dev.d
       ? { default: "standard", allowed: ["standard", "wide"] }
       : { default: "standard", allowed: ["standard", "wide", "compact"] };
     if (t === "outlet") return { default: "standard", allowed: ["standard", "wide", "compact"] };
-    if (t === "sensor") return entry.dev && entry.dev.t === "valve"
-      ? { default: "standard", allowed: ["standard", "wide"] }
-      : { default: "standard", allowed: ["standard", "wide", "compact"] };
+    if (t === "sensor") return { default: "standard", allowed: ["standard", "wide", "compact"] };
     return { default: "standard", allowed: ["standard"] };
   }
 
@@ -7363,7 +7369,10 @@
     const profile = favoriteSizeProfile(entry);
     if (!size) return profile.default;
     if (profile.allowed.includes(size)) return size;
-    if (entry.type === "lock" && size === "wide") return "square";
+    if (entryNeedsControlledFavoriteSize(entry)
+        && (size === "wide" || size === "standard" || size === "compact")) {
+      return "square";
+    }
     return profile.default;
   }
 
@@ -8582,7 +8591,11 @@
       const d = sensorDisplay(dev);
       hero = d.hero; pill = d.pill; alert = d.alert;
     }
-    card.className = "sensor-card sensor-card--" + (dev.t || "generic") + (alert ? " is-alert" : "");
+    for (const cls of Array.from(card.classList)) {
+      if (cls.startsWith("sensor-card--")) card.classList.remove(cls);
+    }
+    card.classList.add("sensor-card--" + (dev.t || "generic"));
+    card.classList.toggle("is-alert", !!alert);
     rec.heroEl.textContent = hero;
     if (pill) {
       rec.pillEl.hidden = false;
@@ -8864,22 +8877,22 @@
   function favoriteReorderGridSpan(size) {
     if (window.matchMedia("(max-width: 359px)").matches) return 1;
     if (window.matchMedia("(max-width: 539px)").matches) {
-      if (size === "full") return 2;
+      if (size === "full" || size === "tall") return 2;
       return 1;
     }
-    if (size === "full") return 4;
+    if (size === "full" || size === "tall") return 4;
     if (size === "square" || size === "wide") return 2;
     return 1;
   }
 
   function favoriteReorderPreviewHeight(size) {
     if (window.matchMedia("(max-width: 359px)").matches) {
-      return { full: 88, square: 148, wide: 84, standard: 112, compact: 52 }[size] || 112;
+      return { full: 88, square: 148, tall: 176, wide: 84, standard: 112, compact: 52 }[size] || 112;
     }
     if (window.matchMedia("(max-width: 539px)").matches) {
-      return { full: 96, square: 160, wide: 88, standard: 120, compact: 56 }[size] || 120;
+      return { full: 96, square: 160, tall: 192, wide: 88, standard: 120, compact: 56 }[size] || 120;
     }
-    return { full: 96, square: 168, wide: 96, standard: 132, compact: 64 }[size] || 132;
+    return { full: 96, square: 168, tall: 192, wide: 96, standard: 132, compact: 64 }[size] || 132;
   }
 
   function applyFavoriteReorderPreview(wrap, size) {
@@ -8890,6 +8903,12 @@
       wrap.style.aspectRatio = "1";
       wrap.style.height = "auto";
       wrap.style.minHeight = "0";
+    } else if (size === "full" && window.matchMedia("(max-width: 699px)").matches) {
+      // A one-row control card cannot always reflow to 96px on a phone.
+      // Keep its four-column width but let its controls determine the height.
+      wrap.style.aspectRatio = "";
+      wrap.style.height = "auto";
+      wrap.style.minHeight = favoriteReorderPreviewHeight(size) + "px";
     } else {
       wrap.style.aspectRatio = "";
       const height = favoriteReorderPreviewHeight(size);
@@ -8925,7 +8944,7 @@
     return favoritesReorderActive;
   }
 
-  const FAVORITE_SIZE_PRESETS = ["full", "square", "wide", "standard", "compact"];
+  const FAVORITE_SIZE_PRESETS = ["full", "square", "wide", "tall", "standard", "compact"];
 
   function resolveFavoriteSize(entry) {
     const profile = favoriteSizeProfile(entry);
@@ -9202,10 +9221,10 @@
     const size = resolveFavoriteSize(entry);
     const wrap = ce("div", "fav-reorder-item fav-size-" + size);
     wrap.dataset.favId = String(favId);
-    wrap.dataset.favSpan = size === "full" ? "full" : "cell";
+    wrap.dataset.favSpan = size === "full" || size === "tall" ? "full" : "cell";
     wrap.dataset.favSize = size;
     wrap.dataset.name = String(entry.dev.n || "").toLowerCase();
-    if (size === "full") wrap.classList.add("fav-reorder-full");
+    if (size === "full" || size === "tall") wrap.classList.add("fav-reorder-full");
     tile.classList.add("fav-reorder-content");
     wrap.appendChild(tile);
 
@@ -9286,8 +9305,8 @@
     for (const p of FAVORITE_SIZE_PRESETS) wrap.classList.remove("fav-size-" + p);
     wrap.classList.add("fav-size-" + next);
     wrap.dataset.favSize = next;
-    wrap.dataset.favSpan = next === "full" ? "full" : "cell";
-    wrap.classList.toggle("fav-reorder-full", next === "full");
+    wrap.dataset.favSpan = next === "full" || next === "tall" ? "full" : "cell";
+    wrap.classList.toggle("fav-reorder-full", next === "full" || next === "tall");
     for (const p of FAVORITE_SIZE_PRESETS) tile.classList.remove("fav-size-" + p);
     tile.classList.add("fav-size-" + next);
     tile.dataset.favSize = next;
@@ -9299,11 +9318,17 @@
   }
 
   function favoriteSizeShortLabel(size) {
-    return size === "full" ? "1×4" : size === "square" ? "2×2" : size === "wide" ? "1×2" : size === "compact" ? "½×1" : "1×1";
+    return size === "full" ? "1×4"
+      : size === "square" ? "2×2"
+      : size === "tall" ? "2×4"
+      : size === "wide" ? "1×2"
+      : size === "compact" ? "½×1"
+      : "1×1";
   }
   function favoriteSizeLongLabel(size) {
     return size === "full" ? "wide row (1 by 4)"
       : size === "square" ? "square (2 by 2)"
+      : size === "tall" ? "tall (2 by 4)"
       : size === "wide" ? "wide (1 by 2)"
       : size === "compact" ? "compact (half by 1)"
       : "standard (1 by 1)";

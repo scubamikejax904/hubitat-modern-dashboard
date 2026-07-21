@@ -2030,15 +2030,15 @@ body {
 
    Geometry (column/row span) applies only to direct grid children so nested
    tiles that also carry .fav-size-* for content-fit rules do not fight the
-   layout. Height comes from content with soft min-heights — never a hard
-   aspect-ratio that crushes mobile tiles. */
+   layout. On four-column layouts, square/tall cards reserve two rows so
+   neighboring 1×1 cards can fill the remaining cells without stretching. */
 .quick-body-favorites .quick-fav-grid,
 .tab-view.quick-body-favorites .quick-fav-grid {
   --fav-gap: 12px;
   --fav-cols: 4;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-auto-rows: auto;
-  grid-auto-flow: row;
+  grid-auto-flow: dense;
   max-width: 840px;
   margin-inline: auto;
   gap: var(--fav-gap);
@@ -2050,6 +2050,7 @@ body {
 /* Sized direct children win over legacy full-bleed rules (e.g. .quick-fav-tstat). */
 .quick-body-favorites .quick-fav-grid > .fav-size-square,
 .quick-body-favorites .quick-fav-grid > .fav-size-wide,
+.quick-body-favorites .quick-fav-grid > .fav-size-tall,
 .quick-body-favorites .quick-fav-grid > .fav-size-standard,
 .quick-body-favorites .quick-fav-grid > .fav-size-compact,
 .quick-body-favorites .quick-fav-grid > .fav-size-full {
@@ -2067,6 +2068,10 @@ body {
   aspect-ratio: 1;
   align-self: start;
 }
+.quick-body-favorites .quick-fav-grid > .fav-size-tall {
+  grid-column: span 4;
+  min-height: 192px;
+}
 .quick-body-favorites .quick-fav-grid > .fav-size-wide {
   grid-column: span 2;
   min-height: 96px;
@@ -2078,6 +2083,18 @@ body {
 .quick-body-favorites .quick-fav-grid > .fav-size-compact {
   grid-column: span 1;
   min-height: 64px;
+  align-self: start;
+}
+
+@media (min-width: 540px) {
+  .quick-body-favorites .quick-fav-grid > .fav-size-square {
+    grid-row: span 2;
+  }
+  .quick-body-favorites .quick-fav-grid > .fav-size-tall {
+    grid-row: span 2;
+    min-height: 192px;
+    align-self: start;
+  }
 }
 
 /* Two-column layout: phones and narrow tab/popup widths. */
@@ -2089,6 +2106,10 @@ body {
   .quick-body-favorites .quick-fav-grid > .fav-size-full {
     grid-column: span 2;
     min-height: 96px;
+  }
+  .quick-body-favorites .quick-fav-grid > .fav-size-tall {
+    grid-column: span 2;
+    min-height: 192px;
   }
   .quick-body-favorites .quick-fav-grid > .fav-size-square {
     grid-column: span 1;
@@ -2117,12 +2138,14 @@ body {
   .quick-body-favorites .quick-fav-grid > .fav-size-full,
   .quick-body-favorites .quick-fav-grid > .fav-size-square,
   .quick-body-favorites .quick-fav-grid > .fav-size-wide,
+  .quick-body-favorites .quick-fav-grid > .fav-size-tall,
   .quick-body-favorites .quick-fav-grid > .fav-size-standard,
   .quick-body-favorites .quick-fav-grid > .fav-size-compact {
     grid-column: span 1;
   }
   .quick-body-favorites .quick-fav-grid > .fav-size-full { min-height: 88px; }
   .quick-body-favorites .quick-fav-grid > .fav-size-square { min-height: 0; aspect-ratio: 1; }
+  .quick-body-favorites .quick-fav-grid > .fav-size-tall { min-height: 176px; }
   .quick-body-favorites .quick-fav-grid > .fav-size-wide { min-height: 84px; }
   .quick-body-favorites .quick-fav-grid > .fav-size-standard { min-height: 112px; }
   .quick-body-favorites .quick-fav-grid > .fav-size-compact { min-height: 52px; }
@@ -2153,12 +2176,14 @@ body {
 }
 .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-full { min-height: 96px; height: 96px; }
 .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-square { min-height: 0; height: auto; aspect-ratio: 1; }
+.favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-tall { min-height: 192px; height: 192px; }
 .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-wide { min-height: 96px; height: 96px; }
 .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-standard { min-height: 132px; height: 132px; }
 .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-compact { min-height: 64px; height: 64px; }
 @media (max-width: 539px) {
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-full { min-height: 96px; height: 96px; }
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-square { min-height: 0; height: auto; aspect-ratio: 1; }
+  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-tall { min-height: 192px; height: 192px; }
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-wide { min-height: 88px; height: 88px; }
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-standard { min-height: 120px; height: 120px; }
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-compact { min-height: 56px; height: 56px; }
@@ -2166,6 +2191,7 @@ body {
 @media (max-width: 359px) {
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-full { min-height: 88px; height: 88px; }
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-square { min-height: 0; height: auto; aspect-ratio: 1; }
+  .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-tall { min-height: 176px; height: 176px; }
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-wide { min-height: 84px; height: 84px; }
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-standard { min-height: 112px; height: 112px; }
   .favorites-reorder-mode .quick-body-favorites .quick-fav-grid > .fav-reorder-item.fav-size-compact { min-height: 52px; height: 52px; }
@@ -2214,17 +2240,38 @@ body {
 .quick-body-favorites .quick-fav-tstat-state { align-self: center; }
 .quick-body-favorites .quick-fav-tstat-controls { margin-top: auto; width: 100%; }
 
-/* ---- Thermostat: stacked layout for square / wide ---- */
+/* ---- Thermostat: controlled presets keep all controls visible ---- */
 .quick-body-favorites .fav-size-square.quick-fav-tstat,
-.quick-body-favorites .fav-size-wide.quick-fav-tstat {
+.quick-body-favorites .fav-size-tall.quick-fav-tstat {
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   gap: 8px; padding: 12px 12px 14px;
 }
 .quick-body-favorites .fav-size-square .quick-fav-tstat-sp { font-size: 30px; }
-.quick-body-favorites .fav-size-wide .quick-fav-tstat-sp { font-size: 34px; }
+.quick-body-favorites .fav-size-tall .quick-fav-tstat-sp { font-size: 44px; }
 .quick-body-favorites .fav-size-square .quick-fav-tstat-name,
-.quick-body-favorites .fav-size-wide .quick-fav-tstat-name { text-align: center; }
+.quick-body-favorites .fav-size-tall .quick-fav-tstat-name { text-align: center; }
+
+@media (min-width: 700px) {
+  .quick-body-favorites .fav-size-full.quick-fav-tstat {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 14px;
+    padding: 12px 18px;
+  }
+  .quick-body-favorites .fav-size-full.quick-fav-tstat .quick-fav-tstat-info {
+    align-items: flex-start;
+  }
+  .quick-body-favorites .fav-size-full.quick-fav-tstat .quick-fav-tstat-name { text-align: left; }
+  .quick-body-favorites .fav-size-full.quick-fav-tstat .quick-fav-tstat-state { align-self: flex-start; }
+  .quick-body-favorites .fav-size-full.quick-fav-tstat .quick-fav-tstat-controls {
+    justify-self: end;
+    margin-top: 0;
+    width: auto;
+    min-width: 210px;
+  }
+}
 
 /* ---- Lock: square (2×2) stacks icon, name, and vertical actions ---- */
 .quick-body-favorites .quick-fav-grid > .fav-size-square.quick-lock-row,
@@ -2305,25 +2352,154 @@ body {
   margin-top: auto;
 }
 
-/* ---- Shade: hide slider in wide to keep buttons; stack in square ---- */
-.quick-body-favorites .fav-size-wide.shade-tile .shade-slider-wrap { display: none; }
-.quick-body-favorites .fav-size-square.shade-tile .shade-slider-wrap { width: 100%; }
+/* Taller lock cards retain the vertical information hierarchy. */
+.quick-body-favorites .fav-size-tall.quick-lock-row {
+  justify-content: space-between;
+  min-height: 192px;
+}
+.quick-body-favorites .fav-size-tall.quick-lock-row .quick-lock-actions {
+  width: 100%;
+}
 
-/* ---- Fan: stack status/controls in square ---- */
-.quick-body-favorites .fav-size-square.fan-tile .fan-controls { gap: 10px; }
+/* ---- Valve: sensor presentation with a four-cell control layout ---- */
+.quick-body-favorites .sensor-card--valve.fav-size-square,
+.quick-body-favorites .sensor-card--valve.fav-size-tall {
+  min-height: 0;
+}
+.quick-body-favorites .sensor-card--valve.fav-size-square .sensor-card-meta,
+.quick-body-favorites .sensor-card--valve.fav-size-square .sensor-card-foot,
+.quick-body-favorites .sensor-card--valve.fav-size-square .sensor-card-battery {
+  display: none;
+}
+.quick-body-favorites .sensor-card--valve.fav-size-square .sensor-card-top {
+  padding-right: 30px;
+}
+.quick-body-favorites .sensor-card--valve.fav-size-square .sensor-card-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-height: 32px;
+  margin: 0;
+}
+.quick-body-favorites .sensor-card--valve.fav-size-square .sensor-card-controls {
+  flex-direction: column;
+  margin-top: auto;
+}
+.quick-body-favorites .sensor-card--valve.fav-size-tall .sensor-card-controls {
+  margin-top: auto;
+}
+
+/* ---- Shade, fan, and music: square/tall stack; full rows reflow horizontally ---- */
+.quick-body-favorites .fav-size-square.shade-tile .shade-slider-wrap,
+.quick-body-favorites .fav-size-tall.shade-tile .shade-slider-wrap { width: 100%; }
+
+.quick-body-favorites .fav-size-square.fan-tile .fan-controls,
+.quick-body-favorites .fav-size-tall.fan-tile .fan-controls { gap: 10px; }
 .quick-body-favorites .fav-size-square.fan-tile .fan-power { width: 60px; height: 60px; }
 .quick-body-favorites .fav-size-square.fan-tile .fan-power svg { width: 34px; height: 34px; }
 
-/* ---- Music: compact art in wide; stacked in square ---- */
-.quick-body-favorites .fav-size-wide.music-row,
-.quick-body-favorites .fav-size-square.music-row {
+.quick-body-favorites .fav-size-square.music-row,
+.quick-body-favorites .fav-size-tall.music-row {
   grid-template-columns: auto 1fr;
   grid-template-areas: "art info" "right right";
 }
-.quick-body-favorites .fav-size-wide.music-row .music-art,
 .quick-body-favorites .fav-size-square.music-row .music-art { width: 38px; height: 38px; }
-.quick-body-favorites .fav-size-wide.music-row .music-art svg,
 .quick-body-favorites .fav-size-square.music-row .music-art svg { width: 22px; height: 22px; }
+
+@media (min-width: 700px) {
+  .quick-body-favorites .fav-size-full.quick-lock-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 14px;
+  }
+  .quick-body-favorites .fav-size-full.quick-lock-row .quick-fav-row-head { grid-column: 2; grid-row: 1; }
+  .quick-body-favorites .fav-size-full.quick-lock-row .quick-lock-art {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .quick-body-favorites .fav-size-full.quick-lock-row .quick-lock-actions {
+    grid-column: 3;
+    grid-row: 1;
+    min-width: 240px;
+  }
+
+  .quick-body-favorites .sensor-card--valve.fav-size-full {
+    display: grid;
+    grid-template-columns: auto minmax(120px, 1fr) minmax(220px, auto) auto;
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 2px 12px;
+    padding: 10px 12px;
+  }
+  .quick-body-favorites .sensor-card--valve.fav-size-full .sensor-card-top {
+    grid-column: 1;
+    grid-row: 1 / 3;
+  }
+  .quick-body-favorites .sensor-card--valve.fav-size-full .sensor-card-value {
+    grid-column: 2;
+    grid-row: 1;
+    margin: 0;
+  }
+  .quick-body-favorites .sensor-card--valve.fav-size-full .sensor-card-name {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .quick-body-favorites .sensor-card--valve.fav-size-full .sensor-card-meta,
+  .quick-body-favorites .sensor-card--valve.fav-size-full .sensor-card-foot,
+  .quick-body-favorites .sensor-card--valve.fav-size-full .sensor-card-battery {
+    display: none;
+  }
+  .quick-body-favorites .sensor-card--valve.fav-size-full .sensor-card-controls {
+    grid-column: 3;
+    grid-row: 1 / 3;
+    margin: 0;
+    min-width: 220px;
+  }
+  .quick-body-favorites .sensor-card--valve.fav-size-full .sensor-card-actions {
+    grid-column: 4;
+    grid-row: 1 / 3;
+    margin: 0;
+  }
+
+  .quick-body-favorites .fav-size-full.shade-tile {
+    display: grid;
+    grid-template-columns: minmax(130px, 0.8fr) minmax(180px, 1.4fr) minmax(220px, 1fr);
+    align-items: center;
+    gap: 14px;
+  }
+  .quick-body-favorites .fav-size-full.shade-tile .shade-actions { min-width: 220px; }
+
+  .quick-body-favorites .fav-size-full.fan-tile {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 14px;
+  }
+  .quick-body-favorites .fav-size-full.fan-tile .fan-speed-label { text-align: left; }
+  .quick-body-favorites .fav-size-full.fan-tile .fan-power {
+    width: 56px;
+    height: 56px;
+  }
+  .quick-body-favorites .fav-size-full.fan-tile .fan-power svg {
+    width: 32px;
+    height: 32px;
+  }
+
+  .quick-body-favorites .fav-size-full.music-row {
+    grid-template-columns: auto minmax(0, 1fr) minmax(320px, 1.5fr);
+    grid-template-areas: "art info right";
+  }
+  .quick-body-favorites .fav-size-full.music-row .music-right { gap: 6px; }
+  .quick-body-favorites .fav-size-full.music-row .music-btn { min-height: 38px; }
+}
+
+@media (max-width: 699px) {
+  .favorites-reorder-mode .quick-body-favorites .fav-size-full .fav-reorder-content {
+    height: auto;
+  }
+}
 
 /* ---- Compact lights/outlets: name + state + fav; whole tile still toggles ---- */
 .quick-body-favorites .fav-size-compact.tile { padding: 10px 12px; min-height: 0; gap: 6px; }
