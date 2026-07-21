@@ -54,7 +54,13 @@
           </button>
           <div id="topbar-overflow-menu" class="topbar-overflow-menu" role="menu" hidden>
             <button id="menu-reorder" class="topbar-overflow-item" type="button" role="menuitem">Reorder</button>
-            <button id="menu-add-embed" class="topbar-overflow-item" type="button" role="menuitem" hidden>Add embed</button>
+            <div id="menu-add-tile" hidden>
+              <div class="topbar-overflow-label">Add tile</div>
+              <div id="menu-add-tile-types" class="topbar-overflow-segment" role="group" aria-label="Add tile">
+                <button id="menu-add-embed" class="topbar-overflow-seg" type="button" role="menuitem">Embedded</button>
+                <button id="menu-add-time" class="topbar-overflow-seg" type="button" role="menuitem">Time</button>
+              </div>
+            </div>
             <div id="menu-cameras-layout" hidden>
               <div class="topbar-overflow-sep" role="separator"></div>
               <div class="topbar-overflow-label">Cameras layout</div>

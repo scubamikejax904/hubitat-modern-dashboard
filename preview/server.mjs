@@ -204,7 +204,7 @@ function buildMockData(count) {
     { i: 5102, n: "Master Bedroom Fan", r: 3, s: 0, sp: "off", supSp: "low,medium-low,medium,medium-high,high", hasSw: 1 },
     { i: 5103, n: "Patio DC Fan", r: 7, s: 1, sp: "4", supSp: "1,2,3,4,5,6", hasSw: 1 },
   ];
-  return { config: { pollIntervalMs: 5000, useWebSocket: false, dashboardName: "mDash", defaultTab: "lights", roomOrder: [], navOrder: [], cameraOrder: [], favorites: [1, 5, 1001, 2103, 2201, 5101], favoriteSizes: {}, embedCards: [], favoritesLayout: [] }, rooms, devices, outlets: [
+  return { config: { pollIntervalMs: 5000, useWebSocket: false, dashboardName: "mDash", defaultTab: "lights", roomOrder: [], navOrder: [], cameraOrder: [], favorites: [1, 5, 1001, 2103, 2201, 5101], favoriteSizes: {}, embedCards: [], timeCards: [], favoritesLayout: [] }, rooms, devices, outlets: [
     { i: 601, n: "Kitchen Outlet", r: 2, s: 1 },
     { i: 602, n: "Office Outlet", r: 4, s: 0 },
   ], thermostats, tempSensors, sensors, valves, locks, garageDoors, music, cameras, windowShades, ceilingFans, hubModes: ["Day", "Evening", "Night", "Away"], currentHubMode: "Day", hsmStatus: "disarmed", hsmAlert: "water", hsmAlertDesc: "Basement leak sensor", hsmEnabled: true, hsmPinEnabled: true, hsmPinRequired: true, thermostatsPopupEnabled: true, outletsSeparateTab: false, roomClimateEnabled: true, schedulerEnabled: true, schedUse24Hour: false, unlockPinEnabled: true, unlockPinRequired: true, dashboardPasswordEnabled: true, dashboardPasswordRequired: true, scenes: [{ id: 1, n: "Good Morning" }, { id: 2, n: "Movie Time" }, { id: 3, n: "Good Night" }, { id: 4, n: "Away" }], schedules: [], sunTimes: mockSunTimes() };
@@ -238,12 +238,17 @@ function validateUnlockPin(pin) {
 
 const EMBED_SIZE_PRESETS = new Set(["compact", "standard", "wide", "square", "portrait", "full", "tall", "large", "viewport"]);
 const MAX_EMBED_CARDS = 12;
+const MAX_TIME_CARDS = 12;
 const MAX_EMBED_TITLE = 80;
 const MAX_EMBED_URL = 4096;
 const MAX_EMBED_STATE_BYTES = 32768;
+const MAX_TIME_STATE_BYTES = 8192;
+const TIME_SIZE_PRESETS = new Set(["compact", "standard", "square", "wide", "tall", "large"]);
+const TIME_STYLE_SET = new Set(["time", "time_seconds", "time_date"]);
 
 function ensureEmbedConfig() {
   if (!Array.isArray(state.config.embedCards)) state.config.embedCards = [];
+  if (!Array.isArray(state.config.timeCards)) state.config.timeCards = [];
   if (!Array.isArray(state.config.favoritesLayout)) state.config.favoritesLayout = [];
   if (!state.config.favoriteSizes || typeof state.config.favoriteSizes !== "object") state.config.favoriteSizes = {};
 }
@@ -291,6 +296,17 @@ function normalizeLayoutKey(raw) {
     if (!/^[A-Za-z0-9_-]+$/.test(rest)) return null;
     return "e:" + rest;
   }
+  if (s.startsWith("t:")) {
+    let rest = s.slice(2).trim();
+    if (rest.startsWith("t_")) rest = rest.slice(2);
+    if (!/^[A-Za-z0-9_-]+$/.test(rest)) return null;
+    return "t:" + rest;
+  }
+  if (s.startsWith("t_")) {
+    const rest = s.slice(2);
+    if (!/^[A-Za-z0-9_-]+$/.test(rest)) return null;
+    return "t:" + rest;
+  }
   return null;
 }
 
@@ -300,6 +316,22 @@ function embedIdFromLayoutKey(key) {
   return "e_" + k.slice(2);
 }
 
+function timeIdFromLayoutKey(key) {
+  const k = normalizeLayoutKey(key);
+  if (!k || !k.startsWith("t:")) return null;
+  return "t_" + k.slice(2);
+}
+
+function normalizeTimeStyle(raw) {
+  const s = String(raw || "").trim();
+  return TIME_STYLE_SET.has(s) ? s : "time";
+}
+
+function normalizeTimeSize(raw) {
+  const s = String(raw || "").trim();
+  return TIME_SIZE_PRESETS.has(s) ? s : "square";
+}
+
 function persistEmbedCards(cards) {
   const json = JSON.stringify(cards);
   if (json.length > MAX_EMBED_STATE_BYTES) return { ok: false, error: "embed cards too large" };
@@ -307,10 +339,19 @@ function persistEmbedCards(cards) {
   return { ok: true };
 }
 
-function reconcileFavoritesLayout(deviceIds, embedCards, preferredLayout = null) {
+function persistTimeCards(cards) {
+  const json = JSON.stringify(cards);
+  if (json.length > MAX_TIME_STATE_BYTES) return { ok: false, error: "time cards too large" };
+  state.config.timeCards = cards;
+  return { ok: true };
+}
+
+function reconcileFavoritesLayout(deviceIds, embedCards, preferredLayout = null, timeCards = null) {
   ensureEmbedConfig();
   const validDevices = new Set(deviceIds.map(String));
   const validEmbeds = new Set(embedCards.map((c) => c.id));
+  const times = Array.isArray(timeCards) ? timeCards : (state.config.timeCards || []);
+  const validTimes = new Set(times.map((c) => c.id));
   const source = preferredLayout != null ? preferredLayout : (state.config.favoritesLayout || []);
   const out = [];
   const seen = new Set();
@@ -323,6 +364,10 @@ function reconcileFavoritesLayout(deviceIds, embedCards, preferredLayout = null)
       const eid = embedIdFromLayoutKey(key);
       if (!eid || !validEmbeds.has(eid)) continue;
       key = "e:" + eid.slice(2);
+    } else if (key.startsWith("t:")) {
+      const tid = timeIdFromLayoutKey(key);
+      if (!tid || !validTimes.has(tid)) continue;
+      key = "t:" + tid.slice(2);
     } else continue;
     seen.add(key);
     out.push(key);
@@ -341,6 +386,13 @@ function reconcileFavoritesLayout(deviceIds, embedCards, preferredLayout = null)
       out.push(key);
     }
   }
+  for (const card of times) {
+    const key = "t:" + String(card.id).slice(2);
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(key);
+    }
+  }
   state.config.favoritesLayout = out;
   return out;
 }
@@ -348,6 +400,7 @@ function reconcileFavoritesLayout(deviceIds, embedCards, preferredLayout = null)
 function replaceDeviceSlotsInLayout(deviceIds) {
   ensureEmbedConfig();
   const cards = state.config.embedCards || [];
+  const times = state.config.timeCards || [];
   const prev = state.config.favoritesLayout || [];
   const deviceQueue = deviceIds.map((id) => "d:" + id);
   const next = [];
@@ -363,13 +416,16 @@ function replaceDeviceSlotsInLayout(deviceIds) {
     } else if (key.startsWith("e:")) {
       const eid = embedIdFromLayoutKey(key);
       if (eid && cards.some((c) => c.id === eid)) next.push("e:" + eid.slice(2));
+    } else if (key.startsWith("t:")) {
+      const tid = timeIdFromLayoutKey(key);
+      if (tid && times.some((c) => c.id === tid)) next.push("t:" + tid.slice(2));
     }
   }
   while (di < deviceQueue.length) {
     next.push(deviceQueue[di]);
     di++;
   }
-  return reconcileFavoritesLayout(deviceIds, cards, next);
+  return reconcileFavoritesLayout(deviceIds, cards, next, times);
 }
 
 function validFavoriteDeviceIds() {
@@ -785,7 +841,8 @@ const server = createServer(async (req, res) => {
     reconcileFavoritesLayout(
       Array.isArray(state.config.favorites) ? state.config.favorites.map(Number) : [],
       state.config.embedCards || [],
-      state.config.favoritesLayout || []
+      state.config.favoritesLayout || [],
+      state.config.timeCards || []
     );
     const payload = appendDashSession(state, auth.renewed);
     if (!schedulerMockEnabled()) payload.schedules = [];
@@ -1194,6 +1251,7 @@ const server = createServer(async (req, res) => {
         sizes: state.config.favoriteSizes,
         favoritesLayout: layout,
         embedCards: state.config.embedCards,
+        timeCards: state.config.timeCards,
       }));
     };
     if (req.method === "GET" && idsParam != null) {
@@ -1245,9 +1303,9 @@ const server = createServer(async (req, res) => {
         return res.end(JSON.stringify({ ok: false, error: persisted.error }));
       }
       const layout = [...(state.config.favoritesLayout || []), "e:" + id.slice(2)];
-      const reconciled = reconcileFavoritesLayout(deviceIds, cards, layout);
+      const reconciled = reconcileFavoritesLayout(deviceIds, cards, layout, state.config.timeCards || []);
       res.writeHead(200, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify({ ok: true, id, embedCards: cards, favoritesLayout: reconciled }));
+      return res.end(JSON.stringify({ ok: true, id, embedCards: cards, timeCards: state.config.timeCards || [], favoritesLayout: reconciled }));
     }
     if (action === "update") {
       const id = String(body?.id || "").trim();
@@ -1270,9 +1328,9 @@ const server = createServer(async (req, res) => {
         res.writeHead(400, { "Content-Type": "application/json" });
         return res.end(JSON.stringify({ ok: false, error: persisted.error }));
       }
-      const reconciled = reconcileFavoritesLayout(deviceIds, cards);
+      const reconciled = reconcileFavoritesLayout(deviceIds, cards, null, state.config.timeCards || []);
       res.writeHead(200, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify({ ok: true, id, embedCards: cards, favoritesLayout: reconciled }));
+      return res.end(JSON.stringify({ ok: true, id, embedCards: cards, timeCards: state.config.timeCards || [], favoritesLayout: reconciled }));
     }
     if (action === "delete") {
       const id = String(body?.id || "").trim();
@@ -1286,9 +1344,78 @@ const server = createServer(async (req, res) => {
         res.writeHead(400, { "Content-Type": "application/json" });
         return res.end(JSON.stringify({ ok: false, error: persisted.error }));
       }
-      const reconciled = reconcileFavoritesLayout(deviceIds, next);
+      const reconciled = reconcileFavoritesLayout(deviceIds, next, null, state.config.timeCards || []);
       res.writeHead(200, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify({ ok: true, id, embedCards: next, favoritesLayout: reconciled }));
+      return res.end(JSON.stringify({ ok: true, id, embedCards: next, timeCards: state.config.timeCards || [], favoritesLayout: reconciled }));
+    }
+    res.writeHead(400, { "Content-Type": "application/json" });
+    return res.end('{"ok":false,"error":"invalid action"}');
+  }
+  if (p === "/time-cards" && req.method === "POST") {
+    ensureEmbedConfig();
+    let body;
+    try { body = await readJsonBody(req); } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      return res.end('{"ok":false,"error":"invalid json"}');
+    }
+    const action = String(body?.action || "").trim().toLowerCase();
+    let cards = Array.isArray(state.config.timeCards) ? state.config.timeCards.slice() : [];
+    const embeds = Array.isArray(state.config.embedCards) ? state.config.embedCards : [];
+    const deviceIds = Array.isArray(state.config.favorites) ? state.config.favorites.map(Number) : [];
+    if (action === "create") {
+      if (cards.length >= MAX_TIME_CARDS) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end('{"ok":false,"error":"time card limit reached"}');
+      }
+      const style = normalizeTimeStyle(body?.style);
+      let size = normalizeTimeSize(body?.size);
+      const id = "t_" + crypto.randomUUID().replace(/-/g, "");
+      cards.push({ id, style, size });
+      const persisted = persistTimeCards(cards);
+      if (!persisted.ok) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ ok: false, error: persisted.error }));
+      }
+      const layout = [...(state.config.favoritesLayout || []), "t:" + id.slice(2)];
+      const reconciled = reconcileFavoritesLayout(deviceIds, embeds, layout, cards);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ ok: true, id, timeCards: cards, embedCards: embeds, favoritesLayout: reconciled }));
+    }
+    if (action === "update") {
+      const id = String(body?.id || "").trim();
+      const idx = cards.findIndex((c) => c.id === id);
+      if (!id.startsWith("t_") || idx < 0) {
+        res.writeHead(idx < 0 ? 404 : 400, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ ok: false, error: idx < 0 ? "not found" : "missing id" }));
+      }
+      const style = body?.style != null ? normalizeTimeStyle(body.style) : cards[idx].style;
+      let size = body?.size != null ? normalizeTimeSize(body.size) : cards[idx].size;
+      if (!TIME_SIZE_PRESETS.has(size)) size = cards[idx].size;
+      cards[idx] = { id, style, size };
+      const persisted = persistTimeCards(cards);
+      if (!persisted.ok) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ ok: false, error: persisted.error }));
+      }
+      const reconciled = reconcileFavoritesLayout(deviceIds, embeds, null, cards);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ ok: true, id, timeCards: cards, embedCards: embeds, favoritesLayout: reconciled }));
+    }
+    if (action === "delete") {
+      const id = String(body?.id || "").trim();
+      const next = cards.filter((c) => c.id !== id);
+      if (!id.startsWith("t_") || next.length === cards.length) {
+        res.writeHead(next.length === cards.length ? 404 : 400, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ ok: false, error: next.length === cards.length ? "not found" : "missing id" }));
+      }
+      const persisted = persistTimeCards(next);
+      if (!persisted.ok) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ ok: false, error: persisted.error }));
+      }
+      const reconciled = reconcileFavoritesLayout(deviceIds, embeds, null, next);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ ok: true, id, timeCards: next, embedCards: embeds, favoritesLayout: reconciled }));
     }
     res.writeHead(400, { "Content-Type": "application/json" });
     return res.end('{"ok":false,"error":"invalid action"}');
@@ -1308,14 +1435,20 @@ const server = createServer(async (req, res) => {
       res.writeHead(400, { "Content-Type": "application/json" });
       return res.end('{"ok":false,"error":"invalid embedSizes"}');
     }
+    if (body.timeSizes != null && (typeof body.timeSizes !== "object" || Array.isArray(body.timeSizes))) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      return res.end('{"ok":false,"error":"invalid timeSizes"}');
+    }
     if (body.favoriteSizes != null && (typeof body.favoriteSizes !== "object" || Array.isArray(body.favoriteSizes))) {
       res.writeHead(400, { "Content-Type": "application/json" });
       return res.end('{"ok":false,"error":"invalid favoriteSizes"}');
     }
     let cards = (state.config.embedCards || []).slice();
+    let times = (state.config.timeCards || []).slice();
     let deviceIds = Array.isArray(state.config.favorites) ? state.config.favorites.map(Number) : [];
     const validDevices = new Set(deviceIds.map(String));
     const cardById = new Map(cards.map((c) => [c.id, c]));
+    const timeById = new Map(times.map((c) => [c.id, c]));
     const nextLayout = [];
     const seen = new Set();
     const nextDevices = [];
@@ -1334,13 +1467,19 @@ const server = createServer(async (req, res) => {
         const nk = "e:" + eid.slice(2);
         seen.add(nk);
         nextLayout.push(nk);
+      } else if (key.startsWith("t:")) {
+        const tid = timeIdFromLayoutKey(key);
+        if (!tid || !timeById.has(tid)) continue;
+        const nk = "t:" + tid.slice(2);
+        seen.add(nk);
+        nextLayout.push(nk);
       }
     }
     if (nextDevices.length) {
       state.config.favorites = nextDevices;
       deviceIds = nextDevices;
     }
-    let reconciled = reconcileFavoritesLayout(deviceIds, cards, nextLayout);
+    let reconciled = reconcileFavoritesLayout(deviceIds, cards, nextLayout, times);
     if (body.favoriteSizes != null) {
       const validSizes = new Set(["full", "square", "wide", "tall", "standard", "compact"]);
       const idSet = new Set(deviceIds.map(String));
@@ -1365,7 +1504,22 @@ const server = createServer(async (req, res) => {
         return res.end(JSON.stringify({ ok: false, error: persisted.error }));
       }
       cards = nextCards;
-      reconciled = reconcileFavoritesLayout(deviceIds, cards, reconciled);
+      reconciled = reconcileFavoritesLayout(deviceIds, cards, reconciled, times);
+    }
+    if (body.timeSizes != null) {
+      const nextTimes = times.map((card) => {
+        let size = card.size;
+        const cand = body.timeSizes[card.id] ?? body.timeSizes[String(card.id).slice(2)];
+        if (cand != null && TIME_SIZE_PRESETS.has(String(cand))) size = String(cand);
+        return { ...card, size };
+      });
+      const persisted = persistTimeCards(nextTimes);
+      if (!persisted.ok) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ ok: false, error: persisted.error }));
+      }
+      times = nextTimes;
+      reconciled = reconcileFavoritesLayout(deviceIds, cards, reconciled, times);
     }
     res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({
@@ -1373,6 +1527,7 @@ const server = createServer(async (req, res) => {
       favorites: deviceIds,
       sizes: state.config.favoriteSizes || {},
       embedCards: cards,
+      timeCards: times,
       favoritesLayout: reconciled,
     }));
   }

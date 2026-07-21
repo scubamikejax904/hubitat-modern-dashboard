@@ -1114,6 +1114,7 @@ mappings {
     path("/scene/activate") { action: [GET: "activateSceneGet", POST: "activateScene"] }
     path("/favorites") { action: [GET: "saveFavoritesGet", POST: "saveFavorites"] }
     path("/embed-cards") { action: [POST: "saveEmbedCards"] }
+    path("/time-cards") { action: [POST: "saveTimeCards"] }
     path("/settings/favorites-layout") { action: [POST: "saveFavoritesLayout"] }
     path("/snapshot/save") { action: [GET: "snapshotSaveGet", POST: "snapshotSave"] }
     path("/snapshot/restore") { action: [GET: "snapshotRestoreGet", POST: "snapshotRestore"] }
@@ -3373,18 +3374,23 @@ def favoritesJsonFragment() {
     out << "]"
     out << favoriteSizesJsonFragment()
     out << embedCardsJsonFragment()
+    out << timeCardsJsonFragment()
     out << favoritesLayoutJsonFragment()
     return out.toString()
 }
 
 // ---------------------------------------------------------------------------
-// Favorites embed cards + mixed layout (device + embed)
+// Favorites embed cards + time cards + mixed layout (device + embed + time)
 // ---------------------------------------------------------------------------
 def maxEmbedCards() { return 12 }
+def maxTimeCards() { return 12 }
 def maxEmbedTitleLen() { return 80 }
 def maxEmbedUrlLen() { return 4096 }
 def maxEmbedCardsStateBytes() { return 32768 }
+def maxTimeCardsStateBytes() { return 8192 }
 def embedSizePresetSet() { return ["compact", "standard", "wide", "square", "portrait", "full", "tall", "large", "viewport"] as Set }
+def timeSizePresetSet() { return ["compact", "standard", "square", "wide", "tall", "large"] as Set }
+def timeStyleSet() { return ["time", "time_seconds", "time_date"] as Set }
 
 def parseEmbedCardsState() {
     if (!state.embedCardsJson) return []
@@ -3404,6 +3410,31 @@ def parseEmbedCardsState() {
             if (!embedSizePresetSet().contains(size)) size = "tall"
             out << [id: id, title: title, url: url, size: size]
             if (out.size() >= maxEmbedCards()) break
+        }
+        return out
+    } catch (e) {
+        return []
+    }
+}
+
+def parseTimeCardsState() {
+    if (!state.timeCardsJson) return []
+    try {
+        def parsed = new groovy.json.JsonSlurper().parseText(state.timeCardsJson.toString())
+        if (!(parsed instanceof List)) return []
+        def out = []
+        def seen = new HashSet()
+        for (item in parsed) {
+            if (!(item instanceof Map)) continue
+            def id = item.id?.toString()?.trim()
+            if (!id || !id.startsWith("t_") || seen.contains(id)) continue
+            seen.add(id)
+            def style = item.style?.toString()?.trim()
+            if (!timeStyleSet().contains(style)) style = "time"
+            def size = item.size?.toString()?.trim()
+            if (!timeSizePresetSet().contains(size)) size = "square"
+            out << [id: id, style: style, size: size]
+            if (out.size() >= maxTimeCards()) break
         }
         return out
     } catch (e) {
@@ -3445,6 +3476,18 @@ def normalizeEmbedLayoutKey(raw) {
         if (!(rest ==~ /^[A-Za-z0-9_-]+$/)) return null
         return "e:" + rest
     }
+    if (s.startsWith("t:")) {
+        def rest = s.substring(2).trim()
+        if (!rest) return null
+        if (rest.startsWith("t_")) rest = rest.substring(2)
+        if (!(rest ==~ /^[A-Za-z0-9_-]+$/)) return null
+        return "t:" + rest
+    }
+    if (s.startsWith("t_")) {
+        def rest = s.substring(2)
+        if (!(rest ==~ /^[A-Za-z0-9_-]+$/)) return null
+        return "t:" + rest
+    }
     return null
 }
 
@@ -3452,6 +3495,12 @@ def embedCardIdFromLayoutKey(key) {
     def k = normalizeEmbedLayoutKey(key)
     if (!k || !k.startsWith("e:")) return null
     return "e_" + k.substring(2)
+}
+
+def timeCardIdFromLayoutKey(key) {
+    def k = normalizeEmbedLayoutKey(key)
+    if (!k || !k.startsWith("t:")) return null
+    return "t_" + k.substring(2)
 }
 
 def hostnameFromHttpsUrl(url) {
@@ -3500,9 +3549,20 @@ def persistEmbedCards(cards) {
     return [ok: true]
 }
 
-def reconcileFavoritesLayout(deviceIds, embedCards, preferredLayout = null, persist = true) {
+def persistTimeCards(cards) {
+    def json = groovy.json.JsonOutput.toJson(cards)
+    if (json.toString().length() > maxTimeCardsStateBytes()) {
+        return [ok: false, error: "time cards too large"]
+    }
+    state.timeCardsJson = json
+    return [ok: true]
+}
+
+def reconcileFavoritesLayout(deviceIds, embedCards, preferredLayout = null, persist = true, timeCards = null) {
+    def times = timeCards != null ? timeCards : parseTimeCardsState()
     def validDevices = new HashSet(deviceIds.collect { it.toString() })
     def validEmbeds = new HashSet(embedCards.collect { it.id.toString() })
+    def validTimes = new HashSet(times.collect { it.id.toString() })
     def source = preferredLayout != null ? preferredLayout : parseFavoritesLayoutState()
     def out = []
     def seen = new HashSet()
@@ -3516,6 +3576,10 @@ def reconcileFavoritesLayout(deviceIds, embedCards, preferredLayout = null, pers
             def eid = embedCardIdFromLayoutKey(key)
             if (!eid || !validEmbeds.contains(eid)) continue
             key = "e:" + eid.substring(2)
+        } else if (key.startsWith("t:")) {
+            def tid = timeCardIdFromLayoutKey(key)
+            if (!tid || !validTimes.contains(tid)) continue
+            key = "t:" + tid.substring(2)
         } else {
             continue
         }
@@ -3536,12 +3600,20 @@ def reconcileFavoritesLayout(deviceIds, embedCards, preferredLayout = null, pers
             out << key
         }
     }
+    for (card in times) {
+        def key = "t:" + card.id.toString().substring(2)
+        if (!seen.contains(key)) {
+            seen.add(key)
+            out << key
+        }
+    }
     if (persist) state.favoritesLayoutJson = groovy.json.JsonOutput.toJson(out)
     return out
 }
 
 def replaceDeviceSlotsInLayout(deviceIds) {
     def cards = parseEmbedCardsState()
+    def times = parseTimeCardsState()
     def prev = parseFavoritesLayoutState()
     def deviceQueue = deviceIds.collect { deviceLayoutKey(it) }
     def next = []
@@ -3557,13 +3629,16 @@ def replaceDeviceSlotsInLayout(deviceIds) {
         } else if (key.startsWith("e:")) {
             def eid = embedCardIdFromLayoutKey(key)
             if (eid && cards.find { it.id == eid }) next << ("e:" + eid.substring(2))
+        } else if (key.startsWith("t:")) {
+            def tid = timeCardIdFromLayoutKey(key)
+            if (tid && times.find { it.id == tid }) next << ("t:" + tid.substring(2))
         }
     }
     while (di < deviceQueue.size()) {
         next << deviceQueue[di]
         di++
     }
-    return reconcileFavoritesLayout(deviceIds, cards, next)
+    return reconcileFavoritesLayout(deviceIds, cards, next, true, times)
 }
 
 def embedCardsJsonFragment() {
@@ -3582,9 +3657,24 @@ def embedCardsJsonFragment() {
     return out.toString()
 }
 
+def timeCardsJsonFragment() {
+    def cards = parseTimeCardsState()
+    def out = new StringBuilder()
+    out << ",\"timeCards\":["
+    boolean first = true
+    for (card in cards) {
+        if (!first) out << ","; first = false
+        out << "{\"id\":" << jsonStr(card.id)
+        out << ",\"style\":" << jsonStr(card.style)
+        out << ",\"size\":" << jsonStr(card.size) << "}"
+    }
+    out << "]"
+    return out.toString()
+}
+
 def favoritesLayoutJsonFragment() {
     // Read-only reconcile for the response; do not rewrite hub state on every /data poll.
-    def layout = reconcileFavoritesLayout(parseFavoritesState(), parseEmbedCardsState(), parseFavoritesLayoutState(), false)
+    def layout = reconcileFavoritesLayout(parseFavoritesState(), parseEmbedCardsState(), parseFavoritesLayoutState(), false, parseTimeCardsState())
     def out = new StringBuilder()
     out << ",\"favoritesLayout\":["
     boolean first = true
@@ -3668,12 +3758,123 @@ def saveEmbedCards() {
 }
 
 def renderEmbedCardsResponse(cards, layout, id = null) {
+    def times = parseTimeCardsState()
     def out = new StringBuilder()
     out << "{\"ok\":true"
     if (id != null) out << ",\"id\":" << jsonStr(id)
     out << ",\"embedCards\":["
     boolean first = true
     for (card in cards) {
+        if (!first) out << ","; first = false
+        out << "{\"id\":" << jsonStr(card.id)
+        out << ",\"title\":" << jsonStr(card.title)
+        out << ",\"url\":" << jsonStr(card.url)
+        out << ",\"size\":" << jsonStr(card.size) << "}"
+    }
+    out << "],\"timeCards\":["
+    first = true
+    for (card in times) {
+        if (!first) out << ","; first = false
+        out << "{\"id\":" << jsonStr(card.id)
+        out << ",\"style\":" << jsonStr(card.style)
+        out << ",\"size\":" << jsonStr(card.size) << "}"
+    }
+    out << "],\"favoritesLayout\":["
+    first = true
+    for (key in layout) {
+        if (!first) out << ","; first = false
+        out << jsonStr(key)
+    }
+    out << "]}"
+    return renderJsonNoStore(withAuthJson(out.toString()), 200)
+}
+
+def newTimeCardId() {
+    return "t_" + UUID.randomUUID().toString().replace("-", "")
+}
+
+def saveTimeCards() {
+    if (!guardDashboardAccess()) return renderAuthRequired()
+    def body = request?.JSON
+    if (body == null) {
+        try {
+            def raw = request?.postBody ?: request?.content
+            if (raw) body = new groovy.json.JsonSlurper().parseText(raw.toString())
+        } catch (e) {}
+    }
+    def action = body?.action?.toString()?.trim()?.toLowerCase()
+    if (!action) return renderJsonNoStore('{"ok":false,"error":"missing action"}', 400)
+    def cards = parseTimeCardsState()
+    def embeds = parseEmbedCardsState()
+    def deviceIds = parseFavoritesState()
+
+    if (action == "create") {
+        if (cards.size() >= maxTimeCards()) {
+            return renderJsonNoStore('{"ok":false,"error":"time card limit reached"}', 400)
+        }
+        def style = body?.style?.toString()?.trim()
+        if (!timeStyleSet().contains(style)) style = "time"
+        def size = body?.size?.toString()?.trim()
+        if (!timeSizePresetSet().contains(size)) size = "square"
+        def id = newTimeCardId()
+        cards << [id: id, style: style, size: size]
+        def persisted = persistTimeCards(cards)
+        if (!persisted.ok) return renderJsonNoStore("{\"ok\":false,\"error\":${jsonStr(persisted.error)}}", 400)
+        def layout = parseFavoritesLayoutState()
+        layout << ("t:" + id.substring(2))
+        def reconciled = reconcileFavoritesLayout(deviceIds, embeds, layout, true, cards)
+        return renderTimeCardsResponse(cards, reconciled, id)
+    }
+
+    if (action == "update") {
+        def id = body?.id?.toString()?.trim()
+        if (!id || !id.startsWith("t_")) return renderJsonNoStore('{"ok":false,"error":"missing id"}', 400)
+        def idx = -1
+        for (int i = 0; i < cards.size(); i++) {
+            if (cards[i].id == id) { idx = i; break }
+        }
+        if (idx < 0) return renderJsonNoStore('{"ok":false,"error":"not found"}', 404)
+        def style = body?.style != null ? body.style.toString().trim() : cards[idx].style
+        if (!timeStyleSet().contains(style)) style = cards[idx].style
+        def size = body?.size != null ? body.size.toString().trim() : cards[idx].size
+        if (!timeSizePresetSet().contains(size)) size = cards[idx].size
+        cards[idx] = [id: id, style: style, size: size]
+        def persisted = persistTimeCards(cards)
+        if (!persisted.ok) return renderJsonNoStore("{\"ok\":false,\"error\":${jsonStr(persisted.error)}}", 400)
+        def reconciled = reconcileFavoritesLayout(deviceIds, embeds, null, true, cards)
+        return renderTimeCardsResponse(cards, reconciled, id)
+    }
+
+    if (action == "delete") {
+        def id = body?.id?.toString()?.trim()
+        if (!id || !id.startsWith("t_")) return renderJsonNoStore('{"ok":false,"error":"missing id"}', 400)
+        def next = cards.findAll { it.id != id }
+        if (next.size() == cards.size()) return renderJsonNoStore('{"ok":false,"error":"not found"}', 404)
+        def persisted = persistTimeCards(next)
+        if (!persisted.ok) return renderJsonNoStore("{\"ok\":false,\"error\":${jsonStr(persisted.error)}}", 400)
+        def reconciled = reconcileFavoritesLayout(deviceIds, embeds, null, true, next)
+        return renderTimeCardsResponse(next, reconciled, id)
+    }
+
+    return renderJsonNoStore('{"ok":false,"error":"invalid action"}', 400)
+}
+
+def renderTimeCardsResponse(cards, layout, id = null) {
+    def embeds = parseEmbedCardsState()
+    def out = new StringBuilder()
+    out << "{\"ok\":true"
+    if (id != null) out << ",\"id\":" << jsonStr(id)
+    out << ",\"timeCards\":["
+    boolean first = true
+    for (card in cards) {
+        if (!first) out << ","; first = false
+        out << "{\"id\":" << jsonStr(card.id)
+        out << ",\"style\":" << jsonStr(card.style)
+        out << ",\"size\":" << jsonStr(card.size) << "}"
+    }
+    out << "],\"embedCards\":["
+    first = true
+    for (card in embeds) {
         if (!first) out << ","; first = false
         out << "{\"id\":" << jsonStr(card.id)
         out << ",\"title\":" << jsonStr(card.title)
@@ -3704,10 +3905,13 @@ def saveFavoritesLayout() {
         return renderJsonNoStore('{"ok":false,"error":"missing layout"}', 400)
     }
     def cards = parseEmbedCardsState()
+    def times = parseTimeCardsState()
     def deviceIds = parseFavoritesState()
     def validDevices = new HashSet(deviceIds.collect { it.toString() })
     def cardById = [:]
     for (card in cards) cardById[card.id] = card
+    def timeById = [:]
+    for (card in times) timeById[card.id] = card
 
     def nextLayout = []
     def seen = new HashSet()
@@ -3715,6 +3919,10 @@ def saveFavoritesLayout() {
     def embedSizes = body?.embedSizes
     if (embedSizes != null && !(embedSizes instanceof Map)) {
         return renderJsonNoStore('{"ok":false,"error":"invalid embedSizes"}', 400)
+    }
+    def timeSizes = body?.timeSizes
+    if (timeSizes != null && !(timeSizes instanceof Map)) {
+        return renderJsonNoStore('{"ok":false,"error":"invalid timeSizes"}', 400)
     }
     def favoriteSizes = body?.favoriteSizes
     if (favoriteSizes != null && !(favoriteSizes instanceof Map)) {
@@ -3736,10 +3944,16 @@ def saveFavoritesLayout() {
             def nk = "e:" + eid.substring(2)
             seen.add(nk)
             nextLayout << nk
+        } else if (key.startsWith("t:")) {
+            def tid = timeCardIdFromLayoutKey(key)
+            if (!tid || !timeById.containsKey(tid)) continue
+            def nk = "t:" + tid.substring(2)
+            seen.add(nk)
+            nextLayout << nk
         }
     }
-    // Preserve any omitted devices/embeds at the end (deterministic reconcile).
-    nextLayout = reconcileFavoritesLayout(nextDevices.size() ? nextDevices : deviceIds, cards, nextLayout)
+    // Preserve any omitted devices/embeds/times at the end (deterministic reconcile).
+    nextLayout = reconcileFavoritesLayout(nextDevices.size() ? nextDevices : deviceIds, cards, nextLayout, true, times)
     if (nextDevices.size()) {
         state.favorites = nextDevices.join(",")
         deviceIds = nextDevices
@@ -3778,7 +3992,28 @@ def saveFavoritesLayout() {
         def persisted = persistEmbedCards(nextCards)
         if (!persisted.ok) return renderJsonNoStore("{\"ok\":false,\"error\":${jsonStr(persisted.error)}}", 400)
         cards = nextCards
-        nextLayout = reconcileFavoritesLayout(deviceIds, cards, nextLayout)
+        nextLayout = reconcileFavoritesLayout(deviceIds, cards, nextLayout, true, times)
+    }
+
+    // Time sizes live on each card.
+    if (timeSizes != null) {
+        def allowed = timeSizePresetSet()
+        def nextTimes = []
+        for (card in times) {
+            def size = card.size
+            if (timeSizes.containsKey(card.id)) {
+                def cand = timeSizes[card.id]?.toString()?.trim()
+                if (allowed.contains(cand)) size = cand
+            } else if (timeSizes.containsKey(card.id.toString().substring(2))) {
+                def cand = timeSizes[card.id.toString().substring(2)]?.toString()?.trim()
+                if (allowed.contains(cand)) size = cand
+            }
+            nextTimes << [id: card.id, style: card.style, size: size]
+        }
+        def persisted = persistTimeCards(nextTimes)
+        if (!persisted.ok) return renderJsonNoStore("{\"ok\":false,\"error\":${jsonStr(persisted.error)}}", 400)
+        times = nextTimes
+        nextLayout = reconcileFavoritesLayout(deviceIds, cards, nextLayout, true, times)
     }
 
     def out = new StringBuilder()
@@ -3797,6 +4032,14 @@ def saveFavoritesLayout() {
         out << "{\"id\":" << jsonStr(card.id)
         out << ",\"title\":" << jsonStr(card.title)
         out << ",\"url\":" << jsonStr(card.url)
+        out << ",\"size\":" << jsonStr(card.size) << "}"
+    }
+    out << "],\"timeCards\":["
+    first = true
+    for (card in times) {
+        if (!first) out << ","; first = false
+        out << "{\"id\":" << jsonStr(card.id)
+        out << ",\"style\":" << jsonStr(card.style)
         out << ",\"size\":" << jsonStr(card.size) << "}"
     }
     out << "],\"favoritesLayout\":["
@@ -4376,6 +4619,14 @@ def saveFavoritesFromList(ids, sizes = null) {
         out << "{\"id\":" << jsonStr(card.id)
         out << ",\"title\":" << jsonStr(card.title)
         out << ",\"url\":" << jsonStr(card.url)
+        out << ",\"size\":" << jsonStr(card.size) << "}"
+    }
+    out << "],\"timeCards\":["
+    first = true
+    for (card in parseTimeCardsState()) {
+        if (!first) out << ","; first = false
+        out << "{\"id\":" << jsonStr(card.id)
+        out << ",\"style\":" << jsonStr(card.style)
         out << ",\"size\":" << jsonStr(card.size) << "}"
     }
     out << "]}"

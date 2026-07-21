@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.27
+
+- **Favorites:** add **Time** tiles from the overflow menu — live clock cards with
+  **Just the time**, **Time with seconds**, or **Time with date** styles and the usual
+  size presets. Time tiles reorder with devices and embeds and sync across devices.
+
 ## 0.3.26
 
 - **Favorites:** sensor tiles put the star in the top-right and hide the bottom row
