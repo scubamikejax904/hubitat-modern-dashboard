@@ -29,6 +29,8 @@
   const MENU_THEME_SEGMENT = document.getElementById("menu-theme-segment");
   const MENU_CAMERAS_LAYOUT = document.getElementById("menu-cameras-layout");
   const MENU_CAMERAS_COLS_SEGMENT = document.getElementById("menu-cameras-cols");
+  const MENU_SENSORS_ORG = document.getElementById("menu-sensors-org");
+  const MENU_SENSORS_FLAT_EL = document.getElementById("menu-sensors-flat");
   const MENU_OPEN_LOCAL_BTN = document.getElementById("menu-open-local");
   const MENU_OPEN_CLOUD_BTN = document.getElementById("menu-open-cloud");
   const MENU_LOCAL_URL_EL = document.getElementById("menu-local-url");
@@ -37,6 +39,7 @@
   const TABS_STORAGE_KEY = "mld_tabs";
   const DRAWER_STORAGE_KEY = "mld_drawer";
   const CAMERAS_COLS_STORAGE_KEY = "mld_cameras_cols";
+  const SENSORS_FLAT_STORAGE_KEY = "mld_sensors_flat";
   const FAVORITE_SIZES_STORAGE_KEY = "mld_favorite_sizes";
   const LOCAL_URL_STORAGE_KEY = "mld_localUrl";
   const CLOUD_URL_STORAGE_KEY = "mld_cloudUrl";
@@ -114,6 +117,19 @@
 
   function saveCamerasColsPref(cols) {
     try { localStorage.setItem(CAMERAS_COLS_STORAGE_KEY, String(cols)); } catch {}
+  }
+
+  function loadSensorsFlatPref() {
+    try {
+      const raw = localStorage.getItem(SENSORS_FLAT_STORAGE_KEY);
+      if (raw === "1") return true;
+      if (raw === "0") return false;
+    } catch {}
+    return false;
+  }
+
+  function saveSensorsFlatPref(on) {
+    try { localStorage.setItem(SENSORS_FLAT_STORAGE_KEY, on ? "1" : "0"); } catch {}
   }
 
   const FAVORITE_SIZE_PRESET_SET = new Set(["full", "square", "wide", "tall", "large", "portrait", "standard", "compact", "viewport"]);
@@ -347,7 +363,7 @@
     }
   }
 
-  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", defaultTab: "lights", roomOrder: null, navOrder: null, cameraOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), camerasCols: loadCamerasColsPref(), localUrl: "", cloudUrl: "" };
+  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", defaultTab: "lights", roomOrder: null, navOrder: null, cameraOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), camerasCols: loadCamerasColsPref(), sensorsFlat: loadSensorsFlatPref(), localUrl: "", cloudUrl: "" };
 
   let localModeBannerEl = null;
   let localBannerDismissed = false;
@@ -4366,10 +4382,22 @@
     MENU_CAMERAS_LAYOUT.hidden = !(tabMode && activeTab === "cameras");
   }
 
+  function updateSensorsOrgMenuVisibility() {
+    if (!MENU_SENSORS_ORG) return;
+    MENU_SENSORS_ORG.hidden = !(tabMode && activeTab === "sensors");
+  }
+
   function updateAddEmbedMenuVisibility() {
     const show = !!(tabMode && activeTab === "favorites");
     if (MENU_ADD_TILE) MENU_ADD_TILE.hidden = !show;
     else if (MENU_ADD_EMBED_BTN) MENU_ADD_EMBED_BTN.hidden = !show;
+  }
+
+  function updateReorderMenuLabel() {
+    if (!MENU_REORDER_BTN) return;
+    const onFavorites =
+      (tabMode && activeTab === "favorites") || quickPopupOpenType === "favorites";
+    MENU_REORDER_BTN.textContent = onFavorites ? "Reorder/Resize" : "Reorder";
   }
 
   function applyCamerasCols(cols) {
@@ -5822,7 +5850,9 @@
     if (!OVERFLOW_MENU || !OVERFLOW_BTN || reorderMode) return;
     updateLocalModeMenuUI();
     updateCamerasLayoutMenuVisibility();
+    updateSensorsOrgMenuVisibility();
     updateAddEmbedMenuVisibility();
+    updateReorderMenuLabel();
     OVERFLOW_MENU.hidden = false;
     OVERFLOW_BTN.setAttribute("aria-expanded", "true");
     const onClick = (e) => {
@@ -7957,11 +7987,18 @@
         grid.appendChild(compactStack);
       }
       compactStack.appendChild(tile);
-      compactStack.dataset.name = Array.from(compactStack.children)
-        .map((child) => child.dataset.name || "")
-        .join(" ");
+      syncFavoriteCompactStack(compactStack);
       if (compactStack.children.length >= 2) compactStack = null;
     }
+  }
+
+  function syncFavoriteCompactStack(stack) {
+    const children = Array.from(stack.children);
+    stack.classList.toggle("fav-compact-stack-single", children.length === 1);
+    stack.classList.toggle("fav-compact-stack-pair", children.length >= 2);
+    stack.dataset.name = children
+      .map((child) => child.dataset.name || "")
+      .join(" ");
   }
 
   function flattenFavoriteReorderStacks(grid) {
@@ -7984,9 +8021,7 @@
         grid.insertBefore(compactStack, item);
       }
       compactStack.appendChild(item);
-      compactStack.dataset.name = Array.from(compactStack.children)
-        .map((child) => child.dataset.name || "")
-        .join(" ");
+      syncFavoriteCompactStack(compactStack);
       if (compactStack.children.length >= 2) compactStack = null;
     }
   }
@@ -9685,6 +9720,7 @@
     popup.querySelector(".quick-close").focus();
     updateCurrentCategoryTitle();
     updateExpandAllBtn();
+    updateReorderMenuLabel();
   }
 
   function closeQuickPopup() {
@@ -9698,6 +9734,7 @@
     popup.classList.remove("quick-popup-wide");
     popup.classList.remove("quick-popup-hub-mode");
     quickPopupOpenType = null;
+    updateReorderMenuLabel();
     if (wasFavorites) {
       closeEmbedExpand();
       closeEmbedEditor();
@@ -9843,7 +9880,9 @@
     if (SEARCH_EL) SEARCH_EL.placeholder = nonLights ? "Search " + (TAB_LABELS[id] || "items") : "Search lights or rooms";
     syncCamerasViewClass(tabMode && id === "cameras");
     updateCamerasLayoutMenuVisibility();
+    updateSensorsOrgMenuVisibility();
     updateAddEmbedMenuVisibility();
+    updateReorderMenuLabel();
     updateTabActiveStates();
     if (nonLights) {
       switch (id) {
@@ -9898,6 +9937,8 @@
     updateQuickNavVisibility();
     updateCurrentCategoryTitle();
     updateCamerasLayoutMenuVisibility();
+    updateSensorsOrgMenuVisibility();
+    updateReorderMenuLabel();
   }
 
   // ---------- navigation drawer ----------
@@ -10405,6 +10446,20 @@
     });
   }
 
+  if (MENU_SENSORS_FLAT_EL) {
+    const sensorsFlatLabel = MENU_SENSORS_FLAT_EL.closest(".topbar-overflow-check");
+    MENU_SENSORS_FLAT_EL.checked = cfg.sensorsFlat;
+    if (sensorsFlatLabel) sensorsFlatLabel.setAttribute("aria-checked", cfg.sensorsFlat ? "true" : "false");
+    MENU_SENSORS_FLAT_EL.addEventListener("click", (e) => e.stopPropagation());
+    MENU_SENSORS_FLAT_EL.addEventListener("change", () => {
+      cfg.sensorsFlat = MENU_SENSORS_FLAT_EL.checked;
+      saveSensorsFlatPref(cfg.sensorsFlat);
+      if (sensorsFlatLabel) sensorsFlatLabel.setAttribute("aria-checked", cfg.sensorsFlat ? "true" : "false");
+      if (currentCategory() === "sensors") renderSensorsPopup();
+      hapticTap();
+    });
+  }
+
   const DRAWER_TOGGLE_BTN_REF = document.getElementById("drawer-toggle");
   const DRAWER_BACKDROP_REF = document.getElementById("drawer-backdrop");
   if (DRAWER_TOGGLE_BTN_REF) {
@@ -10483,6 +10538,8 @@
   applyTheme(cfg.theme);
   applyCamerasCols(cfg.camerasCols);
   updateCamerasLayoutMenuVisibility();
+  updateSensorsOrgMenuVisibility();
+  updateReorderMenuLabel();
 
   // ---------- polling ----------
   async function refresh() {
@@ -12477,7 +12534,7 @@
     if (dev.n && displayName !== dev.n) name.title = dev.n;
     const metaRow = ce("div", "sensor-card-meta");
     metaRow.textContent = context === "sensors"
-      ? sensorTypeLabel(dev.t)
+      ? (cfg.sensorsFlat ? roomLabel(dev.r) + " · " + sensorTypeLabel(dev.t) : sensorTypeLabel(dev.t))
       : roomLabel(dev.r) + " · " + sensorTypeLabel(dev.t);
     const foot = ce("div", "sensor-card-foot");
     const actions = ce("div", "sensor-card-actions");
@@ -12532,6 +12589,20 @@
     if (fav && fav !== sen) applySensorCardState(fav.el, dev, fav);
   }
 
+  function appendSensorGridsByType(body, devs) {
+    const typeGroups = groupRoomSensorsByType(devs);
+    for (const tg of typeGroups) {
+      if (typeGroups.length > 1) {
+        const label = ce("div", "sensor-type-label");
+        label.textContent = sensorTypeLabel(tg.type);
+        body.appendChild(label);
+      }
+      const grid = ce("div", "sensor-grid");
+      for (const dev of tg.devs) grid.appendChild(makeSensorCard(dev, "sensors"));
+      body.appendChild(grid);
+    }
+  }
+
   function buildSensorRoomSection(roomKey, devs) {
     const name = roomKey === -1 ? "Unassigned" : (roomMap.get(roomKey) || "Room");
     const card = ce("section", "room sensor-room");
@@ -12570,17 +12641,7 @@
     card.appendChild(body);
 
     const sorted = sortSensorsInRoom(devs, name);
-    const typeGroups = groupRoomSensorsByType(sorted);
-    for (const tg of typeGroups) {
-      if (typeGroups.length > 1) {
-        const label = ce("div", "sensor-type-label");
-        label.textContent = sensorTypeLabel(tg.type);
-        body.appendChild(label);
-      }
-      const grid = ce("div", "sensor-grid");
-      for (const dev of tg.devs) grid.appendChild(makeSensorCard(dev, "sensors"));
-      body.appendChild(grid);
-    }
+    appendSensorGridsByType(body, sorted);
 
     sensorRoomEls.set(roomKey, { card, body, meta });
     return card;
@@ -12608,14 +12669,19 @@
     const wrap = ce("div", "sensor-popup-wrap");
     const { toolbar, chips } = buildSensorFilterBar();
     const roomsEl = ce("div", "sensor-rooms");
-    const sensorGroups = groupSensorsByRoom(merged);
-    const hasSensors = (rid) => (sensorGroups.get(normalizeRoomId(rid))?.length || 0) > 0;
-    const orderedIds = getDisplayRoomIds(sensorGroups, hasSensors);
-    for (const rid of orderedIds) {
-      const roomKey = normalizeRoomId(rid);
-      const devs = sensorGroups.get(roomKey) || [];
-      if (!devs.length) continue;
-      roomsEl.appendChild(buildSensorRoomSection(roomKey, devs));
+    if (cfg.sensorsFlat) {
+      roomsEl.classList.add("sensor-rooms--flat");
+      appendSensorGridsByType(roomsEl, merged);
+    } else {
+      const sensorGroups = groupSensorsByRoom(merged);
+      const hasSensors = (rid) => (sensorGroups.get(normalizeRoomId(rid))?.length || 0) > 0;
+      const orderedIds = getDisplayRoomIds(sensorGroups, hasSensors);
+      for (const rid of orderedIds) {
+        const roomKey = normalizeRoomId(rid);
+        const devs = sensorGroups.get(roomKey) || [];
+        if (!devs.length) continue;
+        roomsEl.appendChild(buildSensorRoomSection(roomKey, devs));
+      }
     }
     const empty = ce("div", "sensor-filter-empty");
     empty.textContent = "No sensors match this filter";

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.30
+
+- **Sensors:** overflow option to show all sensors in one flat list grouped by type
+  (instead of by room); each card shows its room in the meta line.
+- **Favorites:** overflow reorder item reads **Reorder/Resize** on the Favorites tab.
+- **Favorites:** a lone compact tile in a stack uses a single-cell height instead of
+  leaving an empty half.
+
 ## 0.3.29
 
 - **Favorites:** reorder mode pairs adjacent **Compact** tiles in the same stacked cell
