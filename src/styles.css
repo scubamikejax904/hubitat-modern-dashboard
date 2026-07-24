@@ -1227,37 +1227,45 @@ body {
 }
 .confirm-btn.danger:hover { box-shadow: 0 6px 18px rgba(229,72,77,0.45); }
 
-/* Hub notification popup (virtual notification device queue) */
+/* Hub notification banner (virtual notification device queue) */
 .notification-popup {
-  position: fixed; inset: 0; z-index: 75; pointer-events: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 75;
+  pointer-events: none;
+  padding: max(env(safe-area-inset-top), 0px) 10px 0;
   background: transparent;
 }
-.notification-popup.open {
-  pointer-events: auto;
-  background: rgba(0,0,0,0.38);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-}
+.notification-popup[hidden] { display: none; }
+.notification-popup.open { pointer-events: none; }
 .notification-panel {
-  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  width: min(360px, calc(100vw - 32px));
-  padding: 20px;
-  background: var(--panel-solid); border: 1px solid var(--stroke-2);
-  border-radius: 18px; box-shadow: var(--shadow);
-  display: flex; flex-direction: column; gap: 14px;
+  position: relative;
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  padding: 12px 14px 14px;
+  background: var(--panel-solid);
+  border: 1px solid var(--stroke-2);
+  border-top: none;
+  border-radius: 0 0 16px 16px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   pointer-events: auto;
 }
 .notification-title {
-  margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.02em;
-  text-transform: uppercase; color: var(--muted); text-align: center;
+  margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--muted);
 }
 .notification-from {
   margin: 0; font-size: 13px; font-weight: 600; color: var(--muted);
-  text-align: center; line-height: 1.35;
+  line-height: 1.35;
 }
 .notification-msg {
-  margin: 0; font-size: 16px; font-weight: 600; color: var(--text);
-  text-align: center; line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+  margin: 0; font-size: 15px; font-weight: 600; color: var(--text);
+  line-height: 1.45; white-space: pre-wrap; word-break: break-word;
 }
 .notification-actions { display: flex; gap: 10px; }
 .notification-actions .notification-close,

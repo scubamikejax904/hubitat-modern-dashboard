@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.41
+
+- **UI:** hub notifications appear as a top banner without dimming or blurring the
+  dashboard behind them.
+
 ## 0.3.40
 
 - **Fix:** notification sounds play when enabled — chime no longer dismissed instantly;

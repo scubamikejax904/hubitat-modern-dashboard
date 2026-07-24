@@ -4576,7 +4576,7 @@
         if (document.fullscreenElement) return true;
       } catch {}
       return !!document.querySelector(
-        ".quick-popup.open, .ct-popup.open, .tstat-popup.open, .music-master-popup.open, .confirm-popup.open, .notification-popup.open, .pin-pad-popup.open, .dash-gate-popup.open"
+        ".quick-popup.open, .ct-popup.open, .tstat-popup.open, .music-master-popup.open, .confirm-popup.open, .pin-pad-popup.open, .dash-gate-popup.open"
       );
     }
 
@@ -10374,7 +10374,7 @@
     notifPopup = el;
     el.hidden = true;
     el.setAttribute("role", "alertdialog");
-    el.setAttribute("aria-modal", "true");
+    el.setAttribute("aria-modal", "false");
     el.setAttribute("aria-labelledby", "mld-notif-title");
     el.setAttribute("aria-describedby", "mld-notif-msg");
     const panel = ce("div", "notification-panel");
