@@ -19,7 +19,7 @@ experience works at home and away.
 
 Supports lights (dimmers, switches, CT, RGB), motorized shades, ceiling fans,
 thermostats, locks, HSM, Hubitat scenes, hub mode, music/media players, sensors,
-live camera views (go2rtc, local URL only), and a built-in scheduler for lights, outlets, thermostats, and hub mode.
+live camera views (go2rtc, local URL only), virtual notification popups, and a built-in scheduler for lights, outlets, thermostats, and hub mode.
 Designed to show ~130 lights on one page, within Hubitat's 128 KB cloud response
 cap.
 
@@ -38,6 +38,7 @@ cap.
   - [Music & media](#music--media)
   - [Cameras](#cameras)
   - [Sensors](#sensors)
+  - [Notifications](#notifications)
   - [Scheduler](#scheduler)
   - [Favorites](#favorites)
   - [Search, collapse & reorder](#search-collapse--reorder)
@@ -300,6 +301,39 @@ keeps the generic reading as primary with temperature in the footer. Other
 multi-picker overlaps appear once, using the first matching type. Filter chips
 reflect the merged tile type (for example, temp+humidity counts as Temperature).
 
+### Notifications
+
+Hubitat has no built-in virtual notification device. This package includes a
+**Virtual Notification** driver (`capability.notification`) so Rule Machine and
+other apps can send messages to the dashboard.
+
+**Setup**
+
+1. Install/update Modern Dashboard (HPM installs the Virtual Notification driver).
+2. In **Apps → Modern Dashboard → Notifications**, tap
+   **Create Virtual Notification device** (optionally set a name first).
+3. In Rule Machine (or another app), send a notification to that device.
+
+The created device is a child of the app and is selected in the Notification
+devices list when you create it. You can rename or remove it under **Devices** like
+any other device, remove it from the dashboard picker, or add other
+`capability.notification` devices; Done no longer re-adds a removed child.
+
+Unread messages appear as a full-screen popup over the dashboard (one at a time,
+FIFO queue):
+
+| Button | Behavior |
+| ------ | -------- |
+| **Close** | Hides the popup on **this browser only**; it reappears after **5 minutes** if still unread |
+| **Mark as Read** | Removes it on the hub so every open dashboard stops showing it |
+
+**Sounds** are off by default. Enable **Notification sounds** in the overflow
+Preferences menu to use the browser/OS notification sound (no audio files are
+packaged). The browser will ask for notification permission when you turn sounds
+on. The OS notification is dismissed immediately so only the dashboard popup stays
+on screen; a brief flash may still appear on some platforms. iOS PWA support for
+notification sound varies by OS version.
+
 ### Scheduler
 
 Open the **Scheduler** quick-nav icon to create schedules without logging into
@@ -388,6 +422,7 @@ Stored **per browser** in `localStorage` (overflow menu ⋯):
 | ------- | ----------- |
 | Theme | Dark, Light, or Auto (follows system) |
 | Haptic feedback | Short vibration on supported mobile browsers |
+| Notification sounds | Off by default; uses OS notification sound when enabled (OS toast is closed right away) |
 | Category tabs | Show Lights / Favorites / Sensors / etc. as tabs instead of popups |
 | Navigation drawer | Move search and category icons into a side drawer; top bar shows active category |
 | Local hub URL | Used for local-mode switching (see below) |
@@ -662,6 +697,7 @@ All settings below are in **Apps → Modern Dashboard** (the installed app insta
 | Locks & garage | Locks, garage doors, unlock PIN | — | See [device selection](#device-selection) |
 | Sensors | Motion, contact, water, presence, etc. | — | See [device selection](#device-selection) |
 | Cameras | go2rtc cameras | — | See [device selection](#device-selection) |
+| Notifications | Notification devices | — | Create button installs Virtual Notification child device; other notification devices optional |
 | Dashboard options | Dashboard name | `mDash` | Browser tab and PWA title |
 | Dashboard options | Default tab | Lights | Opening tab when Category tabs is on; falls back to Lights if empty |
 | Dashboard options | Refresh interval | 5 s (2–60) | `/data` poll interval |
@@ -694,6 +730,7 @@ All settings below are in **Apps → Modern Dashboard** (the installed app insta
 | Ceiling fans | — | — | Fans popup; All fans bulk |
 | Music / speakers | — | — | Music popup |
 | Cameras (go2rtc) | — | — | Cameras tab (local URL only; requires category tabs) |
+| Notification devices | — | — | Full-screen notification popup queue |
 | Motion, contact, water, etc. | — | — | Sensors popup |
 | Valves | — | — | Sensors popup (open/close) |
 | Hub scenes | — | — | Scenes popup (all hub scenes) |

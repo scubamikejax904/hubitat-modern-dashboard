@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.35
+
+- **Notifications:** create the Virtual Notification child device from the app
+  settings page (no manual Devices → Add Virtual Device step).
+- **Fix:** Virtual Notification no longer enqueues the same message twice (driver
+  was emitting two attributes; handler now also dedupes rapid same-text events).
+- **Fix:** notification child device is only auto-selected when created — removing
+  it from the picker is preserved across Done / app save.
+- **Fix:** notification sound uses a transient OS notification that is closed
+  immediately so the dashboard popup is the only lasting UI.
+- **Perf:** LAN WebSocket notification events fetch slim `GET /notifications`
+  instead of a full `/data` refresh.
+- **Notifications:** app-created Virtual Notification device is a normal hub
+  device (rename/delete under Devices) instead of a locked component device.
+- **Fix:** auto-select notification child only when missing from the picker (avoids
+  redundant `updateSetting` calls).
+
+## 0.3.34
+
+- **Notifications:** Virtual Notification driver plus SmartApp picker so Rule Machine
+  and other apps can send messages to the dashboard.
+- **Notifications:** unread messages show as a popup queue — **Close** snoozes for
+  5 minutes on this screen only; **Mark as Read** dismisses permanently on the hub.
+- **Notifications:** optional **Notification sounds** preference (default off) uses
+  the browser/OS notification sound — no packaged audio files.
+
 ## 0.3.33
 
 - **Favorites:** compact sensor tiles show the sensor icon, value, name, and a small

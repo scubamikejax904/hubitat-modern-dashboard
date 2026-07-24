@@ -24,6 +24,7 @@
   const MENU_ADD_EMBED_BTN = document.getElementById("menu-add-embed");
   const MENU_ADD_TIME_BTN = document.getElementById("menu-add-time");
   const MENU_HAPTICS_EL = document.getElementById("menu-haptics");
+  const MENU_NOTIF_SOUND_EL = document.getElementById("menu-notif-sound");
   const MENU_TABS_EL = document.getElementById("menu-tabs");
   const MENU_DRAWER_EL = document.getElementById("menu-drawer");
   const MENU_THEME_SEGMENT = document.getElementById("menu-theme-segment");
@@ -35,6 +36,9 @@
   const MENU_OPEN_CLOUD_BTN = document.getElementById("menu-open-cloud");
   const MENU_LOCAL_URL_EL = document.getElementById("menu-local-url");
   const HAPTICS_STORAGE_KEY = "mld_haptics";
+  const NOTIF_SOUND_STORAGE_KEY = "mld_notif_sound";
+  const NOTIF_SNOOZE_STORAGE_KEY = "mld_notif_snooze";
+  const NOTIF_SNOOZE_MS = 5 * 60 * 1000;
   const THEME_STORAGE_KEY = "mld_theme";
   const TABS_STORAGE_KEY = "mld_tabs";
   const DRAWER_STORAGE_KEY = "mld_drawer";
@@ -67,6 +71,32 @@
 
   function saveHapticsPref(on) {
     try { localStorage.setItem(HAPTICS_STORAGE_KEY, on ? "1" : "0"); } catch {}
+  }
+
+  function loadNotifSoundPref() {
+    try {
+      const raw = localStorage.getItem(NOTIF_SOUND_STORAGE_KEY);
+      if (raw === "1") return true;
+      if (raw === "0") return false;
+    } catch {}
+    return false;
+  }
+
+  function saveNotifSoundPref(on) {
+    try { localStorage.setItem(NOTIF_SOUND_STORAGE_KEY, on ? "1" : "0"); } catch {}
+  }
+
+  function loadNotifSnoozeMap() {
+    try {
+      const raw = localStorage.getItem(NOTIF_SNOOZE_STORAGE_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return (parsed && typeof parsed === "object" && !Array.isArray(parsed)) ? parsed : {};
+    } catch { return {}; }
+  }
+
+  function saveNotifSnoozeMap(map) {
+    try { localStorage.setItem(NOTIF_SNOOZE_STORAGE_KEY, JSON.stringify(map || {})); } catch {}
   }
 
   function loadThemePref() {
@@ -363,7 +393,7 @@
     }
   }
 
-  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", defaultTab: "lights", roomOrder: null, navOrder: null, cameraOrder: null, enableHaptics: loadHapticsPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), camerasCols: loadCamerasColsPref(), sensorsFlat: loadSensorsFlatPref(), localUrl: "", cloudUrl: "" };
+  let cfg = { pollIntervalMs: POLL_DEFAULT, useWebSocket: false, theme: loadThemePref(), dashboardName: "mDash", defaultTab: "lights", roomOrder: null, navOrder: null, cameraOrder: null, enableHaptics: loadHapticsPref(), enableNotifSound: loadNotifSoundPref(), enableTabs: loadTabsPref(), enableDrawer: loadDrawerPref(), camerasCols: loadCamerasColsPref(), sensorsFlat: loadSensorsFlatPref(), localUrl: "", cloudUrl: "" };
 
   let localModeBannerEl = null;
   let localBannerDismissed = false;
@@ -465,6 +495,16 @@
   let hsmStatus = "";
   let hsmAlert = "";
   let hsmAlertDesc = "";
+  let hubNotifications = [];
+  let notificationDeviceIds = new Set();
+  let notifPopup = null;
+  let notifShowingId = null;
+  let notifAckInFlight = false;
+  let notifSnoozeTimer = null;
+  let notifLastSoundId = null;
+  let notifFetchInFlight = null;
+  let notifFetchQueued = false;
+  let notifWsFetchTimer = null;
   let hsmEnabled = false;
   let hsmPinRequired = false;
   let thermostatsPopupEnabled = false;
@@ -4535,7 +4575,7 @@
         if (document.fullscreenElement) return true;
       } catch {}
       return !!document.querySelector(
-        ".quick-popup.open, .ct-popup.open, .tstat-popup.open, .music-master-popup.open, .confirm-popup.open, .pin-pad-popup.open, .dash-gate-popup.open"
+        ".quick-popup.open, .ct-popup.open, .tstat-popup.open, .music-master-popup.open, .confirm-popup.open, .notification-popup.open, .pin-pad-popup.open, .dash-gate-popup.open"
       );
     }
 
@@ -6270,6 +6310,7 @@
     schedulerEnabled = d.schedulerEnabled !== false;
     unlockPinEnabled = !!d.unlockPinEnabled;
     unlockPinRequired = !!d.unlockPinRequired;
+    postCall("applyNotificationsFromData", d);
     replaceList(scenes, d.scenes);
     replaceList(locks, d.locks);
     replaceList(garageDoors, d.garageDoors);
@@ -10258,6 +10299,359 @@
     });
   }
 
+  function pruneNotifSnoozeMap(map) {
+    const now = Date.now();
+    const next = {};
+    let changed = false;
+    for (const [id, until] of Object.entries(map || {})) {
+      const ts = Number(until);
+      if (!id || !Number.isFinite(ts) || ts <= now) {
+        changed = true;
+        continue;
+      }
+      next[id] = ts;
+    }
+    return { map: next, changed };
+  }
+
+  function isNotifSnoozed(id) {
+    if (!id) return false;
+    const pruned = pruneNotifSnoozeMap(loadNotifSnoozeMap());
+    if (pruned.changed) saveNotifSnoozeMap(pruned.map);
+    const until = Number(pruned.map[id]);
+    return Number.isFinite(until) && until > Date.now();
+  }
+
+  function snoozeNotificationLocal(id) {
+    if (!id) return;
+    const pruned = pruneNotifSnoozeMap(loadNotifSnoozeMap());
+    pruned.map[id] = Date.now() + NOTIF_SNOOZE_MS;
+    saveNotifSnoozeMap(pruned.map);
+    scheduleNotifSnoozeWake();
+  }
+
+  function clearNotifSnooze(id) {
+    if (!id) return;
+    const map = loadNotifSnoozeMap();
+    if (!(id in map)) return;
+    delete map[id];
+    saveNotifSnoozeMap(map);
+  }
+
+  function scheduleNotifSnoozeWake() {
+    if (notifSnoozeTimer) {
+      clearTimeout(notifSnoozeTimer);
+      notifSnoozeTimer = null;
+    }
+    const map = pruneNotifSnoozeMap(loadNotifSnoozeMap()).map;
+    let soonest = Infinity;
+    for (const until of Object.values(map)) {
+      const ts = Number(until);
+      if (Number.isFinite(ts) && ts < soonest) soonest = ts;
+    }
+    if (!Number.isFinite(soonest) || soonest === Infinity) return;
+    const delay = Math.max(250, soonest - Date.now() + 50);
+    notifSnoozeTimer = setTimeout(() => {
+      notifSnoozeTimer = null;
+      syncNotificationPopup();
+      scheduleNotifSnoozeWake();
+    }, delay);
+  }
+
+  function nextUnreadNotification() {
+    for (const item of hubNotifications) {
+      if (!item?.id) continue;
+      if (isNotifSnoozed(item.id)) continue;
+      return item;
+    }
+    return null;
+  }
+
+  function ensureNotificationPopup() {
+    if (notifPopup) return notifPopup;
+    const el = ce("div", "notification-popup");
+    notifPopup = el;
+    el.hidden = true;
+    el.setAttribute("role", "alertdialog");
+    el.setAttribute("aria-modal", "true");
+    el.setAttribute("aria-labelledby", "mld-notif-title");
+    el.setAttribute("aria-describedby", "mld-notif-msg");
+    const panel = ce("div", "notification-panel");
+    const title = ce("h2", "notification-title");
+    title.id = "mld-notif-title";
+    title.textContent = "Notification";
+    const from = ce("p", "notification-from");
+    from.hidden = true;
+    const msg = ce("p", "notification-msg");
+    msg.id = "mld-notif-msg";
+    const actions = ce("div", "notification-actions");
+    const closeBtn = ce("button", "notification-close");
+    closeBtn.type = "button";
+    closeBtn.textContent = "Close";
+    const ackBtn = ce("button", "notification-ack");
+    ackBtn.type = "button";
+    ackBtn.textContent = "Mark as Read";
+    actions.appendChild(closeBtn);
+    actions.appendChild(ackBtn);
+    panel.appendChild(title);
+    panel.appendChild(from);
+    panel.appendChild(msg);
+    panel.appendChild(actions);
+    el.appendChild(panel);
+    appendPopup(el);
+
+    closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      hapticTap();
+      const id = notifShowingId;
+      if (!id) return;
+      snoozeNotificationLocal(id);
+      if (notifLastSoundId === id) notifLastSoundId = null;
+      hideNotificationPopup();
+      syncNotificationPopup();
+    });
+    ackBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      hapticTap();
+      void acknowledgeNotification(notifShowingId);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (!el.classList.contains("open")) return;
+      e.preventDefault();
+      const id = notifShowingId;
+      if (!id || notifAckInFlight) return;
+      snoozeNotificationLocal(id);
+      if (notifLastSoundId === id) notifLastSoundId = null;
+      hideNotificationPopup();
+      syncNotificationPopup();
+    });
+
+    el._from = from;
+    el._msg = msg;
+    el._close = closeBtn;
+    el._ack = ackBtn;
+    return el;
+  }
+
+  function hideNotificationPopup() {
+    const popup = notifPopup || document.querySelector(".notification-popup");
+    if (!popup) return;
+    popup.hidden = true;
+    popup.classList.remove("open");
+    notifShowingId = null;
+  }
+
+  function dismissNotifChimeNotifications(tag) {
+    try {
+      if (!navigator.serviceWorker?.ready) return;
+      navigator.serviceWorker.ready.then((reg) => {
+        reg.getNotifications({ tag }).then((list) => {
+          for (const n of list) {
+            try { n.close(); } catch {}
+          }
+        }).catch(() => {});
+      }).catch(() => {});
+    } catch {}
+  }
+
+  function playNotificationOsSound(item) {
+    if (!cfg.enableNotifSound) return;
+    if (!item?.id || item.id === notifLastSoundId) return;
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission !== "granted") return;
+    notifLastSoundId = item.id;
+    // Fire a transient OS notification for its system sound, then close it so only
+    // the in-app popup remains (browsers have no "sound only" Notification API).
+    const tag = "mld-notif-chime";
+    const title = "mDash";
+    const opts = {
+      body: " ",
+      tag,
+      renotify: true,
+      requireInteraction: false,
+    };
+    const closeChime = (n) => {
+      try { n?.close?.(); } catch {}
+      dismissNotifChimeNotifications(tag);
+      setTimeout(() => dismissNotifChimeNotifications(tag), 40);
+    };
+    try {
+      if (navigator.serviceWorker?.ready) {
+        navigator.serviceWorker.ready.then((reg) => {
+          Promise.resolve(reg.showNotification(title, opts))
+            .then(() => closeChime(null))
+            .catch(() => {
+              try { closeChime(new Notification(title, opts)); } catch {}
+            });
+        }).catch(() => {
+          try { closeChime(new Notification(title, opts)); } catch {}
+        });
+      } else {
+        closeChime(new Notification(title, opts));
+      }
+    } catch {}
+  }
+
+  function showNotificationPopup(item) {
+    if (!item?.id) return;
+    if (isDashboardGateOpen()) return;
+    const popup = ensureNotificationPopup();
+    const changed = notifShowingId !== item.id;
+    notifShowingId = item.id;
+    popup._msg.textContent = String(item.text || "");
+    if (item.deviceName) {
+      popup._from.hidden = false;
+      popup._from.textContent = String(item.deviceName);
+    } else {
+      popup._from.hidden = true;
+      popup._from.textContent = "";
+    }
+    popup._close.disabled = notifAckInFlight;
+    popup._ack.disabled = notifAckInFlight;
+    popup.hidden = false;
+    popup.classList.add("open");
+    if (changed) playNotificationOsSound(item);
+  }
+
+  function syncNotificationPopup() {
+    if (isDashboardGateOpen()) {
+      hideNotificationPopup();
+      return;
+    }
+    const next = nextUnreadNotification();
+    if (!next) {
+      hideNotificationPopup();
+      scheduleNotifSnoozeWake();
+      return;
+    }
+    showNotificationPopup(next);
+    scheduleNotifSnoozeWake();
+  }
+
+  function applyNotificationsFromData(d) {
+    const list = Array.isArray(d?.notifications) ? d.notifications : [];
+    hubNotifications = list.map((n) => ({
+      id: n?.id != null ? String(n.id) : "",
+      text: n?.text != null ? String(n.text) : "",
+      ts: Number(n?.ts) || 0,
+      deviceId: n?.deviceId != null ? Number(n.deviceId) : null,
+      deviceName: n?.deviceName != null ? String(n.deviceName) : "",
+    })).filter((n) => n.id && n.text);
+    const ids = Array.isArray(d?.notificationDeviceIds) ? d.notificationDeviceIds : [];
+    if (ids.length || d?.notificationDeviceIds != null) {
+      notificationDeviceIds = new Set(ids.map(Number).filter((n) => Number.isFinite(n)));
+    }
+    const alive = new Set(hubNotifications.map((n) => n.id));
+    const snooze = loadNotifSnoozeMap();
+    let snoozeChanged = false;
+    for (const id of Object.keys(snooze)) {
+      if (!alive.has(id)) {
+        delete snooze[id];
+        snoozeChanged = true;
+      }
+    }
+    if (snoozeChanged) saveNotifSnoozeMap(snooze);
+    if (notifShowingId && !alive.has(notifShowingId)) notifShowingId = null;
+    syncNotificationPopup();
+  }
+
+  async function fetchNotifications() {
+    if (isDashboardGateOpen()) return;
+    if (notifFetchInFlight) {
+      notifFetchQueued = true;
+      return notifFetchInFlight;
+    }
+    notifFetchInFlight = (async () => {
+      try {
+        const r = await fetch(withToken("notifications"), {
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        const j = await r.json().catch(() => null);
+        if (r.ok && j) applyNotificationsFromData(j);
+      } catch {
+        // Next poll /data still carries notifications as fallback.
+      } finally {
+        notifFetchInFlight = null;
+        if (notifFetchQueued) {
+          notifFetchQueued = false;
+          void fetchNotifications();
+        }
+      }
+    })();
+    return notifFetchInFlight;
+  }
+
+  function scheduleNotificationFetchFromWs() {
+    // eventsocket can beat the SmartApp subscribe handler; brief delay lets the
+    // hub queue update before we pull the slim /notifications payload.
+    if (notifWsFetchTimer) clearTimeout(notifWsFetchTimer);
+    notifWsFetchTimer = setTimeout(() => {
+      notifWsFetchTimer = null;
+      void fetchNotifications();
+    }, 180);
+  }
+
+  async function acknowledgeNotification(id) {
+    if (!id || notifAckInFlight) return;
+    notifAckInFlight = true;
+    const popup = ensureNotificationPopup();
+    popup._close.disabled = true;
+    popup._ack.disabled = true;
+    try {
+      const r = await fetch(withToken("notifications/ack"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ id }),
+        cache: "no-store",
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j?.ok) {
+        flash((j && j.error) ? String(j.error) : "Could not mark as read", true);
+        return;
+      }
+      clearNotifSnooze(id);
+      if (Array.isArray(j.notifications)) {
+        applyNotificationsFromData({
+          notifications: j.notifications,
+          notificationDeviceIds: [...notificationDeviceIds],
+        });
+      } else {
+        hubNotifications = hubNotifications.filter((n) => n.id !== id);
+        syncNotificationPopup();
+      }
+    } catch {
+      flash("Could not mark as read", true);
+    } finally {
+      notifAckInFlight = false;
+      if (notifPopup) {
+        notifPopup._close.disabled = false;
+        notifPopup._ack.disabled = false;
+      }
+      syncNotificationPopup();
+    }
+  }
+
+  async function requestNotifSoundPermission() {
+    if (typeof Notification === "undefined") {
+      flash("Notification sounds are not supported here", true);
+      return false;
+    }
+    if (Notification.permission === "granted") return true;
+    if (Notification.permission === "denied") {
+      flash("Notification permission blocked in browser settings", true);
+      return false;
+    }
+    try {
+      const result = await Notification.requestPermission();
+      return result === "granted";
+    } catch {
+      flash("Could not request notification permission", true);
+      return false;
+    }
+  }
+
   async function tapAllOn() {
     if (!devices.length) { flash("No lights configured", true); return; }
     if (await confirmAction({ message: "Turn on all lights?", confirmLabel: "All on" })) allLights("on");
@@ -10574,6 +10968,30 @@
     });
   }
 
+  if (MENU_NOTIF_SOUND_EL) {
+    const soundLabel = MENU_NOTIF_SOUND_EL.closest(".topbar-overflow-check");
+    MENU_NOTIF_SOUND_EL.checked = cfg.enableNotifSound;
+    if (soundLabel) soundLabel.setAttribute("aria-checked", cfg.enableNotifSound ? "true" : "false");
+    MENU_NOTIF_SOUND_EL.addEventListener("click", (e) => e.stopPropagation());
+    MENU_NOTIF_SOUND_EL.addEventListener("change", () => {
+      void (async () => {
+        let on = MENU_NOTIF_SOUND_EL.checked;
+        if (on) {
+          const ok = await requestNotifSoundPermission();
+          if (!ok) {
+            on = false;
+            MENU_NOTIF_SOUND_EL.checked = false;
+          }
+        }
+        cfg.enableNotifSound = on;
+        saveNotifSoundPref(on);
+        if (soundLabel) soundLabel.setAttribute("aria-checked", on ? "true" : "false");
+        if (on) flash("Notification sounds on");
+        else flash("Notification sounds muted");
+      })();
+    });
+  }
+
   if (MENU_TABS_EL) {
     const tabsLabel = MENU_TABS_EL.closest(".topbar-overflow-check");
     MENU_TABS_EL.checked = cfg.enableTabs;
@@ -10792,6 +11210,14 @@
         }
         if (m.source !== "DEVICE" || m.deviceId == null) return;
         const deviceId = Number(m.deviceId);
+        const notifAttr = String(m.name || "");
+        if (
+          notificationDeviceIds.has(deviceId) &&
+          (notifAttr === "notificationText" || notifAttr === "deviceNotification" || notifAttr === "lastMessage")
+        ) {
+          scheduleNotificationFetchFromWs();
+          return;
+        }
         const shade = windowShades.find(x => x.i === deviceId);
         const shadeName = String(m.name || "");
         const shadeEvt = shade && (shadeName === "windowShade" || shadeName === "windowBlind" || shadeName === "position" || shadeName === "level" || shadeName === "switch");
@@ -11215,6 +11641,7 @@
     gatePopup.classList.remove("open", "shake");
     gatePopup.hidden = true;
     gateState = null;
+    syncNotificationPopup();
   }
 
   function promptDashboardPassword() {

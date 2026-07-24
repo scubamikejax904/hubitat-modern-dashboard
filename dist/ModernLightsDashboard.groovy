@@ -1,4 +1,4 @@
-// Modern Dashboard v0.3.33
+// Modern Dashboard v0.3.35
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
@@ -16,7 +16,7 @@ import groovy.transform.Field
 @Field private static String LOCAL_ASSET_CACHE_VERSION = ""
 @Field private static int LOCAL_ASSET_CACHE_BYTES = 0
 @Field private static final int LOCAL_ASSET_CACHE_MAX_BYTES = 768 * 1024
-@Field private static final String MLD_DEPLOYED_VERSION = "0.3.33"
+@Field private static final String MLD_DEPLOYED_VERSION = "0.3.35"
 
 definition(
     name: "Modern Dashboard",
@@ -50,7 +50,7 @@ def mainPage() {
             } else {
                 paragraph "<small><b>Hub-only:</b> UI and API run entirely on your hub — no Maker API or third-party cloud.</small>"
             }
-            paragraph "<small>Version 0.3.33 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
+            paragraph "<small>Version 0.3.35 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         if (assetsOk) {
             section("Dashboard links") {
@@ -157,6 +157,27 @@ def mainPage() {
             input "cameras", "capability.imageCapture", title: "Cameras (go2rtc)",
                 multiple: true, required: false, showFilter: true, submitOnChange: true
         }
+        section("Notifications") {
+            paragraph "<small>Rule Machine and other apps can send notifications to a Virtual Notification device; the dashboard shows each unread message as a popup until marked as read.</small>"
+            def notifChild = getNotificationChildDevice()
+            if (notifChild) {
+                paragraph "<small><b>Dashboard notification device:</b> ${htmlEsc(notifChild.displayName)} (created by this app).</small>"
+            } else {
+                input "notifDeviceLabel", "string", title: "Name for new Virtual Notification device",
+                    defaultValue: "Dashboard Notifications", required: false
+                input name: "btnCreateNotifDevice", type: "button", title: "Create Virtual Notification device"
+                paragraph "<small>Requires the <b>Virtual Notification</b> driver from this package (installed automatically via HPM). The device can be renamed under <b>Devices</b>; deleting it only removes it from the hub — use <b>Create</b> again to add a new one.</small>"
+                if (state.notifDeviceCreateError) {
+                    paragraph "<small><b>Could not create device:</b> ${htmlEsc(state.notifDeviceCreateError.toString())}</small>"
+                }
+                if (state.notifDeviceCreateOk) {
+                    paragraph "<small><b>Created:</b> ${htmlEsc(state.notifDeviceCreateOk.toString())}</small>"
+                }
+            }
+            input "notificationDevices", "capability.notification", title: "Notification devices",
+                multiple: true, required: false, showFilter: true, submitOnChange: true
+            paragraph "<small>Creating the device above selects it once. You can remove it from this list or add other <code>capability.notification</code> devices; your selection is kept when you press Done.</small>"
+        }
         section("Dashboard options") {
             input "dashboardName", "string", title: "Dashboard name", defaultValue: "mDash", required: false
             input "pollSec", "number", title: "Refresh interval (seconds)", defaultValue: 5, required: false, range: "2..60"
@@ -238,6 +259,7 @@ def installed() {
     try { syncHubCredentials() } catch (e) { log.warn "Modern Dashboard: hub credential sync failed: ${e}" }
     try { initializeScheduler() } catch (e) { log.warn "Modern Dashboard: scheduler init failed: ${e}" }
     try { initializeHsm() } catch (e) { log.warn "Modern Dashboard: HSM init failed: ${e}" }
+    try { initializeNotifications() } catch (e) { log.warn "Modern Dashboard: notifications init failed: ${e}" }
 }
 
 def updated() {
@@ -247,7 +269,14 @@ def updated() {
     try { syncDashPasswordEpoch() } catch (e) { log.warn "Modern Dashboard: dash password sync failed: ${e}" }
     try { initializeScheduler() } catch (e) { log.warn "Modern Dashboard: scheduler init failed: ${e}" }
     try { initializeHsm() } catch (e) { log.warn "Modern Dashboard: HSM init failed: ${e}" }
+    try { initializeNotifications() } catch (e) { log.warn "Modern Dashboard: notifications init failed: ${e}" }
     syncDebugLoggingAutoOff()
+}
+
+def appButtonHandler(btn) {
+    if (btn == "btnCreateNotifDevice") {
+        createNotificationChildDeviceFromUi()
+    }
 }
 
 def initialize() {
@@ -1125,6 +1154,8 @@ mappings {
     path("/schedules/delete") { action: [POST: "schedulesDelete"] }
     path("/schedules/toggle") { action: [POST: "schedulesToggle"] }
     path("/schedules/test") { action: [POST: "schedulesTest"] }
+    path("/notifications") { action: [GET: "notificationsGet"] }
+    path("/notifications/ack") { action: [GET: "notificationsAckGet", POST: "notificationsAck"] }
 }
 
 def readIconDataUri(String b64FileName) {
@@ -1628,6 +1659,7 @@ def renderData() {
     out << snapshotsJsonFragment()
     out << lightJobJsonFragment()
     out << sunTimesJsonFragment()
+    out << notificationsJsonFragment()
     // Cloud MQTT ~128 KB limit: schedules can make /data fail entirely. Client loads via GET /schedules.
     if (request?.requestSource == "cloud") {
         out << ',"schedules":null'
@@ -4352,6 +4384,283 @@ def initializeHsm() {
     if (alert) state.hsmAlert = alert
     def alertDesc = readHsmAlertDesc()
     if (alertDesc) state.hsmAlertDesc = alertDesc
+}
+
+// ---------------------------------------------------------------------------
+// Virtual / Notification devices → dashboard popup queue
+// ---------------------------------------------------------------------------
+def maxNotificationQueue() { return 20 }
+def maxNotificationTextLen() { return 1024 }
+
+def notificationChildDni() {
+    return "mld-notif-${app.id}"
+}
+
+def getNotificationChildDevice() {
+    try {
+        return getChildDevice(notificationChildDni())
+    } catch (e) {
+        return null
+    }
+}
+
+def createNotificationChildDeviceFromUi() {
+    state.remove("notifDeviceCreateError")
+    state.remove("notifDeviceCreateOk")
+    def existing = getNotificationChildDevice()
+    if (existing) {
+        state.notifDeviceCreateOk = existing.displayName
+        syncNotificationChildSelection()
+        try { initializeNotifications() } catch (e) {}
+        return
+    }
+    def label = notifDeviceLabel?.toString()?.trim()
+    if (!label) label = "Dashboard Notifications"
+    if (label.length() > 64) label = label.substring(0, 64)
+    try {
+        def child = addChildDevice(
+            "modernlights",
+            "Virtual Notification",
+            notificationChildDni(),
+            [
+                name: "Virtual Notification",
+                label: label,
+                isComponent: false
+            ]
+        )
+        state.notifDeviceCreateOk = child?.displayName ?: label
+        log.info "Modern Dashboard: created notification device ${state.notifDeviceCreateOk}"
+        syncNotificationChildSelection()
+        try { initializeNotifications() } catch (e) {}
+    } catch (e) {
+        def msg = e?.message?.toString() ?: e?.toString() ?: "unknown error"
+        state.notifDeviceCreateError = msg
+        log.warn "Modern Dashboard: could not create Virtual Notification device: ${msg}"
+    }
+}
+
+def notificationDeviceIdList() {
+    def ids = []
+    def seen = new HashSet()
+    def addId = { id ->
+        def key = id?.toString()?.trim()
+        if (!key || seen.contains(key)) return
+        seen.add(key)
+        ids << key
+    }
+    try {
+        if (notificationDevices instanceof List) {
+            notificationDevices.each { d -> addId(d?.id) }
+        } else if (notificationDevices) {
+            addId(notificationDevices?.id)
+        }
+    } catch (e) {}
+    return ids
+}
+
+def syncNotificationChildSelection() {
+    // Only from Create button — never from updated()/installed().
+    def child = getNotificationChildDevice()
+    if (!child) return
+    def childId = child.id?.toString()?.trim()
+    if (!childId) return
+    def current = notificationDeviceIdList()
+    if (current.contains(childId)) return
+    def next = current + [childId]
+    try {
+        app.updateSetting("notificationDevices", [type: "capability.notification", value: next])
+    } catch (e) {
+        log.warn "Modern Dashboard: could not auto-select notification child device: ${e}"
+    }
+}
+
+def allNotificationDevices() {
+    def out = []
+    def seen = new HashSet()
+    def addDev = { d ->
+        if (d == null) return
+        def key = null
+        try { key = d.id?.toString() } catch (e) {}
+        if (!key || seen.contains(key)) return
+        seen.add(key)
+        out << d
+    }
+    try {
+        if (notificationDevices instanceof List) notificationDevices.each { addDev(it) }
+        else if (notificationDevices) addDev(notificationDevices)
+    } catch (e) {}
+    return out
+}
+
+def initializeNotifications() {
+    def devices = allNotificationDevices()
+    try {
+        if (devices) {
+            for (d in devices) {
+                try { unsubscribe(d) } catch (e) {}
+            }
+        }
+    } catch (e) {}
+    if (!devices) return
+    for (d in devices) {
+        try { subscribe(d, "notificationText", notificationDeviceEvent) } catch (e) {}
+        try { subscribe(d, "deviceNotification", notificationDeviceEvent) } catch (e) {}
+        try { subscribe(d, "lastMessage", notificationDeviceEvent) } catch (e) {}
+    }
+}
+
+def notificationDeviceEvent(evt) {
+    def text = evt?.value?.toString()?.trim()
+    if (!text) return
+    if (text.length() > maxNotificationTextLen()) text = text.substring(0, maxNotificationTextLen())
+    def deviceId = null
+    def deviceName = ""
+    try { deviceId = evt?.deviceId } catch (e) {}
+    try { deviceName = evt?.displayName?.toString() ?: "" } catch (e) {}
+    if (!deviceName) {
+        try { deviceName = evt?.device?.displayName?.toString() ?: "" } catch (e) {}
+    }
+    // Some drivers fire multiple attributes for one notify (e.g. notificationText +
+    // lastMessage). Collapse same device+text within a short window into one queue item.
+    def nowMs = System.currentTimeMillis()
+    def dedupeKey = "${deviceId ?: ""}|${text}"
+    def lastKey = state.notifDedupeKey?.toString()
+    def lastAt = (state.notifDedupeAt instanceof Number) ? state.notifDedupeAt.longValue() : 0L
+    if (dedupeKey == lastKey && (nowMs - lastAt) < 3000L) return
+    state.notifDedupeKey = dedupeKey
+    state.notifDedupeAt = nowMs
+    appendNotification(text, deviceId, deviceName)
+}
+
+def parseNotificationsState() {
+    if (!state.notificationsJson) return []
+    try {
+        def parsed = new groovy.json.JsonSlurper().parseText(state.notificationsJson.toString())
+        if (!(parsed instanceof List)) return []
+        def out = []
+        for (item in parsed) {
+            if (!(item instanceof Map)) continue
+            def id = item.id?.toString()?.trim()
+            def text = item.text?.toString()
+            if (!id || text == null) continue
+            def entry = [
+                id: id,
+                text: text.toString(),
+                ts: (item.ts instanceof Number) ? item.ts.longValue() : (System.currentTimeMillis()),
+                deviceId: item.deviceId,
+                deviceName: item.deviceName?.toString() ?: ""
+            ]
+            out << entry
+            if (out.size() >= maxNotificationQueue()) break
+        }
+        return out
+    } catch (e) {
+        return []
+    }
+}
+
+def persistNotificationsState(list) {
+    def capped = (list instanceof List) ? list.take(maxNotificationQueue()) : []
+    state.notificationsJson = groovy.json.JsonOutput.toJson(capped)
+}
+
+def appendNotification(text, deviceId, deviceName) {
+    def list = parseNotificationsState()
+    def seq = (state.notifSeq instanceof Number) ? state.notifSeq.longValue() : 0L
+    seq++
+    state.notifSeq = seq
+    def id = "n_${System.currentTimeMillis()}_${seq}"
+    def entry = [
+        id: id,
+        text: text?.toString() ?: "",
+        ts: System.currentTimeMillis(),
+        deviceId: deviceId,
+        deviceName: deviceName?.toString() ?: ""
+    ]
+    list << entry
+    while (list.size() > maxNotificationQueue()) {
+        list.remove(0)
+    }
+    persistNotificationsState(list)
+}
+
+def notificationsJsonFragment() {
+    def list = parseNotificationsState()
+    def out = new StringBuilder()
+    out << ",\"notifications\":["
+    boolean first = true
+    for (item in list) {
+        if (!first) out << ","; first = false
+        out << "{\"id\":" << jsonStr(item.id)
+        out << ",\"text\":" << jsonStr(item.text)
+        out << ",\"ts\":" << (item.ts ?: 0)
+        if (item.deviceId != null) out << ",\"deviceId\":" << item.deviceId
+        out << ",\"deviceName\":" << jsonStr(item.deviceName ?: "")
+        out << "}"
+    }
+    out << "]"
+    out << ",\"notificationDeviceIds\":["
+    first = true
+    for (d in allNotificationDevices()) {
+        if (!first) out << ","; first = false
+        out << d.id
+    }
+    out << "]"
+    return out.toString()
+}
+
+def notificationsGet() {
+    if (!guardDashboardAccess()) return renderAuthRequired()
+    def out = new StringBuilder()
+    out << '{"ok":true'
+    out << notificationsJsonFragment()
+    out << "}"
+    return renderJsonNoStore(withAuthJson(out.toString()), 200)
+}
+
+def notificationsAckGet() {
+    def id = params?.id
+    if (!id?.toString()?.trim()) {
+        return renderJsonNoStore('{"ok":false,"error":"missing id"}', 400)
+    }
+    return notificationsAckFromId(id.toString().trim())
+}
+
+def notificationsAck() {
+    def body = request?.JSON
+    if (body == null) {
+        try {
+            def raw = request?.postBody ?: request?.content
+            if (raw) body = new groovy.json.JsonSlurper().parseText(raw.toString())
+        } catch (e) {}
+    }
+    def id = body?.id ?: params?.id
+    if (!id?.toString()?.trim()) {
+        return renderJsonNoStore('{"ok":false,"error":"missing id"}', 400)
+    }
+    return notificationsAckFromId(id.toString().trim())
+}
+
+def notificationsAckFromId(id) {
+    if (!guardDashboardAccess()) return renderAuthRequired()
+    def list = parseNotificationsState()
+    def next = list.findAll { it.id?.toString() != id }
+    persistNotificationsState(next)
+    def out = new StringBuilder()
+    out << '{"ok":true,"id":' << jsonStr(id)
+    out << ',"notifications":['
+    boolean first = true
+    for (item in next) {
+        if (!first) out << ","; first = false
+        out << '{"id":' << jsonStr(item.id)
+        out << ',"text":' << jsonStr(item.text)
+        out << ',"ts":' << (item.ts ?: 0)
+        if (item.deviceId != null) out << ',"deviceId":' << item.deviceId
+        out << ',"deviceName":' << jsonStr(item.deviceName ?: "")
+        out << "}"
+    }
+    out << "]}"
+    return renderJsonNoStore(withAuthJson(out.toString()), 200)
 }
 
 def hsmStatusChanged(evt) {

@@ -73,6 +73,15 @@ state.schedules = [{
   summary: "When mode is Away",
 }];
 for (const s of state.schedules) mockRecomputeNextFire(s);
+state.notifications = [{
+  id: "n_demo_1",
+  text: "Washer cycle finished — demo notification. Close snoozes 5 minutes; Mark as Read dismisses it.",
+  ts: Date.now() - 60_000,
+  deviceId: 9001,
+  deviceName: "Dashboard Alerts",
+}];
+state.notificationDeviceIds = [9001];
+let notifSeq = 1;
 
 function mockSunTimes() {
   const d = new Date();
@@ -207,7 +216,7 @@ function buildMockData(count) {
   return { config: { pollIntervalMs: 5000, useWebSocket: false, dashboardName: "mDash", defaultTab: "lights", roomOrder: [], navOrder: [], cameraOrder: [], favorites: [1, 5, 1001, 2103, 2201, 5101], favoriteSizes: {}, embedCards: [], timeCards: [], favoritesLayout: [] }, rooms, devices, outlets: [
     { i: 601, n: "Kitchen Outlet", r: 2, s: 1 },
     { i: 602, n: "Office Outlet", r: 4, s: 0 },
-  ], thermostats, tempSensors, sensors, valves, locks, garageDoors, music, cameras, windowShades, ceilingFans, hubModes: ["Day", "Evening", "Night", "Away"], currentHubMode: "Day", hsmStatus: "disarmed", hsmAlert: "water", hsmAlertDesc: "Basement leak sensor", hsmEnabled: true, hsmPinEnabled: true, hsmPinRequired: true, thermostatsPopupEnabled: true, outletsSeparateTab: false, roomClimateEnabled: true, schedulerEnabled: true, schedUse24Hour: false, unlockPinEnabled: true, unlockPinRequired: true, dashboardPasswordEnabled: true, dashboardPasswordRequired: true, scenes: [{ id: 1, n: "Good Morning" }, { id: 2, n: "Movie Time" }, { id: 3, n: "Good Night" }, { id: 4, n: "Away" }], schedules: [], sunTimes: mockSunTimes() };
+  ], thermostats, tempSensors, sensors, valves, locks, garageDoors, music, cameras, windowShades, ceilingFans, hubModes: ["Day", "Evening", "Night", "Away"], currentHubMode: "Day", hsmStatus: "disarmed", hsmAlert: "water", hsmAlertDesc: "Basement leak sensor", hsmEnabled: true, hsmPinEnabled: true, hsmPinRequired: true, thermostatsPopupEnabled: true, outletsSeparateTab: false, roomClimateEnabled: true, schedulerEnabled: true, schedUse24Hour: false, unlockPinEnabled: true, unlockPinRequired: true, dashboardPasswordEnabled: true, dashboardPasswordRequired: true, scenes: [{ id: 1, n: "Good Morning" }, { id: 2, n: "Movie Time" }, { id: 3, n: "Good Night" }, { id: 4, n: "Away" }], schedules: [], sunTimes: mockSunTimes(), notifications: [], notificationDeviceIds: [9001] };
 }
 
 function tstatOstateForMode(tm) {
@@ -1208,6 +1217,61 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify({ ok: true, id: sceneId }));
     }
+  }
+  if (p === "/notifications") {
+    const auth = requireDashAuth(res, url, null);
+    if (!auth) return;
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify({
+      ok: true,
+      notifications: state.notifications || [],
+      notificationDeviceIds: state.notificationDeviceIds || [9001],
+    }));
+  }
+  if (p === "/notifications/ack") {
+    let body = null;
+    if (req.method === "POST") {
+      try { body = await readJsonBody(req); } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ ok: false, error: "invalid json" }));
+      }
+    }
+    const auth = requireDashAuth(res, url, body);
+    if (!auth) return;
+    const id = String(body?.id ?? url.searchParams.get("id") ?? "").trim();
+    if (!id) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ ok: false, error: "missing id" }));
+    }
+    state.notifications = (state.notifications || []).filter((n) => n.id !== id);
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify({
+      ok: true,
+      id,
+      notifications: state.notifications,
+    }));
+  }
+  if (p === "/notifications/push" && req.method === "POST") {
+    // Preview-only helper to enqueue a test notification
+    let body = null;
+    try { body = await readJsonBody(req); } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ ok: false, error: "invalid json" }));
+    }
+    const auth = requireDashAuth(res, url, body);
+    if (!auth) return;
+    const text = String(body?.text || "Test notification");
+    notifSeq += 1;
+    const entry = {
+      id: `n_preview_${Date.now()}_${notifSeq}`,
+      text,
+      ts: Date.now(),
+      deviceId: 9001,
+      deviceName: "Dashboard Alerts",
+    };
+    state.notifications = [...(state.notifications || []), entry].slice(-20);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ ok: true, notifications: state.notifications }));
   }
   if (p === "/favorites") {
     ensureEmbedConfig();
