@@ -61,6 +61,10 @@ const HPM_APP_ID = "a4f8c2e1-6b3d-4a9f-8e7c-1d2b3c4d5e6f";
 const HPM_DRIVER_ID = "d1e2f3a4-b5c6-7890-def1-234567890abc";
 const DRIVER_FILE = "mDashNotifications.groovy";
 const DRIVER_DISPLAY_NAME = "mDash Notifications";
+// HPM serves the driver from drivers/ (source), not dist/ — avoids dist publish gaps.
+const HPM_REPO_RAW_URL =
+  process.env.HPM_REPO_RAW_URL ?? HPM_BASE_URL.replace(/\/dist\/?$/, "");
+const HPM_DRIVER_LOCATION = `${HPM_REPO_RAW_URL}/drivers/${DRIVER_FILE}`;
 const FILE_MANAGER_ASSETS = [
   { id: "b1a2c3d4-e5f6-7890-abcd-ef1234567890", name: "mld-index.html" },
   { id: "c2b3d4e5-f6a7-8901-bcde-f12345678901", name: "mld-app.css" },
@@ -511,6 +515,10 @@ function fileManagerAssetList() {
   return FILE_MANAGER_ASSETS.map((a) => `   - ${a.name}`).join("\n");
 }
 
+function substituteDriverSource(template) {
+  return template.replaceAll("__DRIVER_IMPORT_URL__", HPM_DRIVER_LOCATION);
+}
+
 function substituteGroovyTemplate(template) {
   return template
     .replaceAll("__APP_VERSION__", pkg.version)
@@ -601,7 +609,8 @@ writeFileSync(join(dist, "ModernLightsDashboard.groovy"), groovy);
 const driverSrc = join(root, "drivers", DRIVER_FILE);
 const driverOutDir = join(dist, "drivers");
 mkdirSync(driverOutDir, { recursive: true });
-copyFileSync(driverSrc, join(driverOutDir, DRIVER_FILE));
+const driverGroovy = substituteDriverSource(readFileSync(driverSrc, "utf8"));
+writeFileSync(join(driverOutDir, DRIVER_FILE), driverGroovy);
 
 // Hubitat bundle manifest (install.txt / update.txt format)
 const manifest = `${NS}\n${BUNDLE_NAME}\napp ${APP_FILE}\ndriver ${NS}.${DRIVER_FILE}\n`;
@@ -610,7 +619,7 @@ rmSync(staging, { recursive: true, force: true });
 mkdirSync(join(staging, "file-manager"), { recursive: true });
 
 writeFileSync(join(staging, APP_FILE), groovy);
-writeFileSync(join(staging, `${NS}.${DRIVER_FILE}`), readFileSync(driverSrc, "utf8"));
+writeFileSync(join(staging, `${NS}.${DRIVER_FILE}`), driverGroovy);
 writeFileSync(join(staging, "install.txt"), manifest);
 writeFileSync(join(staging, "update.txt"), manifest);
 
@@ -693,7 +702,7 @@ const hpmManifest = {
       id: HPM_DRIVER_ID,
       name: DRIVER_DISPLAY_NAME,
       namespace: NS,
-      location: `${HPM_BASE_URL}/drivers/${DRIVER_FILE}`,
+      location: HPM_DRIVER_LOCATION,
       required: true,
     },
   ],
@@ -744,7 +753,8 @@ for (const { name } of FILE_MANAGER_ASSETS) {
 console.log(`  hubitat/packageManifest.json            (HPM: app + oauth + driver + ${FILE_MANAGER_ASSETS.length} files)`);
 console.log(`  hubitat/repository.json                 (HPM repository listing; in default HPM registry)`);
 console.log(`  dist/packageManifest.json               (copy of HPM manifest)`);
-console.log(`  dist/drivers/${DRIVER_FILE}             (${DRIVER_DISPLAY_NAME} driver)`);
+console.log(`  dist/drivers/${DRIVER_FILE}             (${DRIVER_DISPLAY_NAME} driver, dist copy)`);
+console.log(`  HPM driver URL: ${HPM_DRIVER_LOCATION}`);
 if (HPM_BASE_URL.includes("UPDATE_USER")) {
   console.log("\nHPM: set HPM_BASE_URL to your hosted dist/ raw URL before publishing, then rebuild.");
 }

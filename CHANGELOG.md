@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.45
+
+- **Fix:** HPM driver install — manifest now fetches `drivers/mDashNotifications.groovy`
+  (source) instead of `dist/drivers/`; driver Groovy aligned with Hubitat conventions.
+
 ## 0.3.44
 
 - **Change:** notification driver source file renamed to `mDashNotifications.groovy`

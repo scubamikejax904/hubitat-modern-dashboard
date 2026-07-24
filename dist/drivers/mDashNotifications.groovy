@@ -18,7 +18,7 @@ metadata {
         name: "mDash Notifications",
         namespace: "mDash",
         author: "Ephrayim (evdev)",
-        importUrl: "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/beta/dist/drivers/mDashNotifications.groovy"
+        importUrl: "https://raw.githubusercontent.com/evdev/hubitat-modern-dashboard/beta/drivers/mDashNotifications.groovy"
     ) {
         capability "Notification"
         capability "Actuator"
@@ -32,17 +32,17 @@ metadata {
     }
 }
 
-void installed() {
+def installed() {
     log.info "mDash Notifications installed"
 }
 
-void updated() {
+def updated() {
     log.info "mDash Notifications updated"
 }
 
-void deviceNotification(String text) {
-    String msg = (text == null) ? "" : text.toString()
-    if (msg.length() > 1024) msg = msg.substring(0, 1024)
+def deviceNotification(text) {
+    def msg = text?.toString() ?: ""
+    if (msg.size() > 1024) msg = msg.take(1024)
     if (txtEnable) log.info "deviceNotification: ${msg}"
     // One subscriber-visible event only. Emitting lastMessage as a second isStateChange
     // event would enqueue the same popup twice in Modern Dashboard.
