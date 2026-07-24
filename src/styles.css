@@ -1933,6 +1933,7 @@ body {
   font-size: 13px; font-weight: 600; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.sensor-card-kind { display: none; }
 .sensor-card-meta {
   font-size: 11px; font-weight: 500; color: var(--text-faint);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -2798,27 +2799,73 @@ body {
 }
 .quick-body-favorites .fav-size-compact.quick-fav-tstat .quick-fav-tstat-controls { display: none; }
 
-/* ---- Compact sensors: value + name; star overlays top-right ---- */
+/* ---- Compact sensors: icon + value + name + kind; star overlays top-right ---- */
 .quick-body-favorites .fav-size-compact.sensor-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  grid-template-areas:
+    "icon value"
+    "icon name"
+    "icon kind";
+  align-items: center;
   padding: 8px 36px 8px 10px;
   min-height: 0;
-  gap: 3px;
+  gap: 1px 8px;
 }
-.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-icon,
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-top {
+  display: contents;
+}
 .quick-body-favorites .fav-size-compact.sensor-card .sensor-card-pill,
 .quick-body-favorites .fav-size-compact.sensor-card .sensor-card-meta,
 .quick-body-favorites .fav-size-compact.sensor-card .sensor-card-foot,
 .quick-body-favorites .fav-size-compact.sensor-card .sensor-card-actions { display: none; }
-.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-top {
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-fav {
   position: absolute;
   top: 4px;
   right: 4px;
-  min-height: 0;
-  margin: 0;
   z-index: 1;
 }
-.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-value { font-size: 20px; margin-top: 0; }
-.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-name { font-size: 12px; }
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-icon {
+  display: inline-flex;
+  grid-area: icon;
+  align-self: center;
+  width: 18px;
+  height: 18px;
+  color: var(--text-faint);
+}
+.quick-body-favorites .fav-size-compact.sensor-card.is-alert .sensor-card-icon {
+  color: var(--sensor-accent);
+}
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-value {
+  grid-area: value;
+  font-size: 20px;
+  margin-top: 0;
+  line-height: 1.1;
+}
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-name {
+  grid-area: name;
+  font-size: 12px;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.quick-body-favorites .fav-size-compact.sensor-card .sensor-card-kind {
+  display: block;
+  grid-area: kind;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 
 /* ---- Wide cell tiles: use horizontal space, keep all controls ---- */
 .quick-body-favorites .fav-size-wide.tile .tile-head { gap: 10px; }

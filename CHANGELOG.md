@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.33
+
+- **Favorites:** compact sensor tiles show the sensor icon, value, name, and a small
+  kind label (e.g. Temp, Humidity, Lux) for quicker scanning.
+
 ## 0.3.32
 
 - **Fix:** lock favorites and lock tiles keep optimistic locked/unlocked state longer

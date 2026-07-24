@@ -12586,6 +12586,25 @@
     return pct != null ? pct + "% battery" : "";
   }
 
+  function sensorCompactKindLabel(dev, pill) {
+    const t = dev.t || "generic";
+    if (t === "illuminance") return "Lux";
+    if (t === "humidity") return "Humidity";
+    if (t === "temp") return "Temp";
+    if (t === "generic") {
+      const ex = sortSensorExForDisplay(dev.ex, sensorExFooterExcludeForType(t), t);
+      if (ex.length) {
+        const k = String(ex[0].k || "").toLowerCase();
+        if (k === "illuminance") return "Lux";
+        return humanizeAttr(ex[0].k);
+      }
+    }
+    const typeLbl = sensorTypeLabel(t);
+    if (typeLbl !== "Sensor") return typeLbl;
+    const p = String(pill || "").trim();
+    return p || typeLbl;
+  }
+
   function sensorExFooter(dev) {
     const ex = sortSensorExForDisplay(dev.ex, sensorExFooterExcludeForType(dev.t), dev.t);
     if (!ex.length) return "";
@@ -12634,6 +12653,7 @@
     }
     rec.footEl.textContent = sensorCardFootText(dev, sensorExFooter);
     rec.footEl.hidden = !rec.footEl.textContent;
+    if (rec.kindEl) rec.kindEl.textContent = sensorCompactKindLabel(dev, pill);
     const batTxt = sensorBatteryLabel(dev);
     rec.batteryEl.textContent = batTxt;
     rec.batteryEl.hidden = !batTxt;
@@ -12681,6 +12701,7 @@
       : fullName;
     name.textContent = displayName;
     if (dev.n && displayName !== dev.n) name.title = dev.n;
+    const kind = ce("div", "sensor-card-kind");
     const metaRow = ce("div", "sensor-card-meta");
     metaRow.textContent = context === "sensors"
       ? (cfg.sensorsFlat ? roomLabel(dev.r) + " · " + sensorTypeLabel(dev.t) : sensorTypeLabel(dev.t))
@@ -12692,9 +12713,10 @@
     card.appendChild(top);
     card.appendChild(hero);
     card.appendChild(name);
+    card.appendChild(kind);
     card.appendChild(metaRow);
     card.appendChild(foot);
-    const rec = { el: card, heroEl: hero, pillEl: pill, pillTxt, dot, footEl: foot, batteryEl: battery, actionsEl: actions, favBtn: fav, t: dev.t, i: dev.i };
+    const rec = { el: card, heroEl: hero, pillEl: pill, pillTxt, dot, footEl: foot, batteryEl: battery, actionsEl: actions, favBtn: fav, kindEl: kind, t: dev.t, i: dev.i };
     if (dev.t === "valve") {
       const controls = ce("div", "sensor-card-controls");
       const openBtn = ce("button", "quick-lock-btn sensor-valve-btn");
