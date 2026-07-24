@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.36
+
+- **Fix:** notification queue timestamps use Hubitat `now()` instead of blocked
+  `System.currentTimeMillis()`.
+
 ## 0.3.35
 
 - **Notifications:** create the Virtual Notification child device from the app
@@ -14,8 +19,6 @@
   instead of a full `/data` refresh.
 - **Notifications:** app-created Virtual Notification device is a normal hub
   device (rename/delete under Devices) instead of a locked component device.
-- **Fix:** auto-select notification child only when missing from the picker (avoids
-  redundant `updateSetting` calls).
 
 ## 0.3.34
 

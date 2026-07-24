@@ -4522,7 +4522,7 @@ def notificationDeviceEvent(evt) {
     }
     // Some drivers fire multiple attributes for one notify (e.g. notificationText +
     // lastMessage). Collapse same device+text within a short window into one queue item.
-    def nowMs = System.currentTimeMillis()
+    def nowMs = now()
     def dedupeKey = "${deviceId ?: ""}|${text}"
     def lastKey = state.notifDedupeKey?.toString()
     def lastAt = (state.notifDedupeAt instanceof Number) ? state.notifDedupeAt.longValue() : 0L
@@ -4546,7 +4546,7 @@ def parseNotificationsState() {
             def entry = [
                 id: id,
                 text: text.toString(),
-                ts: (item.ts instanceof Number) ? item.ts.longValue() : (System.currentTimeMillis()),
+                ts: (item.ts instanceof Number) ? item.ts.longValue() : now(),
                 deviceId: item.deviceId,
                 deviceName: item.deviceName?.toString() ?: ""
             ]
@@ -4569,11 +4569,11 @@ def appendNotification(text, deviceId, deviceName) {
     def seq = (state.notifSeq instanceof Number) ? state.notifSeq.longValue() : 0L
     seq++
     state.notifSeq = seq
-    def id = "n_${System.currentTimeMillis()}_${seq}"
+    def id = "n_${now()}_${seq}"
     def entry = [
         id: id,
         text: text?.toString() ?: "",
-        ts: System.currentTimeMillis(),
+        ts: now(),
         deviceId: deviceId,
         deviceName: deviceName?.toString() ?: ""
     ]

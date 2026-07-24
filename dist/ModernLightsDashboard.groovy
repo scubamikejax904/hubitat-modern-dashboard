@@ -1,4 +1,4 @@
-// Modern Dashboard v0.3.35
+// Modern Dashboard v0.3.36
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
@@ -16,7 +16,7 @@ import groovy.transform.Field
 @Field private static String LOCAL_ASSET_CACHE_VERSION = ""
 @Field private static int LOCAL_ASSET_CACHE_BYTES = 0
 @Field private static final int LOCAL_ASSET_CACHE_MAX_BYTES = 768 * 1024
-@Field private static final String MLD_DEPLOYED_VERSION = "0.3.35"
+@Field private static final String MLD_DEPLOYED_VERSION = "0.3.36"
 
 definition(
     name: "Modern Dashboard",
@@ -50,7 +50,7 @@ def mainPage() {
             } else {
                 paragraph "<small><b>Hub-only:</b> UI and API run entirely on your hub — no Maker API or third-party cloud.</small>"
             }
-            paragraph "<small>Version 0.3.35 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
+            paragraph "<small>Version 0.3.36 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         if (assetsOk) {
             section("Dashboard links") {
@@ -4522,7 +4522,7 @@ def notificationDeviceEvent(evt) {
     }
     // Some drivers fire multiple attributes for one notify (e.g. notificationText +
     // lastMessage). Collapse same device+text within a short window into one queue item.
-    def nowMs = System.currentTimeMillis()
+    def nowMs = now()
     def dedupeKey = "${deviceId ?: ""}|${text}"
     def lastKey = state.notifDedupeKey?.toString()
     def lastAt = (state.notifDedupeAt instanceof Number) ? state.notifDedupeAt.longValue() : 0L
@@ -4546,7 +4546,7 @@ def parseNotificationsState() {
             def entry = [
                 id: id,
                 text: text.toString(),
-                ts: (item.ts instanceof Number) ? item.ts.longValue() : (System.currentTimeMillis()),
+                ts: (item.ts instanceof Number) ? item.ts.longValue() : now(),
                 deviceId: item.deviceId,
                 deviceName: item.deviceName?.toString() ?: ""
             ]
@@ -4569,11 +4569,11 @@ def appendNotification(text, deviceId, deviceName) {
     def seq = (state.notifSeq instanceof Number) ? state.notifSeq.longValue() : 0L
     seq++
     state.notifSeq = seq
-    def id = "n_${System.currentTimeMillis()}_${seq}"
+    def id = "n_${now()}_${seq}"
     def entry = [
         id: id,
         text: text?.toString() ?: "",
-        ts: System.currentTimeMillis(),
+        ts: now(),
         deviceId: deviceId,
         deviceName: deviceName?.toString() ?: ""
     ]
