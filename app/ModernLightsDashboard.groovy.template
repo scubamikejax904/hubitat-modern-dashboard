@@ -4493,14 +4493,9 @@ def allNotificationDevices() {
 }
 
 def initializeNotifications() {
+    // Drop all notification subscriptions (including removed picker devices).
+    try { unsubscribe("notificationDeviceEvent") } catch (e) {}
     def devices = allNotificationDevices()
-    try {
-        if (devices) {
-            for (d in devices) {
-                try { unsubscribe(d) } catch (e) {}
-            }
-        }
-    } catch (e) {}
     if (!devices) return
     for (d in devices) {
         try { subscribe(d, "notificationText", notificationDeviceEvent) } catch (e) {}

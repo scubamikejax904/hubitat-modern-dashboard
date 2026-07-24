@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.42
+
+- **Fix:** notification subscriptions clear correctly when devices are removed from the
+  picker — uses `unsubscribe("notificationDeviceEvent")` instead of per-device unsubscribe.
+
 ## 0.3.41
 
 - **UI:** hub notifications appear as a top banner without dimming or blurring the

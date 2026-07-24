@@ -1,4 +1,4 @@
-// Modern Dashboard v0.3.41
+// Modern Dashboard v0.3.42
 // Author: Ephrayim (evdev)
 // Distribution: https://github.com/evdev/hubitat-modern-dashboard
 // License: Apache License 2.0 (see LICENSE in repository)
@@ -16,7 +16,7 @@ import groovy.transform.Field
 @Field private static String LOCAL_ASSET_CACHE_VERSION = ""
 @Field private static int LOCAL_ASSET_CACHE_BYTES = 0
 @Field private static final int LOCAL_ASSET_CACHE_MAX_BYTES = 768 * 1024
-@Field private static final String MLD_DEPLOYED_VERSION = "0.3.41"
+@Field private static final String MLD_DEPLOYED_VERSION = "0.3.42"
 
 definition(
     name: "Modern Dashboard",
@@ -50,7 +50,7 @@ def mainPage() {
             } else {
                 paragraph "<small><b>Hub-only:</b> UI and API run entirely on your hub — no Maker API or third-party cloud.</small>"
             }
-            paragraph "<small>Version 0.3.41 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
+            paragraph "<small>Version 0.3.42 · Ephrayim (evdev) · Apache License 2.0 · <a href='https://github.com/evdev/hubitat-modern-dashboard' target='_blank'>Source</a></small>"
         }
         if (assetsOk) {
             section("Dashboard links") {
@@ -4493,14 +4493,9 @@ def allNotificationDevices() {
 }
 
 def initializeNotifications() {
+    // Drop all notification subscriptions (including removed picker devices).
+    try { unsubscribe("notificationDeviceEvent") } catch (e) {}
     def devices = allNotificationDevices()
-    try {
-        if (devices) {
-            for (d in devices) {
-                try { unsubscribe(d) } catch (e) {}
-            }
-        }
-    } catch (e) {}
     if (!devices) return
     for (d in devices) {
         try { subscribe(d, "notificationText", notificationDeviceEvent) } catch (e) {}
