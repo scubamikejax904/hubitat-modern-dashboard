@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.40
+
+- **Fix:** notification sounds play when enabled — chime no longer dismissed instantly;
+  foreground uses Web Audio (OS notifications are often silent while the dashboard is open).
+- **Fix:** notification sounds toggle no longer shows a misleading "muted" toast when enabling
+  or when notification permission is still pending.
+
 ## 0.3.39
 
 - **Change:** Groovy namespace renamed from `modernlights` to `mDash` (app + Virtual

@@ -502,6 +502,7 @@
   let notifAckInFlight = false;
   let notifSnoozeTimer = null;
   let notifLastSoundId = null;
+  let notifAudioCtx = null;
   let notifFetchInFlight = null;
   let notifFetchQueued = false;
   let notifWsFetchTimer = null;
@@ -10442,6 +10443,40 @@
     notifShowingId = null;
   }
 
+  function unlockNotifAudio() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return false;
+      if (!notifAudioCtx) notifAudioCtx = new AC();
+      if (notifAudioCtx.state === "suspended") void notifAudioCtx.resume();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function playNotifWebChime() {
+    try {
+      if (!unlockNotifAudio() || !notifAudioCtx) return false;
+      const ctx = notifAudioCtx;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.value = 0.0001;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const t = ctx.currentTime;
+      gain.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+      osc.start(t);
+      osc.stop(t + 0.5);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function dismissNotifChimeNotifications(tag) {
     try {
       if (!navigator.serviceWorker?.ready) return;
@@ -10458,39 +10493,58 @@
   function playNotificationOsSound(item) {
     if (!cfg.enableNotifSound) return;
     if (!item?.id || item.id === notifLastSoundId) return;
-    if (typeof Notification === "undefined") return;
-    if (Notification.permission !== "granted") return;
     notifLastSoundId = item.id;
-    // Fire a transient OS notification for its system sound, then close it so only
-    // the in-app popup remains (browsers have no "sound only" Notification API).
+
+    // Dashboard popup is foreground UI — Web Audio is reliable here. OS notifications
+    // are often silent while the page is focused, and closing them instantly blocked sound.
+    if (!document.hidden && playNotifWebChime()) return;
+
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") {
+      playNotifWebChime();
+      return;
+    }
+
     const tag = "mld-notif-chime";
     const title = "mDash";
     const opts = {
       body: " ",
       tag,
       renotify: true,
+      silent: false,
       requireInteraction: false,
     };
-    const closeChime = (n) => {
-      try { n?.close?.(); } catch {}
-      dismissNotifChimeNotifications(tag);
-      setTimeout(() => dismissNotifChimeNotifications(tag), 40);
+    const dismissAfterMs = 1500;
+    const scheduleDismiss = () => {
+      setTimeout(() => dismissNotifChimeNotifications(tag), dismissAfterMs);
     };
     try {
       if (navigator.serviceWorker?.ready) {
         navigator.serviceWorker.ready.then((reg) => {
-          Promise.resolve(reg.showNotification(title, opts))
-            .then(() => closeChime(null))
+          reg.showNotification(title, opts)
+            .then(() => scheduleDismiss())
             .catch(() => {
-              try { closeChime(new Notification(title, opts)); } catch {}
+              try {
+                const n = new Notification(title, opts);
+                setTimeout(() => { try { n.close(); } catch {} }, dismissAfterMs);
+              } catch {
+                playNotifWebChime();
+              }
             });
         }).catch(() => {
-          try { closeChime(new Notification(title, opts)); } catch {}
+          try {
+            const n = new Notification(title, opts);
+            setTimeout(() => { try { n.close(); } catch {} }, dismissAfterMs);
+          } catch {
+            playNotifWebChime();
+          }
         });
       } else {
-        closeChime(new Notification(title, opts));
+        const n = new Notification(title, opts);
+        setTimeout(() => { try { n.close(); } catch {} }, dismissAfterMs);
       }
-    } catch {}
+    } catch {
+      playNotifWebChime();
+    }
   }
 
   function showNotificationPopup(item) {
@@ -10975,19 +11029,25 @@
     MENU_NOTIF_SOUND_EL.addEventListener("click", (e) => e.stopPropagation());
     MENU_NOTIF_SOUND_EL.addEventListener("change", () => {
       void (async () => {
-        let on = MENU_NOTIF_SOUND_EL.checked;
+        const on = MENU_NOTIF_SOUND_EL.checked;
         if (on) {
-          const ok = await requestNotifSoundPermission();
-          if (!ok) {
-            on = false;
-            MENU_NOTIF_SOUND_EL.checked = false;
+          unlockNotifAudio();
+          await requestNotifSoundPermission();
+          cfg.enableNotifSound = true;
+          saveNotifSoundPref(true);
+          if (soundLabel) soundLabel.setAttribute("aria-checked", "true");
+          playNotifWebChime();
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            flash("Notification sounds on");
+          } else {
+            flash("Notification sounds on in app");
           }
+          return;
         }
-        cfg.enableNotifSound = on;
-        saveNotifSoundPref(on);
-        if (soundLabel) soundLabel.setAttribute("aria-checked", on ? "true" : "false");
-        if (on) flash("Notification sounds on");
-        else flash("Notification sounds muted");
+        cfg.enableNotifSound = false;
+        saveNotifSoundPref(false);
+        if (soundLabel) soundLabel.setAttribute("aria-checked", "false");
+        flash("Notification sounds off");
       })();
     });
   }
