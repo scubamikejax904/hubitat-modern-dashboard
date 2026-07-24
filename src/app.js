@@ -598,8 +598,8 @@
     const timer = setTimeout(() => {
       lockOptimistic.delete(id);
       if (postCall("currentCategory") === "locks") postCall("renderLocksPopup");
-    }, LEVEL_OPTIMISTIC_MS);
-    lockOptimistic.set(id, { lk, st, until: Date.now() + LEVEL_OPTIMISTIC_MS, timer });
+    }, LOCK_OPTIMISTIC_MS);
+    lockOptimistic.set(id, { lk, st, until: Date.now() + LOCK_OPTIMISTIC_MS, timer });
   }
 
   function clearLockOptimistic(id) {
@@ -3103,7 +3103,6 @@
 
   function openFavoriteTstatPopup(t, anchor) {
     hapticTap();
-    postCall("closeCurrentView");
     openTstatPopupForDevice(t.i, anchor || null);
   }
 

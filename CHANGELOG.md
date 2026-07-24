@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.32
+
+- **Fix:** lock favorites and lock tiles keep optimistic locked/unlocked state longer
+  (7s) so the UI does not snap back before the hub confirms the command.
+- **Fix:** tapping a compact thermostat favorite opens the thermostat popup without
+  closing the Favorites view first.
+
 ## 0.3.31
 
 - **Favorites:** lock tiles can use **Compact** size — tap the tile to toggle lock/
