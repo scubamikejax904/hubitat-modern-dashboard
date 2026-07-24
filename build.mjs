@@ -690,7 +690,7 @@ const hpmManifest = {
       name: DRIVER_DISPLAY_NAME,
       namespace: NS,
       location: `${HPM_BASE_URL}/drivers/${DRIVER_FILE}`,
-      required: false,
+      required: true,
     },
   ],
   files: FILE_MANAGER_ASSETS.map(({ id, name }) => ({

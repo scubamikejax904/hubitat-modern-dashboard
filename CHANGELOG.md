@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.37
+
+- **Fix:** Virtual Notification driver is now a required HPM component so **Update**
+  installs it automatically (was optional and easy to miss during update).
+
 ## 0.3.36
 
 - **Fix:** notification queue timestamps use Hubitat `now()` instead of blocked
